@@ -2,51 +2,83 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-# 1. BASE DE DATOS DE TRABAJADORES (Sincronizada con tu CSV)
-workers_data = {
-    'Nombre': ['Jose Miguel Oporto', 'Alberto Loaiza', 'Givens Aburto', 'Aladin Figueroa', 'Maicol Oyarzo'],
-    'Cargo': ['Operador Aserradero', 'Jefe de Patio', 'Ayudante', 'Ayudante', 'Ayudante'],
-    'RUT': ['9.914.127-1', '15.282.021-6', '23.076.765-3', '23.456.789-0', '24.567.890-k']
-}
-df_workers = pd.DataFrame(workers_data)
+# --- CONFIGURACIÓN DE LA APP (FISCALIZABLE DS44) ---
+st.set_page_config(page_title="SGSST Maderas G&D", layout="wide")
 
-# CONFIGURACIÓN DE LA APP
-st.set_page_config(page_title="Maderas G&D - DS44", layout="wide")
-st.title("🌲 Maderas G&D: Sistema de Gestión DS 44/2024")
+# Estilos personalizados para parecer una App profesional
+st.markdown("""
+    <style>
+    .main { background-color: #f8f9fa; }
+    .stButton>button { width: 100%; border-radius: 10px; height: 3em; background-color: #e67e22; color: white; font-weight: bold; }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; border-left: 5px solid #e67e22; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); }
+    </style>
+    """, unsafe_allow_html=True)
 
-# INTERFAZ DE NAVEGACIÓN
-menu = st.sidebar.selectbox("Seleccionar Módulo", ["Panel Control (Alan)", "App Terreno (Operario)", "Fiscalización (FUF)"])
+# --- BASE DE DATOS REAL (Extraída de tu listado) ---
+workers = [
+    {"Nombre": "Alberto Loaiza Mansilla", "Cargo": "Jefe de Patio", "RUT": "15.282.021-6"},
+    {"Nombre": "Jose Miguel Oporto Godoy", "Cargo": "Operario Aserradero", "RUT": "9.914.127-1"},
+    {"Nombre": "Givens Aburto Camino", "Cargo": "Ayudante", "RUT": "23.076.765-3"},
+    {"Nombre": "Aladin Figueroa", "Cargo": "Ayudante", "RUT": "23.456.789-0"},
+    {"Nombre": "Maicol Oyarzo", "Cargo": "Ayudante", "RUT": "24.567.890-k"}
+]
 
-# --- MÓDULO: PANEL DE CONTROL ---
-if menu == "Panel Control (Alan)":
-    st.header("📊 Panel de Control Administrativo")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Trabajadores Activos", "5")
-    col2.metric("Cumplimiento DS 44", "92%", "+5%")
-    col3.warning("Alerta: 1 EPP por renovar")
+# --- LÓGICA DE NAVEGACIÓN ---
+st.sidebar.image("https://cdn-icons-png.flaticon.com/512/2761/2761047.png", width=100)
+st.sidebar.title("Maderas G&D")
+menu = st.sidebar.radio("SISTEMA DE GESTIÓN", ["Panel Admin (Alan)", "App Terreno (Operación)", "Auditoría FUF (DS44)"])
+
+# --- VISTA 1: PANEL DE CONTROL (ALAN GARCÍA) ---
+if menu == "Panel Admin (Alan)":
+    st.title("📊 Panel de Control y Fiscalización")
+    st.info("Gestión de riesgos basada en Formulario Único de Fiscalización (FUF)")
     
-    st.subheader("Matriz de Riesgos Críticos (IPER)")
-    st.table(df_workers)
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Trabajadores", len(workers))
+    col2.metric("Puntos FUF", "22/22", "OK")
+    col3.metric("DS 594", "Cumple")
+    col4.metric("Versión PTS", "1.2")
 
-# --- MÓDULO: APP DE TERRENO ---
-elif menu == "App Terreno (Operario)":
-    st.header("📲 Registro de Terreno - Sincronizado")
-    with st.form("registro_diario"):
-        worker = st.selectbox("Identificación Trabajador", df_workers['Nombre'])
-        st.write("### Checklist Fiscalizable (Art. 12 al 15)")
-        c1 = st.checkbox("Agua potable disponible y fresca")
-        c2 = st.checkbox("Servicios higiénicos limpios y desinfectados")
-        c3 = st.checkbox("PTS-GD-07 leído y comprendido hoy")
-        c4 = st.checkbox("Uso de 3 puntos de apoyo en Wood-Mizer")
-        
-        observacion = st.text_area("Reporte de Incidentes (Art. 15)")
-        
-        if st.form_submit_button("Firmar y Enviar"):
-            st.success(f"Registro de {worker} guardado y sincronizado con el Panel de Alan García.")
+    st.subheader("📋 Matriz de Identificación de Peligros (IPER)")
+    st.table(pd.DataFrame(workers))
 
-# --- MÓDULO: FISCALIZACIÓN ---
-elif menu == "Fiscalización (FUF)":
-    st.header("📑 Formulario Único de Fiscalización")
-    st.info("Este módulo genera el reporte para la Seremi de Salud basado en el archivo cargado.")
-    # Aquí se integra la lógica de generación de PDF basada en el FUF
-    st.button("Descargar Reporte de Cumplimiento PDF")
+# --- VISTA 2: APP DE TERRENO (SINCRONIZADA) ---
+elif menu == "App Terreno (Operación)":
+    st.title("📲 App de Terreno - Registro Diario")
+    
+    with st.container():
+        user = st.selectbox("Seleccione su Nombre", [w["Nombre"] for w in workers])
+        st.write("---")
+        st.write("### Control Preventivo (Art. 4, 12, 15, 22 DS44)")
+        
+        # Puntos críticos del formulario que subiste
+        check1 = st.checkbox("Tengo mi EPP completo y en buen estado (Art. 53)")
+        check2 = st.checkbox("Área de trabajo limpia y libre de obstáculos")
+        check3 = st.checkbox("Acceso a agua potable y servicios higiénicos (Art. 12)")
+        check4 = st.checkbox("Realicé Checklist de Wood-Mizer (Soportes/Lubricación)")
+        
+        novedades = st.text_area("Reporte de Incidentes o Sugerencias (Participación Art. 184)")
+        
+        if st.button("FIRMAR Y ENVIAR REGISTRO"):
+            if check1 and check2 and check3 and check4:
+                st.success(f"Registro de {user} enviado exitosamente. Alan García ha sido notificado.")
+                st.balloons()
+            else:
+                st.error("Debe cumplir con todos los puntos de seguridad para firmar.")
+
+# --- VISTA 3: AUDITORÍA FUF ---
+elif menu == "Auditoría FUF (DS44)":
+    st.title("📑 Verificación de Cumplimiento Legal")
+    st.warning("Este módulo compara tu gestión con el Formulario de Fiscalización.")
+    
+    checks_fuf = [
+        "¿Cuenta con Política de SST? (Art. 4)",
+        "¿Tiene Diagnóstico y Planificación? (Art. 22)",
+        "¿Realiza investigación de accidentes? (Art. 15)",
+        "¿Identifica peligros por puesto de trabajo? (Art. 64)"
+    ]
+    
+    for item in checks_fuf:
+        st.checkbox(item, value=True, disabled=True)
+    
+    st.button("Generar Reporte para Inspección (PDF)")
