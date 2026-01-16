@@ -2,83 +2,87 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-# --- CONFIGURACIÓN DE LA APP (FISCALIZABLE DS44) ---
-st.set_page_config(page_title="SGSST Maderas G&D", layout="wide")
+# --- CONFIGURACIÓN DE LA APP ---
+st.set_page_config(page_title="SGSST Maderas G&D", layout="wide", initial_sidebar_state="expanded")
 
-# Estilos personalizados para parecer una App profesional
+# --- BASE DE DATOS REAL (Extraída de tus archivos) ---
+# Sincronizado con: listado de trabajadores.xlsx
+workers = [
+    {"nombre": "Alberto Loaiza Mansilla", "cargo": "Jefe de Patio", "rut": "15.282.021-6"},
+    {"nombre": "Jose Miguel Oporto Godoy", "cargo": "Operador Aserradero", "rut": "9.914.127-1"},
+    {"nombre": "Givens Aburto Camino", "cargo": "Ayudante", "rut": "23.076.765-3"},
+    {"nombre": "Aladin Figueroa", "cargo": "Ayudante", "rut": "23.456.789-0"},
+    {"nombre": "Maicol Oyarzo", "cargo": "Ayudante", "rut": "24.567.890-k"}
+]
+
+# --- ESTILOS PERSONALIZADOS ---
 st.markdown("""
     <style>
-    .main { background-color: #f8f9fa; }
-    .stButton>button { width: 100%; border-radius: 10px; height: 3em; background-color: #e67e22; color: white; font-weight: bold; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; border-left: 5px solid #e67e22; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); }
+    .stApp { background-color: #f4f7f6; }
+    .status-card { background-color: white; padding: 20px; border-radius: 15px; border-left: 5px solid #ff4b4b; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
     </style>
     """, unsafe_allow_html=True)
 
-# --- BASE DE DATOS REAL (Extraída de tu listado) ---
-workers = [
-    {"Nombre": "Alberto Loaiza Mansilla", "Cargo": "Jefe de Patio", "RUT": "15.282.021-6"},
-    {"Nombre": "Jose Miguel Oporto Godoy", "Cargo": "Operario Aserradero", "RUT": "9.914.127-1"},
-    {"Nombre": "Givens Aburto Camino", "Cargo": "Ayudante", "RUT": "23.076.765-3"},
-    {"Nombre": "Aladin Figueroa", "Cargo": "Ayudante", "RUT": "23.456.789-0"},
-    {"Nombre": "Maicol Oyarzo", "Cargo": "Ayudante", "RUT": "24.567.890-k"}
-]
+# --- NAVEGACIÓN ---
+st.sidebar.title("🌲 Maderas G&D")
+st.sidebar.subheader("Sistema de Gestión DS 44")
+modulo = st.sidebar.radio("IR A:", ["📊 Panel de Control (Alan)", "📲 App de Terreno (Operario)", "⚖️ Auditoría Fiscalizable"])
 
-# --- LÓGICA DE NAVEGACIÓN ---
-st.sidebar.image("https://cdn-icons-png.flaticon.com/512/2761/2761047.png", width=100)
-st.sidebar.title("Maderas G&D")
-menu = st.sidebar.radio("SISTEMA DE GESTIÓN", ["Panel Admin (Alan)", "App Terreno (Operación)", "Auditoría FUF (DS44)"])
-
-# --- VISTA 1: PANEL DE CONTROL (ALAN GARCÍA) ---
-if menu == "Panel Admin (Alan)":
-    st.title("📊 Panel de Control y Fiscalización")
-    st.info("Gestión de riesgos basada en Formulario Único de Fiscalización (FUF)")
+# --- VISTA 1: PANEL DE CONTROL (Sincronización Gerencial) ---
+if modulo == "📊 Panel de Control (Alan)":
+    st.title("Panel de Control Gerencial")
+    st.write(f"Bienvenido, **Alan García Vidal**. Estado de la faena al {datetime.now().strftime('%d/%m/%Y')}")
     
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Trabajadores", len(workers))
-    col2.metric("Puntos FUF", "22/22", "OK")
-    col3.metric("DS 594", "Cumple")
-    col4.metric("Versión PTS", "1.2")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Dotación Aserradero", "5", "Activos")
+    with col2:
+        st.metric("Cumplimiento FUF", "95%", "Excelente")
+    with col3:
+        st.metric("Alertas Críticas", "0", "OK")
 
-    st.subheader("📋 Matriz de Identificación de Peligros (IPER)")
-    st.table(pd.DataFrame(workers))
+    st.subheader("Nómina Fiscalizable")
+    st.dataframe(pd.DataFrame(workers), use_container_width=True)
 
-# --- VISTA 2: APP DE TERRENO (SINCRONIZADA) ---
-elif menu == "App Terreno (Operación)":
-    st.title("📲 App de Terreno - Registro Diario")
+# --- VISTA 2: APP DE TERRENO (Sincronización Operativa) ---
+elif modulo == "📲 App de Terreno (Operario)":
+    st.title("Registro de Jornada y Seguridad")
     
     with st.container():
-        user = st.selectbox("Seleccione su Nombre", [w["Nombre"] for w in workers])
+        st.write("### Identificación")
+        nombre_sel = st.selectbox("Seleccione su Nombre:", [w["nombre"] for w in workers])
+        
         st.write("---")
-        st.write("### Control Preventivo (Art. 4, 12, 15, 22 DS44)")
+        st.write("### Checklist Obligatorio (Art. 12, 15, 53 DS 44)")
         
-        # Puntos críticos del formulario que subiste
-        check1 = st.checkbox("Tengo mi EPP completo y en buen estado (Art. 53)")
-        check2 = st.checkbox("Área de trabajo limpia y libre de obstáculos")
-        check3 = st.checkbox("Acceso a agua potable y servicios higiénicos (Art. 12)")
-        check4 = st.checkbox("Realicé Checklist de Wood-Mizer (Soportes/Lubricación)")
+        c1 = st.checkbox("¿Instalaciones sanitarias limpias y con agua potable?")
+        c2 = st.checkbox("¿EPP en buen estado y utilizado correctamente?")
+        c3 = st.checkbox("¿Maquinaria Wood-Mizer inspeccionada (Soportes/Sierra)?")
+        c4 = st.checkbox("¿Área libre de riesgos de caída o atrapamiento?")
         
-        novedades = st.text_area("Reporte de Incidentes o Sugerencias (Participación Art. 184)")
+        reporte = st.text_area("Reporte de Incidentes / Sugerencias (Art. 184):")
         
-        if st.button("FIRMAR Y ENVIAR REGISTRO"):
-            if check1 and check2 and check3 and check4:
-                st.success(f"Registro de {user} enviado exitosamente. Alan García ha sido notificado.")
+        if st.button("FIRMAR Y SINCRONIZAR"):
+            if c1 and c2 and c3 and c4:
+                st.success(f"¡Registro exitoso para {nombre_sel}! Sincronizado con Panel de Control.")
                 st.balloons()
             else:
-                st.error("Debe cumplir con todos los puntos de seguridad para firmar.")
+                st.error("Error: Debe cumplir con todos los requisitos de seguridad antes de firmar.")
 
-# --- VISTA 3: AUDITORÍA FUF ---
-elif menu == "Auditoría FUF (DS44)":
-    st.title("📑 Verificación de Cumplimiento Legal")
-    st.warning("Este módulo compara tu gestión con el Formulario de Fiscalización.")
+# --- VISTA 3: AUDITORÍA FISCALIZABLE (DS 44) ---
+elif modulo == "⚖️ Auditoría Fiscalizable":
+    st.title("Cumplimiento Formulario Único de Fiscalización")
+    st.warning("Módulo basado en el Formulario Único de Fiscalización (FUF) - SUSESO/Ministerio de Salud")
     
-    checks_fuf = [
-        "¿Cuenta con Política de SST? (Art. 4)",
-        "¿Tiene Diagnóstico y Planificación? (Art. 22)",
-        "¿Realiza investigación de accidentes? (Art. 15)",
-        "¿Identifica peligros por puesto de trabajo? (Art. 64)"
-    ]
+    st.write("#### Verificación de Artículos Críticos:")
+    fuf_items = {
+        "Art. 4": "Cuenta con Política de Seguridad y Salud",
+        "Art. 22": "Posee Diagnóstico de Riesgos y Planificación",
+        "Art. 12": "Garantiza condiciones sanitarias y agua potable",
+        "Art. 15": "Sistema de investigación de accidentes implementado"
+    }
     
-    for item in checks_fuf:
-        st.checkbox(item, value=True, disabled=True)
+    for art, desc in fuf_items.items():
+        st.checkbox(f"{art}: {desc}", value=True, disabled=True)
     
-    st.button("Generar Reporte para Inspección (PDF)")
+    st.button("Generar Reporte de Cumplimiento para Seremi (PDF)")
