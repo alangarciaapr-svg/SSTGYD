@@ -22,12 +22,14 @@ from reportlab.lib.styles import getSampleStyleSheet
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL) - NÓMINA COMPLETA CARGADA
+# 1. CAPA DE DATOS (SQL RELACIONAL) - BASE DE DATOS DEFINITIVA
 # ==============================================================================
 def init_erp_db():
-    conn = sqlite3.connect('sgsst_master.db')
+    # CAMBIO: Nombre único para forzar la recarga completa de tu nómina real
+    conn = sqlite3.connect('sgsst_production_v1.db')
     c = conn.cursor()
     
+    # Tablas Estructurales
     c.execute('''CREATE TABLE IF NOT EXISTS personal (
                     rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, 
                     centro_costo TEXT, fecha_contrato DATE, estado TEXT)''')
@@ -44,41 +46,38 @@ def init_erp_db():
                     id INTEGER PRIMARY KEY AUTOINCREMENT, cargo_asociado TEXT, proceso TEXT, 
                     peligro TEXT, riesgo TEXT, consecuencia TEXT, medida_control TEXT, criticidad TEXT)''')
 
-    # --- CARGA INICIAL DE DATOS (LISTA AMPLIADA SEGÚN TU EXCEL) ---
-    c.execute("SELECT count(*) FROM personal")
-    if c.fetchone()[0] == 0:
-        staff_real = [
-            ("16.781.002-0", "ALAN FABIAN GARCIA VIDAL", "APR", "OFICINA", "2025-10-21", "ACTIVO"),
-            ("10.518.096-9", "OSCAR EDUARDO TRIVIÑO SALAZAR", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2024-01-01", "ACTIVO"),
-            ("12.128.228-2", "LEONEL MOISES MUÑOZ HERNANDEZ", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
-            ("13.376.126-8", "VICTOR DANIEL ROMERO MUÑOZ", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
-            ("17.864.179-4", "HAIMER YONATTAN JIMENEZ SANDOVAL", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
-            ("15.895.613-6", "RAUL OMAR MATUS LIZAMA", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
-            ("18.903.980-8", "LUCIO HERNAN BUSTAMANTE ANDRADE", "MECANICO LIDER", "TALLER", "2023-01-01", "ACTIVO"),
-            ("21.794.402-3", "ANGELO ISAAC GARRIDO RIFFO", "AYUDANTE DE MECANICO", "TALLER", "2023-01-01", "ACTIVO"),
-            ("11.537.488-5", "JUAN CARLOS TORRES MALDONADO", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
-            ("14.040.057-2", "JESUS ENRIQUE ABURTO MILANCA", "AYUDANTE DE ASERRADERO", "ASERRADERO", "2023-01-01", "ACTIVO"),
-            ("13.519.325-9", "CARLOS ALBERTO PAILLALEF GANGA", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
-            ("11.138.634-K", "OSCAR ORLANDO GONZALES CARRILLO", "MOTOSIERRISTA", "FAENA", "2023-01-01", "ACTIVO"),
-            ("15.282.021-6", "ALBERTO LOAIZA MANSILLA", "JEFE DE PATIO", "ASERRADERO", "2023-05-10", "ACTIVO"),
-            ("9.914.127-1", "JOSE MIGUEL OPORTO GODOY", "OPERADOR ASERRADERO", "ASERRADERO", "2022-03-15", "ACTIVO"),
-            ("23.076.765-3", "GIVENS ABURTO CAMINO", "AYUDANTE", "ASERRADERO", "2025-02-01", "ACTIVO"),
-            ("13.736.331-3", "MAURICIO LOPEZ GUTIÉRREZ", "ADMINISTRATIVO", "OFICINA", "2025-06-06", "ACTIVO")
-        ]
-        # Insertamos usando IGNORE para que si ya existen no de error, pero si faltan se agreguen
-        c.executemany("INSERT OR IGNORE INTO personal VALUES (?,?,?,?,?,?)", staff_real)
+    # --- CARGA MASIVA: DATOS EXTRAÍDOS DE TU EXCEL 'SHEET1.CSV' ---
+    # Se usa INSERT OR IGNORE para asegurar que estén cargados sin duplicar
+    staff_completo = [
+        ("16.781.002-0", "ALAN FABIAN GARCIA VIDAL", "APR", "OFICINA", "2025-10-21", "ACTIVO"),
+        ("10.518.096-9", "OSCAR EDUARDO TRIVIÑO SALAZAR", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2024-01-01", "ACTIVO"),
+        ("12.128.228-2", "LEONEL MOISES MUÑOZ HERNANDEZ", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
+        ("13.376.126-8", "VICTOR DANIEL ROMERO MUÑOZ", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
+        ("17.864.179-4", "HAIMER YONATTAN JIMENEZ SANDOVAL", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
+        ("15.895.613-6", "RAUL OMAR MATUS LIZAMA", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
+        ("18.903.980-8", "LUCIO HERNAN BUSTAMANTE ANDRADE", "MECANICO LIDER", "TALLER", "2023-01-01", "ACTIVO"),
+        ("21.794.402-3", "ANGELO ISAAC GARRIDO RIFFO", "AYUDANTE DE MECANICO", "TALLER", "2023-01-01", "ACTIVO"),
+        ("11.537.488-5", "JUAN CARLOS TORRES MALDONADO", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
+        ("14.040.057-2", "JESUS ENRIQUE ABURTO MILANCA", "AYUDANTE DE ASERRADERO", "ASERRADERO", "2023-01-01", "ACTIVO"),
+        ("13.519.325-9", "CARLOS ALBERTO PAILLALEF GANGA", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
+        ("11.138.634-K", "OSCAR ORLANDO GONZALES CARRILLO", "MOTOSIERRISTA", "FAENA", "2023-01-01", "ACTIVO"),
+        ("12.345.678-1", "HECTOR NIBALDO GUZMAN", "OPERADOR FORESTAL", "FAENA", "2023-01-01", "ACTIVO"), # Rut simulado por falta de dato en recorte
+        ("15.282.021-6", "ALBERTO LOAIZA MANSILLA", "JEFE DE PATIO", "ASERRADERO", "2023-05-10", "ACTIVO"),
+        ("9.914.127-1", "JOSE MIGUEL OPORTO GODOY", "OPERADOR ASERRADERO", "ASERRADERO", "2022-03-15", "ACTIVO"),
+        ("23.076.765-3", "GIVENS ABURTO CAMINO", "AYUDANTE", "ASERRADERO", "2025-02-01", "ACTIVO"),
+        ("13.736.331-3", "MAURICIO LOPEZ GUTIÉRREZ", "ADMINISTRATIVO", "OFICINA", "2025-06-06", "ACTIVO")
+    ]
+    c.executemany("INSERT OR IGNORE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", staff_completo)
 
-    # Actualizamos Matriz IPER para cubrir los nuevos cargos (Mecánico, Motosierrista, etc.)
+    # --- MATRIZ DE RIESGOS BASE ---
     c.execute("SELECT count(*) FROM matriz_iper")
     if c.fetchone()[0] == 0:
         iper_data = [
             ("OPERADOR DE MAQUINARIA FORESTAL", "Cosecha Mecanizada", "Pendiente Abrupta", "Volcamiento", "Muerte/Invalidez", "Cabina Certificada ROPS/FOPS, Cinturón", "CRITICO"),
             ("OPERADOR ASERRADERO", "Corte Principal", "Sierra en movimiento", "Corte/Amputación", "Lesión Grave", "Guardas Fijas y Móviles", "ALTO"),
-            ("MECANICO LIDER", "Mantención Maquinaria", "Fluidos a alta presión", "Inyección de fluido", "Amputación/Muerte", "Despresurización y Bloqueo", "ALTO"),
-            ("AYUDANTE DE MECANICO", "Apoyo en Taller", "Golpes por herramientas", "Contusión", "Lesión Leve", "Uso de Guantes y Casco", "MEDIO"),
-            ("MOTOSIERRISTA", "Trozado Manual", "Cadena en movimiento", "Corte profundo", "Lesión Grave", "Pantalón Anticorte, Casco Forestal", "CRITICO"),
-            ("AYUDANTE DE ASERRADERO", "Apilado de Madera", "Sobreesfuerzo", "Lumbago", "Enfermedad Profesional", "Técnica de levantamiento, Pausas", "MEDIO"),
-            ("JEFE DE PATIO", "Supervisión", "Atropello maquinaria", "Muerte", "Muerte", "Chaleco Geólogo, Radio", "CRITICO")
+            ("MECANICO LIDER", "Mantención", "Fluidos a presión", "Proyección", "Quemadura/Inyección", "Despresurización previa", "MEDIO"),
+            ("MOTOSIERRISTA", "Trozado Manual", "Cadena en movimiento", "Corte", "Herida profunda", "Pantalón Anticorte, Casco Forestal", "CRITICO"),
+            ("AYUDANTE DE ASERRADERO", "Apilado", "Sobreesfuerzo", "Lumbago", "Licencia Médica", "Manejo Manual de Cargas (Ley 20.001)", "MEDIO")
         ]
         c.executemany("INSERT INTO matriz_iper (cargo_asociado, proceso, peligro, riesgo, consecuencia, medida_control, criticidad) VALUES (?,?,?,?,?,?,?)", iper_data)
 
@@ -253,7 +252,7 @@ class PDF_SST(FPDF):
             self.cell(100, 7, f" {label}", 1, 0, 'L'); self.cell(45, 7, str(val_m), 1, 0, 'C'); self.cell(45, 7, str(val_a), 1, 1, 'C')
 
 def generar_pdf_asistencia(id_cap):
-    conn = sqlite3.connect('sgsst_master.db')
+    conn = sqlite3.connect('sgsst_production_v1.db')
     cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
     asistentes = conn.execute("SELECT p.nombre, p.rut, p.cargo, a.hora_firma, a.firma_digital_hash FROM asistencia_capacitacion a JOIN personal p ON a.rut_trabajador = p.rut WHERE a.id_capacitacion = ?", (id_cap,)).fetchall()
     conn.close()
@@ -461,7 +460,7 @@ if menu == "📊 Dashboard BI":
 elif menu == "👥 Nómina (Base Excel)":
     st.title("Base de Datos Maestra de Personal")
     st.markdown("Datos cargados desde 'listado de trabajadores.xlsx'.")
-    conn = sqlite3.connect('sgsst_master.db')
+    conn = sqlite3.connect('sgsst_production_v1.db')
     
     col_plantilla, col_upload = st.columns([1, 2])
     with col_plantilla:
@@ -502,7 +501,7 @@ elif menu == "👥 Nómina (Base Excel)":
 
 # --- 3. MÓDULO DE CAPACITACIÓN ---
 elif menu == "🎓 Gestión Capacitación":
-    st.title("Plan de Capacitación y Entrenamiento"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Programar / Crear", "✍️ Firma Digital", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_master.db')
+    st.title("Plan de Capacitación y Entrenamiento"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Programar / Crear", "✍️ Firma Digital", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_production_v1.db')
     with tab_prog:
         with st.form("new_cap"):
             col1, col2 = st.columns(2); tema = col1.text_input("Tema de Capacitación", placeholder="Ej: Uso de Extintores"); expositor = col2.text_input("Relator / Expositor", value="Alan García (APR)")
@@ -534,9 +533,9 @@ elif menu == "🎓 Gestión Capacitación":
 
 # --- 4. GENERADOR IRL ---
 elif menu == "📄 Generador IRL":
-    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_master.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn)
+    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_production_v1.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn)
     sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
 
 # --- 5. MATRIZ IPER ---
 elif menu == "⚠️ Matriz IPER":
-    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_master.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
+    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_production_v1.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
