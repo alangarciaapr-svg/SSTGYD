@@ -22,7 +22,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL) - ACTUALIZADA CON TU LISTA
+# 1. CAPA DE DATOS (SQL RELACIONAL) - NÓMINA COMPLETA CARGADA
 # ==============================================================================
 def init_erp_db():
     conn = sqlite3.connect('sgsst_master.db')
@@ -44,7 +44,7 @@ def init_erp_db():
                     id INTEGER PRIMARY KEY AUTOINCREMENT, cargo_asociado TEXT, proceso TEXT, 
                     peligro TEXT, riesgo TEXT, consecuencia TEXT, medida_control TEXT, criticidad TEXT)''')
 
-    # Carga inicial de datos (TU LISTA REAL CARGADA AQUÍ)
+    # --- CARGA INICIAL DE DATOS (LISTA AMPLIADA SEGÚN TU EXCEL) ---
     c.execute("SELECT count(*) FROM personal")
     if c.fetchone()[0] == 0:
         staff_real = [
@@ -65,16 +65,20 @@ def init_erp_db():
             ("23.076.765-3", "GIVENS ABURTO CAMINO", "AYUDANTE", "ASERRADERO", "2025-02-01", "ACTIVO"),
             ("13.736.331-3", "MAURICIO LOPEZ GUTIÉRREZ", "ADMINISTRATIVO", "OFICINA", "2025-06-06", "ACTIVO")
         ]
-        # Insertamos usando IGNORE para evitar duplicados si se reinicia
+        # Insertamos usando IGNORE para que si ya existen no de error, pero si faltan se agreguen
         c.executemany("INSERT OR IGNORE INTO personal VALUES (?,?,?,?,?,?)", staff_real)
 
+    # Actualizamos Matriz IPER para cubrir los nuevos cargos (Mecánico, Motosierrista, etc.)
     c.execute("SELECT count(*) FROM matriz_iper")
     if c.fetchone()[0] == 0:
         iper_data = [
             ("OPERADOR DE MAQUINARIA FORESTAL", "Cosecha Mecanizada", "Pendiente Abrupta", "Volcamiento", "Muerte/Invalidez", "Cabina Certificada ROPS/FOPS, Cinturón", "CRITICO"),
             ("OPERADOR ASERRADERO", "Corte Principal", "Sierra en movimiento", "Corte/Amputación", "Lesión Grave", "Guardas Fijas y Móviles", "ALTO"),
-            ("MECANICO LIDER", "Mantención", "Fluidos a presión", "Proyección", "Quemadura/Inyección", "Despresurización previa", "MEDIO"),
-            ("MOTOSIERRISTA", "Trozado Manual", "Cadena en movimiento", "Corte", "Herida profunda", "Pantalón Anticorte, Casco Forestal", "CRITICO")
+            ("MECANICO LIDER", "Mantención Maquinaria", "Fluidos a alta presión", "Inyección de fluido", "Amputación/Muerte", "Despresurización y Bloqueo", "ALTO"),
+            ("AYUDANTE DE MECANICO", "Apoyo en Taller", "Golpes por herramientas", "Contusión", "Lesión Leve", "Uso de Guantes y Casco", "MEDIO"),
+            ("MOTOSIERRISTA", "Trozado Manual", "Cadena en movimiento", "Corte profundo", "Lesión Grave", "Pantalón Anticorte, Casco Forestal", "CRITICO"),
+            ("AYUDANTE DE ASERRADERO", "Apilado de Madera", "Sobreesfuerzo", "Lumbago", "Enfermedad Profesional", "Técnica de levantamiento, Pausas", "MEDIO"),
+            ("JEFE DE PATIO", "Supervisión", "Atropello maquinaria", "Muerte", "Muerte", "Chaleco Geólogo, Radio", "CRITICO")
         ]
         c.executemany("INSERT INTO matriz_iper (cargo_asociado, proceso, peligro, riesgo, consecuencia, medida_control, criticidad) VALUES (?,?,?,?,?,?,?)", iper_data)
 
