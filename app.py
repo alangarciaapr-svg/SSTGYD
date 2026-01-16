@@ -22,7 +22,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL)
+# 1. CAPA DE DATOS (SQL RELACIONAL) - ACTUALIZADA CON TU LISTA
 # ==============================================================================
 def init_erp_db():
     conn = sqlite3.connect('sgsst_master.db')
@@ -44,24 +44,37 @@ def init_erp_db():
                     id INTEGER PRIMARY KEY AUTOINCREMENT, cargo_asociado TEXT, proceso TEXT, 
                     peligro TEXT, riesgo TEXT, consecuencia TEXT, medida_control TEXT, criticidad TEXT)''')
 
-    # Carga inicial de datos si está vacío
+    # Carga inicial de datos (TU LISTA REAL CARGADA AQUÍ)
     c.execute("SELECT count(*) FROM personal")
     if c.fetchone()[0] == 0:
         staff_real = [
             ("16.781.002-0", "ALAN FABIAN GARCIA VIDAL", "APR", "OFICINA", "2025-10-21", "ACTIVO"),
-            ("10.518.096-9", "OSCAR EDUARDO TRIVIÑO SALAZAR", "OPERADOR HARVESTER", "FAENA", "2024-01-01", "ACTIVO"),
+            ("10.518.096-9", "OSCAR EDUARDO TRIVIÑO SALAZAR", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2024-01-01", "ACTIVO"),
+            ("12.128.228-2", "LEONEL MOISES MUÑOZ HERNANDEZ", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
+            ("13.376.126-8", "VICTOR DANIEL ROMERO MUÑOZ", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
+            ("17.864.179-4", "HAIMER YONATTAN JIMENEZ SANDOVAL", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
+            ("15.895.613-6", "RAUL OMAR MATUS LIZAMA", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
+            ("18.903.980-8", "LUCIO HERNAN BUSTAMANTE ANDRADE", "MECANICO LIDER", "TALLER", "2023-01-01", "ACTIVO"),
+            ("21.794.402-3", "ANGELO ISAAC GARRIDO RIFFO", "AYUDANTE DE MECANICO", "TALLER", "2023-01-01", "ACTIVO"),
+            ("11.537.488-5", "JUAN CARLOS TORRES MALDONADO", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
+            ("14.040.057-2", "JESUS ENRIQUE ABURTO MILANCA", "AYUDANTE DE ASERRADERO", "ASERRADERO", "2023-01-01", "ACTIVO"),
+            ("13.519.325-9", "CARLOS ALBERTO PAILLALEF GANGA", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
+            ("11.138.634-K", "OSCAR ORLANDO GONZALES CARRILLO", "MOTOSIERRISTA", "FAENA", "2023-01-01", "ACTIVO"),
             ("15.282.021-6", "ALBERTO LOAIZA MANSILLA", "JEFE DE PATIO", "ASERRADERO", "2023-05-10", "ACTIVO"),
             ("9.914.127-1", "JOSE MIGUEL OPORTO GODOY", "OPERADOR ASERRADERO", "ASERRADERO", "2022-03-15", "ACTIVO"),
             ("23.076.765-3", "GIVENS ABURTO CAMINO", "AYUDANTE", "ASERRADERO", "2025-02-01", "ACTIVO"),
             ("13.736.331-3", "MAURICIO LOPEZ GUTIÉRREZ", "ADMINISTRATIVO", "OFICINA", "2025-06-06", "ACTIVO")
         ]
-        c.executemany("INSERT INTO personal VALUES (?,?,?,?,?,?)", staff_real)
+        # Insertamos usando IGNORE para evitar duplicados si se reinicia
+        c.executemany("INSERT OR IGNORE INTO personal VALUES (?,?,?,?,?,?)", staff_real)
 
     c.execute("SELECT count(*) FROM matriz_iper")
     if c.fetchone()[0] == 0:
         iper_data = [
-            ("OPERADOR HARVESTER", "Cosecha", "Pendiente", "Volcamiento", "Muerte", "Cabina ROPS", "CRITICO"),
-            ("OPERADOR ASERRADERO", "Corte", "Sierra Móvil", "Corte/Amputación", "Lesión Grave", "Guardas Fijas", "ALTO")
+            ("OPERADOR DE MAQUINARIA FORESTAL", "Cosecha Mecanizada", "Pendiente Abrupta", "Volcamiento", "Muerte/Invalidez", "Cabina Certificada ROPS/FOPS, Cinturón", "CRITICO"),
+            ("OPERADOR ASERRADERO", "Corte Principal", "Sierra en movimiento", "Corte/Amputación", "Lesión Grave", "Guardas Fijas y Móviles", "ALTO"),
+            ("MECANICO LIDER", "Mantención", "Fluidos a presión", "Proyección", "Quemadura/Inyección", "Despresurización previa", "MEDIO"),
+            ("MOTOSIERRISTA", "Trozado Manual", "Cadena en movimiento", "Corte", "Herida profunda", "Pantalón Anticorte, Casco Forestal", "CRITICO")
         ]
         c.executemany("INSERT INTO matriz_iper (cargo_asociado, proceso, peligro, riesgo, consecuencia, medida_control, criticidad) VALUES (?,?,?,?,?,?,?)", iper_data)
 
