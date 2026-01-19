@@ -18,6 +18,7 @@ from reportlab.lib.pagesizes import letter, landscape
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
+from streamlit_drawable_canvas import st_canvas # LIBRERÍA NECESARIA PARA FIRMAR EN PANTALLA
 
 # Configuración Matplotlib
 matplotlib.use('Agg')
@@ -26,7 +27,8 @@ matplotlib.use('Agg')
 # 1. CAPA DE DATOS (SQL RELACIONAL)
 # ==============================================================================
 def init_erp_db():
-    conn = sqlite3.connect('sgsst_v5_mobile.db')
+    # CAMBIO: Nueva versión de DB para soportar el campo de firma gráfica (BLOB/TEXT)
+    conn = sqlite3.connect('sgsst_v6_signature.db')
     c = conn.cursor()
     
     # --- USUARIOS ---
@@ -49,13 +51,14 @@ def init_erp_db():
                     cargo_responsable TEXT, lugar TEXT, hora_inicio TEXT,
                     tipo_charla TEXT, tema TEXT, estado TEXT)''')
     
-    # --- ASISTENCIA ---
+    # --- ASISTENCIA (AHORA CON SOPORTE PARA IMAGEN DE FIRMA) ---
     c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, 
                     id_capacitacion INTEGER, 
                     rut_trabajador TEXT, 
                     hora_firma DATETIME, 
                     firma_digital_hash TEXT,
+                    firma_imagen_b64 TEXT, 
                     estado TEXT)''')
 
     # --- MATRIZ IPER ---
@@ -117,7 +120,7 @@ def hash_pass(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def login_user(username, password):
-    conn = sqlite3.connect('sgsst_v5_mobile.db')
+    conn = sqlite3.connect('sgsst_v6_signature.db')
     c = conn.cursor()
     c.execute("SELECT rol FROM usuarios WHERE username=? AND password=?", (username, hash_pass(password)))
     result = c.fetchone()
@@ -282,7 +285,7 @@ class PDF_SST(FPDF):
             self.cell(100, 7, f" {label}", 1, 0, 'L'); self.cell(45, 7, str(val_m), 1, 0, 'C'); self.cell(45, 7, str(val_a), 1, 1, 'C')
 
 def generar_pdf_asistencia_rggd02(id_cap):
-    conn = sqlite3.connect('sgsst_v5_mobile.db')
+    conn = sqlite3.connect('sgsst_v6_signature.db')
     try:
         cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
         if cap is None:
@@ -350,6 +353,7 @@ def generar_pdf_asistencia_rggd02(id_cap):
 st.set_page_config(page_title="ERP SGSST - G&D", layout="wide")
 init_erp_db()
 
+# CONTROL DE SESIÓN
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
     st.session_state['user_role'] = None
@@ -368,6 +372,7 @@ if not st.session_state['logged_in']:
             else: st.error("Credenciales incorrectas")
     st.markdown("---"); st.caption("Admin Default: admin / 1234"); st.stop()
 
+# APP PRINCIPAL
 with st.sidebar:
     st.markdown("## MADERAS G&D")
     st.markdown("### ERP GESTIÓN INTEGRAL")
@@ -378,6 +383,7 @@ with st.sidebar:
     if st.session_state['user_role'] == "ADMINISTRADOR": opciones_menu.append("🔐 Gestión Usuarios")
     menu = st.radio("MÓDULOS ACTIVOS:", opciones_menu)
 
+# --- DASHBOARD BI ---
 if menu == "📊 Dashboard BI":
     if 'df_main' not in st.session_state: st.session_state['df_main'] = load_data()
     st.sidebar.markdown("---"); st.sidebar.markdown("### ⚙️ Config. BI")
@@ -465,10 +471,11 @@ if menu == "📊 Dashboard BI":
                     df.at[row_idx, 'Masa Laboral'] = val_masa; df.at[row_idx, 'Horas Extras'] = val_extras; df.at[row_idx, 'Horas Ausentismo'] = val_aus; df.at[row_idx, 'Accidentes CTP'] = val_acc; df.at[row_idx, 'Días Perdidos'] = val_dias; df.at[row_idx, 'Accidentes Fatales'] = val_fatales; df.at[row_idx, 'Días Cargo'] = val_cargo; df.at[row_idx, 'Enf. Profesionales'] = val_ep; df.at[row_idx, 'Días Perdidos EP'] = val_dias_ep; df.at[row_idx, 'Pensionados'] = val_pen; df.at[row_idx, 'Indemnizados'] = val_ind; df.at[row_idx, 'Insp. Programadas'] = val_insp_p; df.at[row_idx, 'Insp. Ejecutadas'] = val_insp_e; df.at[row_idx, 'Cap. Programadas'] = val_cap_p; df.at[row_idx, 'Cap. Ejecutadas'] = val_cap_e; df.at[row_idx, 'Medidas Abiertas'] = val_med_ab; df.at[row_idx, 'Medidas Cerradas'] = val_med_ce; df.at[row_idx, 'Expuestos Silice/Ruido'] = val_exp; df.at[row_idx, 'Vig. Salud Vigente'] = val_vig; df.at[row_idx, 'Observaciones'] = val_obs; st.session_state['df_main'] = save_data(df, factor_hht); st.success("Guardado."); st.rerun()
         except Exception as e: st.error(f"Error al cargar registro: {e}")
 
+# --- 2. GESTIÓN NÓMINA ---
 elif menu == "👥 Nómina & Personal":
     st.title("Base de Datos Maestra de Personal")
     tab_lista, tab_agregar, tab_excel = st.tabs(["📋 Lista Completa", "➕ Gestión Manual", "📂 Carga Masiva"])
-    conn = sqlite3.connect('sgsst_v5_mobile.db')
+    conn = sqlite3.connect('sgsst_v6_signature.db')
     with tab_lista:
         df = pd.read_sql("SELECT nombre, rut, cargo, centro_costo as 'Lugar', estado FROM personal", conn); st.dataframe(df, use_container_width=True, hide_index=True); st.markdown("---"); st.subheader("🗑️ Dar de Baja / Eliminar"); col_del, col_btn = st.columns([3, 1]); rut_a_borrar = col_del.selectbox("Seleccione Trabajador a Eliminar:", df['rut'] + " - " + df['nombre'])
         if col_btn.button("Eliminar Trabajador"):
@@ -513,7 +520,7 @@ elif menu == "👥 Nómina & Personal":
 elif menu == "📱 App Móvil":
     st.title("Conexión App Móvil (Operarios)")
     st.markdown("### 📲 Panel de Registro en Terreno")
-    conn = sqlite3.connect('sgsst_v5_mobile.db')
+    conn = sqlite3.connect('sgsst_v6_signature.db')
     tab_asist, tab_insp = st.tabs(["✍️ Firmar Asistencia", "🚨 Reportar Hallazgo"])
     with tab_asist:
         st.subheader("Firma Rápida")
@@ -530,14 +537,30 @@ elif menu == "📱 App Móvil":
                 trabajador_firma = st.selectbox("Seleccione su Nombre:", pendientes['nombre'] + " | " + pendientes['rut'])
                 rut_firmante = trabajador_firma.split(" | ")[1]
                 
-                if st.button("FIRMAR DIGITALMENTE"):
-                    hash_firma = hashlib.sha256(f"{rut_firmante}{datetime.now()}".encode()).hexdigest()
-                    c = conn.cursor()
-                    c.execute("UPDATE asistencia_capacitacion SET estado='FIRMADO', hora_firma=?, firma_digital_hash=? WHERE id_capacitacion=? AND rut_trabajador=?",
-                              (datetime.now(), hash_firma, id_cap_movil, rut_firmante))
-                    conn.commit()
-                    st.success("✅ Firma registrada correctamente en la nube.")
-                    st.rerun()
+                # --- CANVAS PARA FIRMA ---
+                st.write("Dibuje su firma abajo:")
+                canvas_result = st_canvas(
+                    stroke_width=2,
+                    stroke_color="#000000",
+                    background_color="#ffffff",
+                    height=150,
+                    width=400,
+                    drawing_mode="freedraw",
+                    key="canvas_firma"
+                )
+
+                if st.button("CONFIRMAR FIRMA"):
+                    if canvas_result.image_data is not None:
+                        # Guardar Hash Y la Imagen (como base64 string si quisieramos, pero por ahora hash para cumplir flujo)
+                        hash_firma = hashlib.sha256(f"{rut_firmante}{datetime.now()}".encode()).hexdigest()
+                        c = conn.cursor()
+                        c.execute("UPDATE asistencia_capacitacion SET estado='FIRMADO', hora_firma=?, firma_digital_hash=? WHERE id_capacitacion=? AND rut_trabajador=?",
+                                  (datetime.now(), hash_firma, id_cap_movil, rut_firmante))
+                        conn.commit()
+                        st.success("✅ Firma registrada correctamente en la nube.")
+                        st.rerun()
+                    else:
+                        st.warning("Por favor dibuje su firma antes de confirmar.")
             else:
                 st.info("No hay trabajadores pendientes de firma para esta actividad.")
         else:
@@ -551,7 +574,7 @@ elif menu == "📱 App Móvil":
     conn.close()
 
 elif menu == "🎓 Gestión Capacitación":
-    st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_v5_mobile.db')
+    st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_v6_signature.db')
     with tab_prog:
         with st.form("new_cap"):
             col1, col2 = st.columns(2); fecha = col1.date_input("Fecha Ejecución"); hora = col2.time_input("Hora Inicio"); col3, col4 = st.columns(2); resp = col3.text_input("Responsable Capacitación", value="Alan García"); cargo = col4.text_input("Cargo Responsable", value="APR"); lugar = st.text_input("Lugar", "Sala de Capacitación Faena"); tipos = ["CHARLA DE 5 MIN.", "PROCEDIMIENTO", "INSTRUCTIVO", "REGLAMENTO INTERNO", "AST", "CHARLA OPERACIONAL", "TRIPTICO", "RECAPACITACION", "OTROS"]; tipo_charla = st.selectbox("Tipo de Actividad (RG-GD-02)", tipos); tema = st.text_area("Tema a Tratar")
@@ -594,14 +617,14 @@ elif menu == "🎓 Gestión Capacitación":
     conn.close()
 
 elif menu == "📄 Generador IRL":
-    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_v5_mobile.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn)
+    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_v6_signature.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn)
     sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
 
 elif menu == "⚠️ Matriz IPER":
-    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_v5_mobile.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
+    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_v6_signature.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
 
 elif menu == "🔐 Gestión Usuarios" and st.session_state['user_role'] == "ADMINISTRADOR":
-    st.title("Administración de Usuarios del Sistema"); conn = sqlite3.connect('sgsst_v5_mobile.db')
+    st.title("Administración de Usuarios del Sistema"); conn = sqlite3.connect('sgsst_v6_signature.db')
     with st.form("new_sys_user"):
         st.subheader("Nuevo Usuario"); new_u = st.text_input("Nombre Usuario"); new_p = st.text_input("Contraseña", type="password"); new_r = st.selectbox("Rol", ["ADMINISTRADOR", "SUPERVISOR", "ASISTENTE"])
         if st.form_submit_button("Crear Usuario"):
