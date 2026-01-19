@@ -14,28 +14,28 @@ import plotly.graph_objects as go
 from fpdf import FPDF
 from io import BytesIO
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter, landscape
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 # Configuración Matplotlib
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL) - BASE DE DATOS + SEGURIDAD
+# 1. CAPA DE DATOS (SQL RELACIONAL) - VERSIÓN V4 (Soporte Formato RG-GD-02)
 # ==============================================================================
 def init_erp_db():
-    conn = sqlite3.connect('sgsst_full_v3.db')
+    conn = sqlite3.connect('sgsst_v4_pdf.db') # Nueva DB para soportar nuevos campos
     c = conn.cursor()
     
-    # --- TABLA DE USUARIOS Y SEGURIDAD (NUEVO) ---
+    # --- TABLA USUARIOS ---
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (
                     username TEXT PRIMARY KEY, 
                     password TEXT, 
                     rol TEXT)''')
     
-    # Crear usuario Admin por defecto si no existe
-    # Usuario: admin | Clave: 1234 (Hasheada)
+    # Admin por defecto
     c.execute("SELECT count(*) FROM usuarios")
     if c.fetchone()[0] == 0:
         pass_hash = hashlib.sha256("1234".encode()).hexdigest()
@@ -43,14 +43,22 @@ def init_erp_db():
                   ("admin", pass_hash, "ADMINISTRADOR"))
         conn.commit()
 
-    # --- TABLAS ESTRUCTURALES (EXISTENTES) ---
+    # --- TABLAS ESTRUCTURALES ---
     c.execute('''CREATE TABLE IF NOT EXISTS personal (
                     rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, 
                     centro_costo TEXT, fecha_contrato DATE, estado TEXT)''')
     
+    # MODIFICADO: Tabla Capacitaciones con campos del PDF RG-GD-02
     c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, tema TEXT, expositor TEXT, 
-                    fecha DATE, duracion TEXT, estado TEXT)''')
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    fecha DATE,
+                    responsable TEXT,
+                    cargo_responsable TEXT,
+                    lugar TEXT,
+                    hora_inicio TEXT,
+                    tipo_charla TEXT,
+                    tema TEXT,
+                    estado TEXT)''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, id_capacitacion INTEGER, 
@@ -64,7 +72,7 @@ def init_erp_db():
                     id INTEGER PRIMARY KEY AUTOINCREMENT, rut_responsable TEXT, fecha DATETIME, 
                     tipo_inspeccion TEXT, hallazgos TEXT, estado TEXT)''')
 
-    # --- CARGA MASIVA AUTOMÁTICA ---
+    # --- CARGA MASIVA AUTOMÁTICA (TU NÓMINA REAL) ---
     c.execute("SELECT count(*) FROM personal")
     if c.fetchone()[0] < 5: 
         staff_completo = [
@@ -80,11 +88,11 @@ def init_erp_db():
             ("14.040.057-2", "JESUS ENRIQUE ABURTO MILANCA", "AYUDANTE DE ASERRADERO", "ASERRADERO", "2023-01-01", "ACTIVO"),
             ("13.519.325-9", "CARLOS ALBERTO PAILLALEF GANGA", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
             ("11.138.634-K", "OSCAR ORLANDO GONZALES CARRILLO", "MOTOSIERRISTA", "FAENA", "2023-01-01", "ACTIVO"),
+            ("12.345.678-1", "HECTOR NIBALDO GUZMAN", "OPERADOR FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
             ("15.282.021-6", "ALBERTO LOAIZA MANSILLA", "JEFE DE PATIO", "ASERRADERO", "2023-05-10", "ACTIVO"),
             ("9.914.127-1", "JOSE MIGUEL OPORTO GODOY", "OPERADOR ASERRADERO", "ASERRADERO", "2022-03-15", "ACTIVO"),
             ("23.076.765-3", "GIVENS ABURTO CAMINO", "AYUDANTE", "ASERRADERO", "2025-02-01", "ACTIVO"),
-            ("13.736.331-3", "MAURICIO LOPEZ GUTIÉRREZ", "ADMINISTRATIVO", "OFICINA", "2025-06-06", "ACTIVO"),
-            ("12.345.678-1", "HECTOR NIBALDO GUZMAN", "OPERADOR FORESTAL", "FAENA", "2023-01-01", "ACTIVO")
+            ("13.736.331-3", "MAURICIO LOPEZ GUTIÉRREZ", "ADMINISTRATIVO", "OFICINA", "2025-06-06", "ACTIVO")
         ]
         c.executemany("INSERT OR IGNORE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", staff_completo)
 
@@ -103,7 +111,7 @@ def init_erp_db():
     conn.close()
 
 # ==============================================================================
-# 2. FUNCIONES DE SOPORTE (BI, PDF, AUTH)
+# 2. FUNCIONES DE SOPORTE (BI, PDF RG-GD-02, AUTH)
 # ==============================================================================
 CSV_FILE = "base_datos_galvez_v26.csv"
 LOGO_FILE = "logo_empresa_persistente.png"
@@ -116,13 +124,14 @@ def hash_pass(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def login_user(username, password):
-    conn = sqlite3.connect('sgsst_full_v3.db')
+    conn = sqlite3.connect('sgsst_v4_pdf.db')
     c = conn.cursor()
     c.execute("SELECT rol FROM usuarios WHERE username=? AND password=?", (username, hash_pass(password)))
     result = c.fetchone()
     conn.close()
     return result[0] if result else None
 
+# --- FUNCIONES DASHBOARD ---
 def get_structure_for_year(year):
     data = []
     for m in MESES_ORDEN:
@@ -281,28 +290,136 @@ class PDF_SST(FPDF):
             self.ln()
             self.cell(100, 7, f" {label}", 1, 0, 'L'); self.cell(45, 7, str(val_m), 1, 0, 'C'); self.cell(45, 7, str(val_a), 1, 1, 'C')
 
-def generar_pdf_asistencia(id_cap):
-    conn = sqlite3.connect('sgsst_full_v3.db')
+# --- NUEVO MOTOR PDF RG-GD-02 ---
+def generar_pdf_asistencia_rggd02(id_cap):
+    conn = sqlite3.connect('sgsst_v4_pdf.db')
     cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
-    asistentes = conn.execute("SELECT p.nombre, p.rut, p.cargo, a.hora_firma, a.firma_digital_hash FROM asistencia_capacitacion a JOIN personal p ON a.rut_trabajador = p.rut WHERE a.id_capacitacion = ?", (id_cap,)).fetchall()
+    # cap = (id, fecha, responsable, cargo, lugar, hora, tipo, tema, estado)
+    
+    asistentes = conn.execute("""
+        SELECT p.nombre, p.rut, p.cargo, a.firma_digital_hash 
+        FROM asistencia_capacitacion a
+        JOIN personal p ON a.rut_trabajador = p.rut
+        WHERE a.id_capacitacion = ?
+    """, (id_cap,)).fetchall()
     conn.close()
-    buffer = io.BytesIO(); doc = SimpleDocTemplate(buffer, pagesize=landscape(letter)); elements = []; styles = getSampleStyleSheet()
-    elements.append(Paragraph("<b>REGISTRO DE CAPACITACIÓN Y ENTRENAMIENTO</b>", styles['Title']))
-    elements.append(Paragraph("Decreto Supremo N°40, Art. 21 - Gestión DS 44", styles['Normal'])); elements.append(Spacer(1, 15))
-    data_header = [["TEMA:", cap[1], "FECHA:", cap[3]], ["EXPOSITOR:", cap[2], "DURACIÓN:", cap[4]]]
-    t_head = Table(data_header, colWidths=[80, 400, 80, 100])
-    t_head.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('BACKGROUND', (0,0), (0,-1), colors.lightgrey)]))
-    elements.append(t_head); elements.append(Spacer(1, 20))
-    headers = ['NOMBRE TRABAJADOR', 'RUT', 'CARGO', 'HORA', 'FIRMA DIGITAL (HASH)']; table_data = [headers]
-    for asis in asistentes:
-        hash_visual = f"VALIDADO: {asis[4][:15]}..."
-        row = [asis[0], asis[1], asis[2], asis[3][:16], hash_visual]
-        table_data.append(row)
-    t_asist = Table(table_data, colWidths=[200, 80, 120, 100, 200])
-    t_asist.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.navy), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
-    elements.append(t_asist); elements.append(Spacer(1, 30))
-    elements.append(Paragraph("El instructor certifica que los trabajadores individualizados recibieron la instrucción descrita.", styles['Normal']))
-    doc.build(elements); buffer.seek(0)
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=20, bottomMargin=20)
+    elements = []
+    styles = getSampleStyleSheet()
+    style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10)
+    style_title = ParagraphStyle(name='Title', parent=styles['Normal'], alignment=TA_CENTER, fontSize=12, fontName='Helvetica-Bold')
+    style_small = ParagraphStyle(name='Small', parent=styles['Normal'], fontSize=8)
+
+    # 1. ENCABEZADO TIPO G&D
+    # Logo | Maderas G&D... | Registro de Capacitación
+    data_header = [
+        [Paragraph("<b>MADERAS G&D</b><br/>SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA<br/>SISTEMA DE GESTION<br/>SALUD Y SEGURIDAD OCUPACIONAL", style_center), 
+         Paragraph("<b>REGISTRO DE CAPACITACION</b>", style_title)]
+    ]
+    t_header = Table(data_header, colWidths=[300, 200])
+    t_header.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 1, colors.black),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    elements.append(t_header)
+    elements.append(Spacer(1, 10))
+
+    # 2. DATOS DEL RESPONSABLE (Mapeo desde DB)
+    # Responsable, Cargo, Fecha
+    data_resp = [
+        ["RESPONSABLE DE CAPACITACION:", cap[2]], # responsable
+        ["CARGO:", cap[3]], # cargo_responsable
+        ["FECHA:", cap[1]]  # fecha
+    ]
+    t_resp = Table(data_resp, colWidths=[200, 300])
+    t_resp.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+        ('BACKGROUND', (0,0), (0,-1), colors.lightgrey),
+        ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,-1), 8),
+    ]))
+    elements.append(t_resp)
+    elements.append(Spacer(1, 10))
+
+    # 3. TIPO DE CHARLA (Checkboxes simulados)
+    # Lista del PDF: Charla 5 min, Procedimiento, Instructivo, Reg. Interno, AST, Charla Op, Triptico, Recap, Otros
+    tipos_posibles = [
+        "CHARLA DE 5 MIN.", "PROCEDIMIENTO", "INSTRUCTIVO",
+        "REGLAMENTO INTERNO", "AST", "CHARLA OPERACIONAL",
+        "TRIPTICO", "RECAPACITACION", "OTROS"
+    ]
+    
+    tipo_seleccionado = cap[6] # tipo_charla de la DB
+    
+    # Crear grid 3x3
+    grid_data = []
+    row = []
+    for i, tipo in enumerate(tipos_posibles):
+        mark = "[ X ]" if tipo == tipo_seleccionado else "[   ]"
+        row.append(f"{mark} {tipo}")
+        if (i + 1) % 3 == 0:
+            grid_data.append(row)
+            row = []
+    if row: grid_data.append(row) # Añadir remanentes
+
+    t_types = Table(grid_data, colWidths=[160, 160, 160])
+    t_types.setStyle(TableStyle([
+        ('FONTSIZE', (0,0), (-1,-1), 8),
+        ('BOX', (0,0), (-1,-1), 1, colors.black),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.grey),
+    ]))
+    elements.append(Paragraph("<b>TIPO DE CHARLA:</b>", style_small))
+    elements.append(t_types)
+    elements.append(Spacer(1, 10))
+
+    # 4. TEMA
+    elements.append(Paragraph(f"<b>TEMA:</b> {cap[7]}", style_small)) # tema
+    elements.append(Spacer(1, 10))
+
+    # 5. TABLA DE ASISTENCIA
+    header_asis = ["N°", "NOMBRE", "R.U.T.", "FIRMA (Hash Digital)"]
+    data_asis = [header_asis]
+    for idx, (nom, rut, car, firma) in enumerate(asistentes, 1):
+        data_asis.append([str(idx), nom, rut, firma[:10] + "...(VALIDADO)"])
+    
+    # Rellenar filas vacías para parecer el PDF (hasta 20)
+    while len(data_asis) < 21:
+        idx = len(data_asis)
+        data_asis.append([str(idx), "", "", ""])
+
+    t_asis = Table(data_asis, colWidths=[30, 200, 80, 180])
+    t_asis.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 1, colors.black),
+        ('FONTSIZE', (0,0), (-1,-1), 7),
+        ('ALIGN', (0,0), (0,-1), 'CENTER'), # Center numbers
+        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey), # Header bg
+    ]))
+    elements.append(t_asis)
+    elements.append(Spacer(1, 10))
+
+    # 6. PIE DE PAGINA (Lugar, Hora, Firma Relator)
+    data_footer = [
+        ["LUGAR:", cap[4], "HORA DE INICIO:", cap[5]], # lugar, hora
+        ["", "", "", ""], # Espacio
+        ["FIRMA Y TIMBRE RELATOR:", "", "", ""]
+    ]
+    t_foot = Table(data_footer, colWidths=[50, 200, 100, 100])
+    t_foot.setStyle(TableStyle([
+        ('FONTSIZE', (0,0), (-1,-1), 8),
+        ('LINEBELOW', (1,0), (1,0), 1, colors.black), # Linea lugar
+        ('LINEBELOW', (3,0), (3,0), 1, colors.black), # Linea hora
+    ]))
+    elements.append(t_foot)
+    
+    # Código del doc
+    elements.append(Spacer(1, 10))
+    elements.append(Paragraph("RSSO-GD-02 | Version 1.0", style_center))
+
+    doc.build(elements)
+    buffer.seek(0)
     return buffer
 
 # ==============================================================================
@@ -355,7 +472,6 @@ with st.sidebar:
     
     opciones_menu = ["📊 Dashboard BI", "👥 Nómina & Personal", "📱 App Móvil", "🎓 Gestión Capacitación", "📄 Generador IRL", "⚠️ Matriz IPER"]
     
-    # Agregar opción de gestión de usuarios solo si es Admin
     if st.session_state['user_role'] == "ADMINISTRADOR":
         opciones_menu.append("🔐 Gestión Usuarios")
         
@@ -534,7 +650,7 @@ elif menu == "👥 Nómina & Personal":
     # Se agrega pestaña de gestión manual para agregar/eliminar
     tab_lista, tab_agregar, tab_excel = st.tabs(["📋 Lista Completa", "➕ Gestión Manual", "📂 Carga Masiva"])
     
-    conn = sqlite3.connect('sgsst_full_v3.db')
+    conn = sqlite3.connect('sgsst_v4_pdf.db')
     
     with tab_lista:
         df = pd.read_sql("SELECT nombre, rut, cargo, centro_costo as 'Lugar', estado FROM personal", conn)
@@ -617,7 +733,7 @@ elif menu == "📱 App Móvil":
     st.markdown("### 📲 Panel de Registro en Terreno")
     st.info("Esta sección simula la vista móvil para los trabajadores en sus celulares.")
     
-    conn = sqlite3.connect('sgsst_full_v3.db')
+    conn = sqlite3.connect('sgsst_v4_pdf.db')
     
     tab_asist, tab_insp = st.tabs(["✍️ Firmar Asistencia", "🚨 Reportar Hallazgo"])
     
@@ -661,53 +777,99 @@ elif menu == "📱 App Móvil":
                 st.success("Reporte enviado al APR.")
     conn.close()
 
-# --- 4. MÓDULO DE CAPACITACIÓN ---
+# --- 4. MÓDULO DE CAPACITACIÓN (ACTUALIZADO AL PDF) ---
 elif menu == "🎓 Gestión Capacitación":
-    st.title("Plan de Capacitación y Entrenamiento"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Programar / Crear", "✍️ Firma Digital", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_full_v3.db')
+    st.title("Plan de Capacitación y Entrenamiento")
+    st.markdown("**Formato Oficial: RG-GD-02**")
+    
+    tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Firma Digital", "🗂️ Historial y PDF"])
+    conn = sqlite3.connect('sgsst_v4_pdf.db')
+    
     with tab_prog:
         with st.form("new_cap"):
-            col1, col2 = st.columns(2); tema = col1.text_input("Tema de Capacitación", placeholder="Ej: Uso de Extintores"); expositor = col2.text_input("Relator / Expositor", value="Alan García (APR)")
-            fecha = col1.date_input("Fecha Ejecución"); duracion = col2.text_input("Duración", "1 Hora")
-            if st.form_submit_button("Guardar Actividad"):
-                c = conn.cursor(); c.execute("INSERT INTO capacitaciones (tema, expositor, fecha, duracion, estado) VALUES (?,?,?,?,?)", (tema, expositor, fecha, duracion, "PROGRAMADA")); conn.commit(); st.success("Capacitación creada correctamente."); st.rerun()
+            col1, col2 = st.columns(2)
+            fecha = col1.date_input("Fecha Ejecución")
+            hora = col2.time_input("Hora Inicio")
+            
+            col3, col4 = st.columns(2)
+            resp = col3.text_input("Responsable Capacitación", value="Alan García")
+            cargo = col4.text_input("Cargo Responsable", value="APR")
+            
+            lugar = st.text_input("Lugar", "Sala de Capacitación Faena")
+            
+            tipos = ["CHARLA DE 5 MIN.", "PROCEDIMIENTO", "INSTRUCTIVO", "REGLAMENTO INTERNO", 
+                     "AST", "CHARLA OPERACIONAL", "TRIPTICO", "RECAPACITACION", "OTROS"]
+            tipo_charla = st.selectbox("Tipo de Actividad (RG-GD-02)", tipos)
+            
+            tema = st.text_area("Tema a Tratar")
+            
+            if st.form_submit_button("Programar Capacitación"):
+                c = conn.cursor()
+                c.execute("""INSERT INTO capacitaciones 
+                             (fecha, responsable, cargo_responsable, lugar, hora_inicio, tipo_charla, tema, estado) 
+                             VALUES (?,?,?,?,?,?,?,?)""",
+                          (fecha, resp, cargo, lugar, str(hora), tipo_charla, tema, "PROGRAMADA"))
+                conn.commit()
+                st.success("Capacitación creada bajo formato oficial RG-GD-02.")
+                st.rerun()
+
     with tab_firma:
-        caps_activas = pd.read_sql("SELECT id, tema FROM capacitaciones WHERE estado='PROGRAMADA'", conn)
+        caps_activas = pd.read_sql("SELECT id, tema, tipo_charla FROM capacitaciones WHERE estado='PROGRAMADA'", conn)
         if not caps_activas.empty:
-            sel_cap = st.selectbox("Seleccione Capacitación:", caps_activas['tema']); id_cap_sel = caps_activas[caps_activas['tema'] == sel_cap]['id'].values[0]
-            trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn); asistentes = st.multiselect("Seleccione Asistentes:", trabajadores['nombre'])
+            sel_cap = st.selectbox("Seleccione Actividad:", caps_activas['tema'] + " (" + caps_activas['tipo_charla'] + ")")
+            # Extraer ID seguro
+            id_cap_sel = caps_activas[caps_activas['tema'] == sel_cap.split(" (")[0]]['id'].values[0]
+            
+            trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
+            asistentes = st.multiselect("Seleccione Asistentes:", trabajadores['nombre'])
+            
             if asistentes:
-                st.write("### Panel de Firma Digital"); st.info("Se generará un Hash Criptográfico único por trabajador.")
+                st.info("Generando firma hash SHA-256 por cada asistente...")
                 if st.button("✍️ FIRMAR ASISTENCIA DIGITALMENTE"):
                     c = conn.cursor()
                     for nombre in asistentes:
-                        rut_t = trabajadores[trabajadores['nombre'] == nombre]['rut'].values[0]; raw_string = f"{rut_t}{datetime.now()}{id_cap_sel}"; hash_firma = hashlib.sha256(raw_string.encode()).hexdigest()
-                        c.execute("INSERT INTO asistencia_capacitacion (id_capacitacion, rut_trabajador, hora_firma, firma_digital_hash) VALUES (?,?,?,?)", (id_cap_sel, rut_t, datetime.now(), hash_firma))
-                    c.execute("UPDATE capacitaciones SET estado='EJECUTADA' WHERE id=?", (id_cap_sel,)); conn.commit(); st.success(f"Se registraron {len(asistentes)} firmas."); st.rerun()
-        else: st.warning("No hay capacitaciones pendientes.")
+                        rut_t = trabajadores[trabajadores['nombre'] == nombre]['rut'].values[0]
+                        raw_string = f"{rut_t}{datetime.now()}{id_cap_sel}"
+                        hash_firma = hashlib.sha256(raw_string.encode()).hexdigest()
+                        c.execute("INSERT INTO asistencia_capacitacion (id_capacitacion, rut_trabajador, hora_firma, firma_digital_hash) VALUES (?,?,?,?)", 
+                                  (id_cap_sel, rut_t, datetime.now(), hash_firma))
+                    
+                    c.execute("UPDATE capacitaciones SET estado='EJECUTADA' WHERE id=?", (id_cap_sel,))
+                    conn.commit()
+                    st.success(f"Se registraron {len(asistentes)} firmas válidas.")
+                    st.rerun()
+        else:
+            st.warning("No hay capacitaciones pendientes.")
+
     with tab_hist:
         historial = pd.read_sql("SELECT * FROM capacitaciones WHERE estado='EJECUTADA'", conn)
         if not historial.empty:
-            st.dataframe(historial, use_container_width=True); sel_pdf = st.selectbox("Seleccione para descargar Acta:", historial['tema']); id_pdf = historial[historial['tema'] == sel_pdf]['id'].values[0]
-            if st.button("📥 Descargar Registro de Asistencia (PDF)"):
-                pdf_bytes = generar_pdf_asistencia(id_pdf); st.download_button(label="Guardar PDF", data=pdf_bytes, file_name=f"Registro_{sel_pdf}.pdf", mime="application/pdf")
-        else: st.info("Aún no se han ejecutado capacitaciones.")
+            st.dataframe(historial, use_container_width=True)
+            sel_pdf = st.selectbox("Descargar Acta PDF:", historial['tema'])
+            id_pdf = historial[historial['tema'] == sel_pdf]['id'].values[0]
+            
+            if st.button("📥 Generar PDF (Formato RG-GD-02)"):
+                pdf_bytes = generar_pdf_asistencia_rggd02(id_pdf)
+                st.download_button(label="Guardar Documento", data=pdf_bytes, file_name=f"RG-GD-02_{sel_pdf}.pdf", mime="application/pdf")
+        else:
+            st.info("No hay registros cerrados.")
     conn.close()
 
 # --- 5. GENERADOR IRL ---
 elif menu == "📄 Generador IRL":
-    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_full_v3.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn)
+    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_v4_pdf.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn)
     sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
 
 # --- 6. MATRIZ IPER ---
 elif menu == "⚠️ Matriz IPER":
-    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_full_v3.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
+    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_v4_pdf.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
 
 # --- 7. GESTIÓN DE USUARIOS (SOLO ADMIN) ---
 elif menu == "🔐 Gestión Usuarios" and st.session_state['user_role'] == "ADMINISTRADOR":
     st.title("Administración de Usuarios del Sistema")
     st.info("Crea cuentas para supervisores o asistentes.")
     
-    conn = sqlite3.connect('sgsst_full_v3.db')
+    conn = sqlite3.connect('sgsst_v4_pdf.db')
     
     # Crear usuario
     with st.form("new_sys_user"):
