@@ -22,13 +22,13 @@ from reportlab.lib.styles import getSampleStyleSheet
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL) - LISTA COMPLETA Y DEFINITIVA
+# 1. CAPA DE DATOS (SQL RELACIONAL)
 # ==============================================================================
 def init_erp_db():
-    # CAMBIO: Nombre nuevo para obligar a cargar la lista completa de 17+ trabajadores
     conn = sqlite3.connect('sgsst_full_v3.db')
     c = conn.cursor()
     
+    # --- TABLAS ESTRUCTURALES ---
     c.execute('''CREATE TABLE IF NOT EXISTS personal (
                     rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, 
                     centro_costo TEXT, fecha_contrato DATE, estado TEXT)''')
@@ -45,9 +45,14 @@ def init_erp_db():
                     id INTEGER PRIMARY KEY AUTOINCREMENT, cargo_asociado TEXT, proceso TEXT, 
                     peligro TEXT, riesgo TEXT, consecuencia TEXT, medida_control TEXT, criticidad TEXT)''')
 
-    # --- CARGA MASIVA AUTOMÁTICA (Todos los trabajadores de tus archivos) ---
+    # --- NUEVA TABLA: INSPECCIONES DE TERRENO (CONEXIÓN MÓVIL) ---
+    c.execute('''CREATE TABLE IF NOT EXISTS inspecciones (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, rut_responsable TEXT, fecha DATETIME, 
+                    tipo_inspeccion TEXT, hallazgos TEXT, estado TEXT)''')
+
+    # --- CARGA MASIVA AUTOMÁTICA (TU NÓMINA REAL) ---
     c.execute("SELECT count(*) FROM personal")
-    if c.fetchone()[0] < 5: # Si hay pocos o ninguno, cargamos todo
+    if c.fetchone()[0] < 5: 
         staff_completo = [
             ("16.781.002-0", "ALAN FABIAN GARCIA VIDAL", "APR", "OFICINA", "2025-10-21", "ACTIVO"),
             ("10.518.096-9", "OSCAR EDUARDO TRIVIÑO SALAZAR", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2024-01-01", "ACTIVO"),
@@ -84,7 +89,7 @@ def init_erp_db():
     conn.close()
 
 # ==============================================================================
-# 2. FUNCIONES DE SOPORTE DASHBOARD BI
+# 2. FUNCIONES DE SOPORTE DASHBOARD BI Y PDF
 # ==============================================================================
 CSV_FILE = "base_datos_galvez_v26.csv"
 LOGO_FILE = "logo_empresa_persistente.png"
@@ -286,7 +291,7 @@ with st.sidebar:
     st.info(f"Usuario: Alan García\nRol: Administrador APR")
     st.divider()
     menu = st.radio("MÓDULOS ACTIVOS:", 
-             ["📊 Dashboard BI", "👥 Nómina & Personal", "🎓 Gestión Capacitación", 
+             ["📊 Dashboard BI", "👥 Nómina & Personal", "📱 App Móvil", "🎓 Gestión Capacitación", 
               "📄 Generador IRL", "⚠️ Matriz IPER"])
 
 # --- 1. DASHBOARD BI (INTEGRADO) ---
@@ -539,7 +544,57 @@ elif menu == "👥 Nómina & Personal":
             except Exception as e: st.error(f"Error técnico: {e}")
     conn.close()
 
-# --- 3. MÓDULO DE CAPACITACIÓN ---
+# --- 3. MÓDULO CONEXIÓN APP MÓVIL ---
+elif menu == "📱 App Móvil":
+    st.title("Conexión App Móvil (Operarios)")
+    st.markdown("### 📲 Panel de Registro en Terreno")
+    st.info("Esta sección simula la vista móvil para los trabajadores en sus celulares.")
+    
+    conn = sqlite3.connect('sgsst_full_v3.db')
+    
+    tab_asist, tab_insp = st.tabs(["✍️ Firmar Asistencia", "🚨 Reportar Hallazgo"])
+    
+    with tab_asist:
+        st.subheader("Firma Rápida")
+        # Listar capacitaciones activas
+        caps = pd.read_sql("SELECT id, tema FROM capacitaciones WHERE estado='PROGRAMADA'", conn)
+        if not caps.empty:
+            sel_cap_movil = st.selectbox("Seleccione Actividad:", caps['tema'], key="movil_cap")
+            id_cap_movil = caps[caps['tema'] == sel_cap_movil]['id'].values[0]
+            
+            # Autocompletar trabajador (Simulación login)
+            rut_input = st.text_input("Ingrese su RUT para firmar:", placeholder="12.345.678-9")
+            
+            if st.button("CONFIRMAR ASISTENCIA"):
+                # Verificar si RUT existe
+                existe = pd.read_sql("SELECT count(*) FROM personal WHERE rut=?", conn, params=(rut_input,)).iloc[0,0]
+                if existe > 0:
+                    hash_firma = hashlib.sha256(f"{rut_input}{datetime.now()}".encode()).hexdigest()
+                    c = conn.cursor()
+                    c.execute("INSERT INTO asistencia_capacitacion (id_capacitacion, rut_trabajador, hora_firma, firma_digital_hash) VALUES (?,?,?,?)",
+                              (id_cap_movil, rut_input, datetime.now(), hash_firma))
+                    conn.commit()
+                    st.success("✅ Firma registrada correctamente en la nube.")
+                else:
+                    st.error("RUT no encontrado en la base de datos.")
+        else:
+            st.warning("No hay capacitaciones programadas en este momento.")
+
+    with tab_insp:
+        st.subheader("Inspección de Seguridad")
+        with st.form("form_hallazgo"):
+            resp = st.text_input("Responsable (RUT):")
+            tipo = st.selectbox("Tipo:", ["Condición Insegura", "Acto Inseguro", "Incidente"])
+            desc = st.text_area("Descripción del Hallazgo:")
+            if st.form_submit_button("ENVIAR REPORTE"):
+                c = conn.cursor()
+                c.execute("INSERT INTO inspecciones (rut_responsable, fecha, tipo_inspeccion, hallazgos, estado) VALUES (?,?,?,?,?)",
+                          (resp, datetime.now(), tipo, desc, "PENDIENTE"))
+                conn.commit()
+                st.success("Reporte enviado al APR.")
+    conn.close()
+
+# --- 4. MÓDULO DE CAPACITACIÓN ---
 elif menu == "🎓 Gestión Capacitación":
     st.title("Plan de Capacitación y Entrenamiento"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Programar / Crear", "✍️ Firma Digital", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_full_v3.db')
     with tab_prog:
@@ -571,11 +626,11 @@ elif menu == "🎓 Gestión Capacitación":
         else: st.info("Aún no se han ejecutado capacitaciones.")
     conn.close()
 
-# --- 4. GENERADOR IRL ---
+# --- 5. GENERADOR IRL ---
 elif menu == "📄 Generador IRL":
     st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_full_v3.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn)
     sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
 
-# --- 5. MATRIZ IPER ---
+# --- 6. MATRIZ IPER ---
 elif menu == "⚠️ Matriz IPER":
     st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_full_v3.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
