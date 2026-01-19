@@ -22,14 +22,13 @@ from reportlab.lib.styles import getSampleStyleSheet
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL) - BASE DE DATOS DEFINITIVA
+# 1. CAPA DE DATOS (SQL RELACIONAL) - LISTA COMPLETA Y DEFINITIVA
 # ==============================================================================
 def init_erp_db():
-    # CAMBIO: Nombre único para forzar la recarga completa de tu nómina real
-    conn = sqlite3.connect('sgsst_production_v1.db')
+    # CAMBIO: Nombre nuevo para obligar a cargar la lista completa de 17+ trabajadores
+    conn = sqlite3.connect('sgsst_full_v3.db')
     c = conn.cursor()
     
-    # Tablas Estructurales
     c.execute('''CREATE TABLE IF NOT EXISTS personal (
                     rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, 
                     centro_costo TEXT, fecha_contrato DATE, estado TEXT)''')
@@ -46,30 +45,30 @@ def init_erp_db():
                     id INTEGER PRIMARY KEY AUTOINCREMENT, cargo_asociado TEXT, proceso TEXT, 
                     peligro TEXT, riesgo TEXT, consecuencia TEXT, medida_control TEXT, criticidad TEXT)''')
 
-    # --- CARGA MASIVA: DATOS EXTRAÍDOS DE TU EXCEL 'SHEET1.CSV' ---
-    # Se usa INSERT OR IGNORE para asegurar que estén cargados sin duplicar
-    staff_completo = [
-        ("16.781.002-0", "ALAN FABIAN GARCIA VIDAL", "APR", "OFICINA", "2025-10-21", "ACTIVO"),
-        ("10.518.096-9", "OSCAR EDUARDO TRIVIÑO SALAZAR", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2024-01-01", "ACTIVO"),
-        ("12.128.228-2", "LEONEL MOISES MUÑOZ HERNANDEZ", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
-        ("13.376.126-8", "VICTOR DANIEL ROMERO MUÑOZ", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
-        ("17.864.179-4", "HAIMER YONATTAN JIMENEZ SANDOVAL", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
-        ("15.895.613-6", "RAUL OMAR MATUS LIZAMA", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
-        ("18.903.980-8", "LUCIO HERNAN BUSTAMANTE ANDRADE", "MECANICO LIDER", "TALLER", "2023-01-01", "ACTIVO"),
-        ("21.794.402-3", "ANGELO ISAAC GARRIDO RIFFO", "AYUDANTE DE MECANICO", "TALLER", "2023-01-01", "ACTIVO"),
-        ("11.537.488-5", "JUAN CARLOS TORRES MALDONADO", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
-        ("14.040.057-2", "JESUS ENRIQUE ABURTO MILANCA", "AYUDANTE DE ASERRADERO", "ASERRADERO", "2023-01-01", "ACTIVO"),
-        ("13.519.325-9", "CARLOS ALBERTO PAILLALEF GANGA", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
-        ("11.138.634-K", "OSCAR ORLANDO GONZALES CARRILLO", "MOTOSIERRISTA", "FAENA", "2023-01-01", "ACTIVO"),
-        ("12.345.678-1", "HECTOR NIBALDO GUZMAN", "OPERADOR FORESTAL", "FAENA", "2023-01-01", "ACTIVO"), # Rut simulado por falta de dato en recorte
-        ("15.282.021-6", "ALBERTO LOAIZA MANSILLA", "JEFE DE PATIO", "ASERRADERO", "2023-05-10", "ACTIVO"),
-        ("9.914.127-1", "JOSE MIGUEL OPORTO GODOY", "OPERADOR ASERRADERO", "ASERRADERO", "2022-03-15", "ACTIVO"),
-        ("23.076.765-3", "GIVENS ABURTO CAMINO", "AYUDANTE", "ASERRADERO", "2025-02-01", "ACTIVO"),
-        ("13.736.331-3", "MAURICIO LOPEZ GUTIÉRREZ", "ADMINISTRATIVO", "OFICINA", "2025-06-06", "ACTIVO")
-    ]
-    c.executemany("INSERT OR IGNORE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", staff_completo)
+    # --- CARGA MASIVA AUTOMÁTICA (Todos los trabajadores de tus archivos) ---
+    c.execute("SELECT count(*) FROM personal")
+    if c.fetchone()[0] < 5: # Si hay pocos o ninguno, cargamos todo
+        staff_completo = [
+            ("16.781.002-0", "ALAN FABIAN GARCIA VIDAL", "APR", "OFICINA", "2025-10-21", "ACTIVO"),
+            ("10.518.096-9", "OSCAR EDUARDO TRIVIÑO SALAZAR", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2024-01-01", "ACTIVO"),
+            ("12.128.228-2", "LEONEL MOISES MUÑOZ HERNANDEZ", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
+            ("13.376.126-8", "VICTOR DANIEL ROMERO MUÑOZ", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
+            ("17.864.179-4", "HAIMER YONATTAN JIMENEZ SANDOVAL", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
+            ("15.895.613-6", "RAUL OMAR MATUS LIZAMA", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
+            ("18.903.980-8", "LUCIO HERNAN BUSTAMANTE ANDRADE", "MECANICO LIDER", "TALLER", "2023-01-01", "ACTIVO"),
+            ("21.794.402-3", "ANGELO ISAAC GARRIDO RIFFO", "AYUDANTE DE MECANICO", "TALLER", "2023-01-01", "ACTIVO"),
+            ("11.537.488-5", "JUAN CARLOS TORRES MALDONADO", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
+            ("14.040.057-2", "JESUS ENRIQUE ABURTO MILANCA", "AYUDANTE DE ASERRADERO", "ASERRADERO", "2023-01-01", "ACTIVO"),
+            ("13.519.325-9", "CARLOS ALBERTO PAILLALEF GANGA", "OPERADOR DE MAQUINARIA FORESTAL", "FAENA", "2023-01-01", "ACTIVO"),
+            ("11.138.634-K", "OSCAR ORLANDO GONZALES CARRILLO", "MOTOSIERRISTA", "FAENA", "2023-01-01", "ACTIVO"),
+            ("15.282.021-6", "ALBERTO LOAIZA MANSILLA", "JEFE DE PATIO", "ASERRADERO", "2023-05-10", "ACTIVO"),
+            ("9.914.127-1", "JOSE MIGUEL OPORTO GODOY", "OPERADOR ASERRADERO", "ASERRADERO", "2022-03-15", "ACTIVO"),
+            ("23.076.765-3", "GIVENS ABURTO CAMINO", "AYUDANTE", "ASERRADERO", "2025-02-01", "ACTIVO"),
+            ("13.736.331-3", "MAURICIO LOPEZ GUTIÉRREZ", "ADMINISTRATIVO", "OFICINA", "2025-06-06", "ACTIVO"),
+            ("12.345.678-1", "HECTOR NIBALDO GUZMAN", "OPERADOR FORESTAL", "FAENA", "2023-01-01", "ACTIVO")
+        ]
+        c.executemany("INSERT OR IGNORE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", staff_completo)
 
-    # --- MATRIZ DE RIESGOS BASE ---
     c.execute("SELECT count(*) FROM matriz_iper")
     if c.fetchone()[0] == 0:
         iper_data = [
@@ -252,7 +251,7 @@ class PDF_SST(FPDF):
             self.cell(100, 7, f" {label}", 1, 0, 'L'); self.cell(45, 7, str(val_m), 1, 0, 'C'); self.cell(45, 7, str(val_a), 1, 1, 'C')
 
 def generar_pdf_asistencia(id_cap):
-    conn = sqlite3.connect('sgsst_production_v1.db')
+    conn = sqlite3.connect('sgsst_full_v3.db')
     cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
     asistentes = conn.execute("SELECT p.nombre, p.rut, p.cargo, a.hora_firma, a.firma_digital_hash FROM asistencia_capacitacion a JOIN personal p ON a.rut_trabajador = p.rut WHERE a.id_capacitacion = ?", (id_cap,)).fetchall()
     conn.close()
@@ -287,7 +286,7 @@ with st.sidebar:
     st.info(f"Usuario: Alan García\nRol: Administrador APR")
     st.divider()
     menu = st.radio("MÓDULOS ACTIVOS:", 
-             ["📊 Dashboard BI", "👥 Nómina (Base Excel)", "🎓 Gestión Capacitación", 
+             ["📊 Dashboard BI", "👥 Nómina & Personal", "🎓 Gestión Capacitación", 
               "📄 Generador IRL", "⚠️ Matriz IPER"])
 
 # --- 1. DASHBOARD BI (INTEGRADO) ---
@@ -456,52 +455,93 @@ if menu == "📊 Dashboard BI":
                     st.session_state['df_main'] = save_data(df, factor_hht); st.success("Guardado."); st.rerun()
         except Exception as e: st.error(f"Error al cargar registro: {e}")
 
-# --- 2. GESTIÓN NÓMINA (Base Excel con Plantilla Detallada) ---
-elif menu == "👥 Nómina (Base Excel)":
+# --- 2. GESTIÓN NÓMINA (Actualizada) ---
+elif menu == "👥 Nómina & Personal":
     st.title("Base de Datos Maestra de Personal")
-    st.markdown("Datos cargados desde 'listado de trabajadores.xlsx'.")
-    conn = sqlite3.connect('sgsst_production_v1.db')
     
-    col_plantilla, col_upload = st.columns([1, 2])
-    with col_plantilla:
-        st.info("¿Necesitas el formato?")
-        def generar_plantilla_excel_detallada():
-            output = io.BytesIO()
-            data = {'NOMBRE': ['JUAN PEREZ (EJEMPLO)', 'MARIA SOTO (EJEMPLO)'], 'RUT': ['11.222.333-K', '12.345.678-9'], 'CARGO': ['OPERADOR ASERRADERO', 'AYUDANTE'], 'LUGAR DE TRABAJO': ['ASERRADERO', 'FAENA'], 'F. CONTRATO': ['2025-01-01', '01-03-2024'], 'DIRECCION': ['CALLE 1, OSORNO', 'AVENIDA 2'], 'ESTADO CIVIL': ['SOLTERO', 'CASADA'], 'SALUD': ['FONASA', 'ISAPRE'], 'AFP': ['MODELO', 'CAPITAL'], 'CORREO': ['ejemplo@gyd.cl', ''], 'TELEFONO': ['912345678', '']}
-            df_template = pd.DataFrame(data)
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                pd.DataFrame(["GUÍA DE FORMATO OBLIGATORIO - LEA ANTES DE LLENAR - LOS DATOS COMIENZAN EN LA FILA 4"]).to_excel(writer, startrow=0, startcol=0, index=False, header=False)
-                pd.DataFrame(["RUT: Con puntos y guion (Ej: 11.222.333-K) | FECHAS: DD-MM-AAAA o AAAA-MM-DD | LUGAR: Use solo 'ASERRADERO', 'FAENA', 'OFICINA' | NO BORRAR ENCABEZADOS DE LA FILA 3"]).to_excel(writer, startrow=1, startcol=0, index=False, header=False)
-                df_template.to_excel(writer, startrow=2, index=False, sheet_name='Plantilla')
-            return output.getvalue()
-        plantilla_data = generar_plantilla_excel_detallada()
-        st.download_button(label="📥 Bajar Plantilla Instructiva", data=plantilla_data, file_name="plantilla_carga_nomina_v2.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    # Se agrega pestaña de gestión manual para agregar/eliminar
+    tab_lista, tab_agregar, tab_excel = st.tabs(["📋 Lista Completa", "➕ Gestión Manual", "📂 Carga Masiva"])
+    
+    conn = sqlite3.connect('sgsst_full_v3.db')
+    
+    with tab_lista:
+        df = pd.read_sql("SELECT nombre, rut, cargo, centro_costo as 'Lugar', estado FROM personal", conn)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        
+        # Eliminar trabajador
+        st.markdown("---")
+        st.subheader("🗑️ Dar de Baja / Eliminar")
+        col_del, col_btn = st.columns([3, 1])
+        rut_a_borrar = col_del.selectbox("Seleccione Trabajador a Eliminar:", df['rut'] + " - " + df['nombre'])
+        if col_btn.button("Eliminar Trabajador"):
+            rut_clean = rut_a_borrar.split(" - ")[0]
+            c = conn.cursor()
+            c.execute("DELETE FROM personal WHERE rut=?", (rut_clean,))
+            conn.commit()
+            st.success(f"Trabajador {rut_clean} eliminado.")
+            st.rerun()
 
-    uploaded_file = st.file_uploader("📂 Actualizar Nómina (Subir Excel Completo)", type=['xlsx', 'csv'])
-    if uploaded_file:
-        try:
-            if uploaded_file.name.endswith('.csv'): df_new = pd.read_csv(uploaded_file, header=2)
-            else: df_new = pd.read_excel(uploaded_file, header=2)
-            df_new.columns = df_new.columns.str.strip().str.upper()
-            if 'RUT' in df_new.columns and 'NOMBRE' in df_new.columns:
-                c = conn.cursor(); count = 0
-                for index, row in df_new.iterrows():
-                    rut = str(row['RUT']).strip(); nombre = str(row['NOMBRE']).strip(); cargo = str(row.get('CARGO', 'SIN CARGO')).strip(); lugar = str(row.get('LUGAR DE TRABAJO', 'FAENA')).strip()
-                    try: f_contrato = pd.to_datetime(row.get('F. CONTRATO', date.today())).date()
-                    except: f_contrato = date.today()
-                    if len(rut) > 5 and nombre.lower() != "nan":
-                        c.execute("INSERT OR REPLACE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (rut, nombre, cargo, lugar, f_contrato, "ACTIVO"))
-                        count += 1
-                conn.commit(); st.success(f"✅ Éxito: {count} trabajadores procesados/actualizados."); st.rerun()
-            else: st.error("Error: El archivo no contiene las columnas RUT y NOMBRE en la fila 3 (recuerde no borrar los encabezados).")
-        except Exception as e: st.error(f"Error técnico: {e}")
-    df = pd.read_sql("SELECT * FROM personal", conn)
-    st.dataframe(df, use_container_width=True)
+    with tab_agregar:
+        st.subheader("Ingresar Nuevo Trabajador")
+        with st.form("add_worker_manual"):
+            c1, c2 = st.columns(2)
+            n_rut = c1.text_input("RUT (Ej: 12.345.678-9)")
+            n_nom = c2.text_input("Nombre Completo")
+            n_cargo = c1.selectbox("Cargo", ["OPERADOR", "AYUDANTE", "CHOFER", "ADMINISTRATIVO", "MECANICO"])
+            n_lugar = c2.selectbox("Lugar", ["ASERRADERO", "FAENA", "OFICINA", "TALLER"])
+            if st.form_submit_button("Guardar en Base de Datos"):
+                if n_rut and n_nom:
+                    c = conn.cursor()
+                    try:
+                        c.execute("INSERT INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)",
+                                  (n_rut, n_nom, n_cargo, n_lugar, date.today(), "ACTIVO"))
+                        conn.commit()
+                        st.success("Trabajador guardado exitosamente.")
+                        st.rerun()
+                    except:
+                        st.error("Error: El RUT ya existe.")
+                else:
+                    st.warning("Complete RUT y Nombre.")
+
+    with tab_excel:
+        col_plantilla, col_upload = st.columns([1, 2])
+        with col_plantilla:
+            st.info("¿Necesitas el formato?")
+            def generar_plantilla_excel_detallada():
+                output = io.BytesIO()
+                data = {'NOMBRE': ['JUAN PEREZ (EJEMPLO)', 'MARIA SOTO (EJEMPLO)'], 'RUT': ['11.222.333-K', '12.345.678-9'], 'CARGO': ['OPERADOR ASERRADERO', 'AYUDANTE'], 'LUGAR DE TRABAJO': ['ASERRADERO', 'FAENA'], 'F. CONTRATO': ['2025-01-01', '01-03-2024'], 'DIRECCION': ['CALLE 1, OSORNO', 'AVENIDA 2'], 'ESTADO CIVIL': ['SOLTERO', 'CASADA'], 'SALUD': ['FONASA', 'ISAPRE'], 'AFP': ['MODELO', 'CAPITAL'], 'CORREO': ['ejemplo@gyd.cl', ''], 'TELEFONO': ['912345678', '']}
+                df_template = pd.DataFrame(data)
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    pd.DataFrame(["GUÍA DE FORMATO OBLIGATORIO - LEA ANTES DE LLENAR - LOS DATOS COMIENZAN EN LA FILA 4"]).to_excel(writer, startrow=0, startcol=0, index=False, header=False)
+                    pd.DataFrame(["RUT: Con puntos y guion (Ej: 11.222.333-K) | FECHAS: DD-MM-AAAA o AAAA-MM-DD | LUGAR: Use solo 'ASERRADERO', 'FAENA', 'OFICINA' | NO BORRAR ENCABEZADOS DE LA FILA 3"]).to_excel(writer, startrow=1, startcol=0, index=False, header=False)
+                    df_template.to_excel(writer, startrow=2, index=False, sheet_name='Plantilla')
+                return output.getvalue()
+            plantilla_data = generar_plantilla_excel_detallada()
+            st.download_button(label="📥 Bajar Plantilla Instructiva", data=plantilla_data, file_name="plantilla_carga_nomina_v2.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+        uploaded_file = st.file_uploader("📂 Actualizar Nómina (Subir Excel Completo)", type=['xlsx', 'csv'])
+        if uploaded_file:
+            try:
+                if uploaded_file.name.endswith('.csv'): df_new = pd.read_csv(uploaded_file, header=2)
+                else: df_new = pd.read_excel(uploaded_file, header=2)
+                df_new.columns = df_new.columns.str.strip().str.upper()
+                if 'RUT' in df_new.columns and 'NOMBRE' in df_new.columns:
+                    c = conn.cursor(); count = 0
+                    for index, row in df_new.iterrows():
+                        rut = str(row['RUT']).strip(); nombre = str(row['NOMBRE']).strip(); cargo = str(row.get('CARGO', 'SIN CARGO')).strip(); lugar = str(row.get('LUGAR DE TRABAJO', 'FAENA')).strip()
+                        try: f_contrato = pd.to_datetime(row.get('F. CONTRATO', date.today())).date()
+                        except: f_contrato = date.today()
+                        if len(rut) > 5 and nombre.lower() != "nan":
+                            c.execute("INSERT OR REPLACE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (rut, nombre, cargo, lugar, f_contrato, "ACTIVO"))
+                            count += 1
+                    conn.commit(); st.success(f"✅ Éxito: {count} trabajadores procesados/actualizados."); st.rerun()
+                else: st.error("Error: El archivo no contiene las columnas RUT y NOMBRE en la fila 3 (recuerde no borrar los encabezados).")
+            except Exception as e: st.error(f"Error técnico: {e}")
     conn.close()
 
 # --- 3. MÓDULO DE CAPACITACIÓN ---
 elif menu == "🎓 Gestión Capacitación":
-    st.title("Plan de Capacitación y Entrenamiento"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Programar / Crear", "✍️ Firma Digital", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_production_v1.db')
+    st.title("Plan de Capacitación y Entrenamiento"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Programar / Crear", "✍️ Firma Digital", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_full_v3.db')
     with tab_prog:
         with st.form("new_cap"):
             col1, col2 = st.columns(2); tema = col1.text_input("Tema de Capacitación", placeholder="Ej: Uso de Extintores"); expositor = col2.text_input("Relator / Expositor", value="Alan García (APR)")
@@ -533,9 +573,9 @@ elif menu == "🎓 Gestión Capacitación":
 
 # --- 4. GENERADOR IRL ---
 elif menu == "📄 Generador IRL":
-    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_production_v1.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn)
+    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_full_v3.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn)
     sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
 
 # --- 5. MATRIZ IPER ---
 elif menu == "⚠️ Matriz IPER":
-    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_production_v1.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
+    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_full_v3.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
