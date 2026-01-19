@@ -286,9 +286,8 @@ def generar_pdf_asistencia_rggd02(id_cap):
     try:
         cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
         if cap is None:
-            return None # Seguridad si el ID no existe
+            return None
             
-        # Filtramos SOLO los firmados para el PDF
         asistentes = conn.execute("""
             SELECT p.nombre, p.rut, p.cargo, a.firma_digital_hash 
             FROM asistencia_capacitacion a
@@ -351,7 +350,6 @@ def generar_pdf_asistencia_rggd02(id_cap):
 st.set_page_config(page_title="ERP SGSST - G&D", layout="wide")
 init_erp_db()
 
-# CONTROL DE SESIÓN
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
     st.session_state['user_role'] = None
@@ -370,7 +368,6 @@ if not st.session_state['logged_in']:
             else: st.error("Credenciales incorrectas")
     st.markdown("---"); st.caption("Admin Default: admin / 1234"); st.stop()
 
-# APP PRINCIPAL
 with st.sidebar:
     st.markdown("## MADERAS G&D")
     st.markdown("### ERP GESTIÓN INTEGRAL")
@@ -381,7 +378,6 @@ with st.sidebar:
     if st.session_state['user_role'] == "ADMINISTRADOR": opciones_menu.append("🔐 Gestión Usuarios")
     menu = st.radio("MÓDULOS ACTIVOS:", opciones_menu)
 
-# --- DASHBOARD BI ---
 if menu == "📊 Dashboard BI":
     if 'df_main' not in st.session_state: st.session_state['df_main'] = load_data()
     st.sidebar.markdown("---"); st.sidebar.markdown("### ⚙️ Config. BI")
@@ -469,7 +465,6 @@ if menu == "📊 Dashboard BI":
                     df.at[row_idx, 'Masa Laboral'] = val_masa; df.at[row_idx, 'Horas Extras'] = val_extras; df.at[row_idx, 'Horas Ausentismo'] = val_aus; df.at[row_idx, 'Accidentes CTP'] = val_acc; df.at[row_idx, 'Días Perdidos'] = val_dias; df.at[row_idx, 'Accidentes Fatales'] = val_fatales; df.at[row_idx, 'Días Cargo'] = val_cargo; df.at[row_idx, 'Enf. Profesionales'] = val_ep; df.at[row_idx, 'Días Perdidos EP'] = val_dias_ep; df.at[row_idx, 'Pensionados'] = val_pen; df.at[row_idx, 'Indemnizados'] = val_ind; df.at[row_idx, 'Insp. Programadas'] = val_insp_p; df.at[row_idx, 'Insp. Ejecutadas'] = val_insp_e; df.at[row_idx, 'Cap. Programadas'] = val_cap_p; df.at[row_idx, 'Cap. Ejecutadas'] = val_cap_e; df.at[row_idx, 'Medidas Abiertas'] = val_med_ab; df.at[row_idx, 'Medidas Cerradas'] = val_med_ce; df.at[row_idx, 'Expuestos Silice/Ruido'] = val_exp; df.at[row_idx, 'Vig. Salud Vigente'] = val_vig; df.at[row_idx, 'Observaciones'] = val_obs; st.session_state['df_main'] = save_data(df, factor_hht); st.success("Guardado."); st.rerun()
         except Exception as e: st.error(f"Error al cargar registro: {e}")
 
-# --- 2. GESTIÓN NÓMINA ---
 elif menu == "👥 Nómina & Personal":
     st.title("Base de Datos Maestra de Personal")
     tab_lista, tab_agregar, tab_excel = st.tabs(["📋 Lista Completa", "➕ Gestión Manual", "📂 Carga Masiva"])
@@ -515,7 +510,6 @@ elif menu == "👥 Nómina & Personal":
             except Exception as e: st.error(f"Error técnico: {e}")
     conn.close()
 
-# --- 3. MÓDULO CONEXIÓN APP MÓVIL ---
 elif menu == "📱 App Móvil":
     st.title("Conexión App Móvil (Operarios)")
     st.markdown("### 📲 Panel de Registro en Terreno")
@@ -525,11 +519,11 @@ elif menu == "📱 App Móvil":
         st.subheader("Firma Rápida")
         caps = pd.read_sql("SELECT id, tema FROM capacitaciones WHERE estado='PROGRAMADA'", conn)
         if not caps.empty:
-            sel_cap_movil = st.selectbox("Seleccione Actividad:", caps['tema'], key="movil_cap")
-            # Corrección crítica: Obtener ID seguro sin split
-            id_cap_movil = caps[caps['tema'] == sel_cap_movil]['id'].values[0]
+            # FIX CRITICO: Mostrar ID en el texto para evitar ambiguedad y errores de ID
+            opciones_caps = [f"ID {r['id']} - {r['tema']}" for i, r in caps.iterrows()]
+            sel_cap_movil = st.selectbox("Seleccione Actividad:", opciones_caps, key="movil_cap")
+            id_cap_movil = int(sel_cap_movil.split(" - ")[0].replace("ID ", ""))
             
-            # MOSTRAR SOLO TRABAJADORES PENDIENTES DE FIRMA
             pendientes = pd.read_sql("SELECT p.nombre, p.rut FROM asistencia_capacitacion a JOIN personal p ON a.rut_trabajador = p.rut WHERE a.id_capacitacion = ? AND a.estado = 'PENDIENTE'", conn, params=(id_cap_movil,))
             
             if not pendientes.empty:
@@ -556,7 +550,6 @@ elif menu == "📱 App Móvil":
                 c = conn.cursor(); c.execute("INSERT INTO inspecciones (rut_responsable, fecha, tipo_inspeccion, hallazgos, estado) VALUES (?,?,?,?,?)", (resp, datetime.now(), tipo, desc, "PENDIENTE")); conn.commit(); st.success("Reporte enviado al APR.")
     conn.close()
 
-# --- 4. MÓDULO DE CAPACITACIÓN ---
 elif menu == "🎓 Gestión Capacitación":
     st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_v5_mobile.db')
     with tab_prog:
@@ -567,9 +560,10 @@ elif menu == "🎓 Gestión Capacitación":
     with tab_firma:
         caps_activas = pd.read_sql("SELECT id, tema, tipo_charla FROM capacitaciones WHERE estado='PROGRAMADA'", conn)
         if not caps_activas.empty:
-            sel_cap = st.selectbox("Seleccione Actividad:", caps_activas['tema'] + " (" + caps_activas['tipo_charla'] + ")"); 
-            # ID SEGURO
-            id_cap_sel = caps_activas[caps_activas['tema'] == sel_cap.split(" (")[0]]['id'].values[0]
+            # FIX: Usar ID en el selectbox para evitar errores de duplicidad
+            opciones = [f"ID {r['id']} - {r['tema']} ({r['tipo_charla']})" for i, r in caps_activas.iterrows()]
+            sel_cap = st.selectbox("Seleccione Actividad:", opciones)
+            id_cap_sel = int(sel_cap.split(" - ")[0].replace("ID ", ""))
             
             trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn); asistentes = st.multiselect("Seleccione Asistentes para Enviar a App Móvil:", trabajadores['nombre'])
             if asistentes:
@@ -577,33 +571,35 @@ elif menu == "🎓 Gestión Capacitación":
                     c = conn.cursor()
                     for nombre in asistentes:
                         rut_t = trabajadores[trabajadores['nombre'] == nombre]['rut'].values[0]
-                        # Insertar como PENDIENTE para que aparezca en el celular
+                        # Insertar como PENDIENTE
                         c.execute("INSERT INTO asistencia_capacitacion (id_capacitacion, rut_trabajador, estado) VALUES (?,?,?)", (id_cap_sel, rut_t, "PENDIENTE"))
                     conn.commit(); st.success(f"Se enviaron {len(asistentes)} trabajadores a la App Móvil para firma."); st.rerun()
         else: st.warning("No hay capacitaciones pendientes.")
     with tab_hist:
         historial = pd.read_sql("SELECT * FROM capacitaciones WHERE estado='PROGRAMADA' OR estado='EJECUTADA'", conn)
         if not historial.empty:
-            st.dataframe(historial, use_container_width=True); sel_pdf = st.selectbox("Descargar Acta PDF:", historial['tema']); id_pdf = historial[historial['tema'] == sel_pdf]['id'].values[0]
+            st.dataframe(historial, use_container_width=True)
+            # FIX: Usar ID en selectbox para evitar el error TypeError en PDF
+            opciones_hist = [f"ID {r['id']} - {r['tema']}" for i, r in historial.iterrows()]
+            sel_pdf = st.selectbox("Descargar Acta PDF:", opciones_hist)
+            id_pdf = int(sel_pdf.split(" - ")[0].replace("ID ", ""))
+            
             if st.button("📥 Generar PDF (Solo Firmados)"):
                 pdf_bytes = generar_pdf_asistencia_rggd02(id_pdf)
                 if pdf_bytes:
-                    st.download_button(label="Guardar Documento", data=pdf_bytes, file_name=f"RG-GD-02_{sel_pdf}.pdf", mime="application/pdf")
+                    st.download_button(label="Guardar Documento", data=pdf_bytes, file_name=f"RG-GD-02_{id_pdf}.pdf", mime="application/pdf")
                 else:
-                    st.error("Error al generar PDF: No se encontró la capacitación.")
+                    st.error("Error: No se encontraron datos para esta capacitación.")
         else: st.info("No hay registros.")
     conn.close()
 
-# --- 5. GENERADOR IRL ---
 elif menu == "📄 Generador IRL":
     st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_v5_mobile.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn)
     sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
 
-# --- 6. MATRIZ IPER ---
 elif menu == "⚠️ Matriz IPER":
     st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_v5_mobile.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
 
-# --- 7. GESTIÓN DE USUARIOS ---
 elif menu == "🔐 Gestión Usuarios" and st.session_state['user_role'] == "ADMINISTRADOR":
     st.title("Administración de Usuarios del Sistema"); conn = sqlite3.connect('sgsst_v5_mobile.db')
     with st.form("new_sys_user"):
