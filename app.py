@@ -23,10 +23,9 @@ from reportlab.lib.enums import TA_CENTER
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL V5 - ENLACE WEB-MOVIL)
+# 1. CAPA DE DATOS (SQL RELACIONAL)
 # ==============================================================================
 def init_erp_db():
-    # CAMBIO: Nueva DB para soportar estados de firma (Pendiente/Firmado)
     conn = sqlite3.connect('sgsst_v5_mobile.db')
     c = conn.cursor()
     
@@ -50,8 +49,7 @@ def init_erp_db():
                     cargo_responsable TEXT, lugar TEXT, hora_inicio TEXT,
                     tipo_charla TEXT, tema TEXT, estado TEXT)''')
     
-    # --- ASISTENCIA (MODIFICADA PARA FLUJO MOVIL) ---
-    # estado: 'PENDIENTE' (Asignado en web) o 'FIRMADO' (Firmado en movil)
+    # --- ASISTENCIA ---
     c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, 
                     id_capacitacion INTEGER, 
@@ -70,7 +68,7 @@ def init_erp_db():
                     id INTEGER PRIMARY KEY AUTOINCREMENT, rut_responsable TEXT, fecha DATETIME, 
                     tipo_inspeccion TEXT, hallazgos TEXT, estado TEXT)''')
 
-    # --- CARGA MASIVA DE TRABAJADORES (TU LISTA) ---
+    # --- CARGA MASIVA DE TRABAJADORES ---
     c.execute("SELECT count(*) FROM personal")
     if c.fetchone()[0] < 5: 
         staff_completo = [
@@ -92,7 +90,7 @@ def init_erp_db():
             ("23.076.765-3", "GIVENS ABURTO CAMINO", "AYUDANTE", "ASERRADERO", "2025-02-01", "ACTIVO"),
             ("13.736.331-3", "MAURICIO LOPEZ GUTIÉRREZ", "ADMINISTRATIVO", "OFICINA", "2025-06-06", "ACTIVO")
         ]
-        c.executemany("INSERT OR IGNORE INTO personal VALUES (?,?,?,?,?,?)", staff_completo)
+        c.executemany("INSERT OR IGNORE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", staff_completo)
 
     c.execute("SELECT count(*) FROM matriz_iper")
     if c.fetchone()[0] == 0:
@@ -107,7 +105,7 @@ def init_erp_db():
     conn.close()
 
 # ==============================================================================
-# 2. FUNCIONES DE SOPORTE (BI, PDF, AUTH)
+# 2. FUNCIONES DE SOPORTE
 # ==============================================================================
 CSV_FILE = "base_datos_galvez_v26.csv"
 LOGO_FILE = "logo_empresa_persistente.png"
@@ -126,7 +124,6 @@ def login_user(username, password):
     conn.close()
     return result[0] if result else None
 
-# --- FUNCIONES BI (SIN CAMBIOS) ---
 def get_structure_for_year(year):
     data = []
     for m in MESES_ORDEN:
@@ -286,62 +283,67 @@ class PDF_SST(FPDF):
 
 def generar_pdf_asistencia_rggd02(id_cap):
     conn = sqlite3.connect('sgsst_v5_mobile.db')
-    cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
-    # Filtramos SOLO los firmados para el PDF
-    asistentes = conn.execute("""
-        SELECT p.nombre, p.rut, p.cargo, a.firma_digital_hash 
-        FROM asistencia_capacitacion a
-        JOIN personal p ON a.rut_trabajador = p.rut
-        WHERE a.id_capacitacion = ? AND a.estado = 'FIRMADO'
-    """, (id_cap,)).fetchall()
-    conn.close()
+    try:
+        cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
+        if cap is None:
+            return None # Seguridad si el ID no existe
+            
+        # Filtramos SOLO los firmados para el PDF
+        asistentes = conn.execute("""
+            SELECT p.nombre, p.rut, p.cargo, a.firma_digital_hash 
+            FROM asistencia_capacitacion a
+            JOIN personal p ON a.rut_trabajador = p.rut
+            WHERE a.id_capacitacion = ? AND a.estado = 'FIRMADO'
+        """, (id_cap,)).fetchall()
+        
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=20, bottomMargin=20)
+        elements = []
+        styles = getSampleStyleSheet()
+        style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10)
+        style_title = ParagraphStyle(name='Title', parent=styles['Normal'], alignment=TA_CENTER, fontSize=12, fontName='Helvetica-Bold')
+        style_small = ParagraphStyle(name='Small', parent=styles['Normal'], fontSize=8)
 
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=20, bottomMargin=20)
-    elements = []
-    styles = getSampleStyleSheet()
-    style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10)
-    style_title = ParagraphStyle(name='Title', parent=styles['Normal'], alignment=TA_CENTER, fontSize=12, fontName='Helvetica-Bold')
-    style_small = ParagraphStyle(name='Small', parent=styles['Normal'], fontSize=8)
+        data_header = [[Paragraph("<b>MADERAS G&D</b><br/>SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA<br/>SISTEMA DE GESTION<br/>SALUD Y SEGURIDAD OCUPACIONAL", style_center), Paragraph("<b>REGISTRO DE CAPACITACION</b>", style_title)]]
+        t_header = Table(data_header, colWidths=[300, 200])
+        t_header.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+        elements.append(t_header); elements.append(Spacer(1, 10))
 
-    data_header = [[Paragraph("<b>MADERAS G&D</b><br/>SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA<br/>SISTEMA DE GESTION<br/>SALUD Y SEGURIDAD OCUPACIONAL", style_center), Paragraph("<b>REGISTRO DE CAPACITACION</b>", style_title)]]
-    t_header = Table(data_header, colWidths=[300, 200])
-    t_header.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
-    elements.append(t_header); elements.append(Spacer(1, 10))
+        data_resp = [["RESPONSABLE DE CAPACITACION:", cap[2]], ["CARGO:", cap[3]], ["FECHA:", cap[1]]]
+        t_resp = Table(data_resp, colWidths=[200, 300])
+        t_resp.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (0,-1), colors.lightgrey), ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 8)]))
+        elements.append(t_resp); elements.append(Spacer(1, 10))
 
-    data_resp = [["RESPONSABLE DE CAPACITACION:", cap[2]], ["CARGO:", cap[3]], ["FECHA:", cap[1]]]
-    t_resp = Table(data_resp, colWidths=[200, 300])
-    t_resp.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (0,-1), colors.lightgrey), ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 8)]))
-    elements.append(t_resp); elements.append(Spacer(1, 10))
+        tipos_posibles = ["CHARLA DE 5 MIN.", "PROCEDIMIENTO", "INSTRUCTIVO", "REGLAMENTO INTERNO", "AST", "CHARLA OPERACIONAL", "TRIPTICO", "RECAPACITACION", "OTROS"]
+        grid_data = []; row = []
+        for i, tipo in enumerate(tipos_posibles):
+            mark = "[ X ]" if tipo == cap[6] else "[   ]"
+            row.append(f"{mark} {tipo}")
+            if (i + 1) % 3 == 0: grid_data.append(row); row = []
+        if row: grid_data.append(row)
+        t_types = Table(grid_data, colWidths=[160, 160, 160])
+        t_types.setStyle(TableStyle([('FONTSIZE', (0,0), (-1,-1), 8), ('BOX', (0,0), (-1,-1), 1, colors.black), ('INNERGRID', (0,0), (-1,-1), 0.5, colors.grey)]))
+        elements.append(Paragraph("<b>TIPO DE CHARLA:</b>", style_small)); elements.append(t_types); elements.append(Spacer(1, 10))
+        elements.append(Paragraph(f"<b>TEMA:</b> {cap[7]}", style_small)); elements.append(Spacer(1, 10))
 
-    tipos_posibles = ["CHARLA DE 5 MIN.", "PROCEDIMIENTO", "INSTRUCTIVO", "REGLAMENTO INTERNO", "AST", "CHARLA OPERACIONAL", "TRIPTICO", "RECAPACITACION", "OTROS"]
-    grid_data = []; row = []
-    for i, tipo in enumerate(tipos_posibles):
-        mark = "[ X ]" if tipo == cap[6] else "[   ]"
-        row.append(f"{mark} {tipo}")
-        if (i + 1) % 3 == 0: grid_data.append(row); row = []
-    if row: grid_data.append(row)
-    t_types = Table(grid_data, colWidths=[160, 160, 160])
-    t_types.setStyle(TableStyle([('FONTSIZE', (0,0), (-1,-1), 8), ('BOX', (0,0), (-1,-1), 1, colors.black), ('INNERGRID', (0,0), (-1,-1), 0.5, colors.grey)]))
-    elements.append(Paragraph("<b>TIPO DE CHARLA:</b>", style_small)); elements.append(t_types); elements.append(Spacer(1, 10))
-    elements.append(Paragraph(f"<b>TEMA:</b> {cap[7]}", style_small)); elements.append(Spacer(1, 10))
+        header_asis = ["N°", "NOMBRE", "R.U.T.", "FIRMA (Hash Digital)"]
+        data_asis = [header_asis]
+        for idx, (nom, rut, car, firma) in enumerate(asistentes, 1):
+            data_asis.append([str(idx), nom, rut, firma[:10] + "...(VALIDADO)"])
+        while len(data_asis) < 21: data_asis.append([str(len(data_asis)), "", "", ""])
+        t_asis = Table(data_asis, colWidths=[30, 200, 80, 180])
+        t_asis.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('FONTSIZE', (0,0), (-1,-1), 7), ('ALIGN', (0,0), (0,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.lightgrey)]))
+        elements.append(t_asis); elements.append(Spacer(1, 10))
 
-    header_asis = ["N°", "NOMBRE", "R.U.T.", "FIRMA (Hash Digital)"]
-    data_asis = [header_asis]
-    for idx, (nom, rut, car, firma) in enumerate(asistentes, 1):
-        data_asis.append([str(idx), nom, rut, firma[:10] + "...(VALIDADO)"])
-    while len(data_asis) < 21: data_asis.append([str(len(data_asis)), "", "", ""])
-    t_asis = Table(data_asis, colWidths=[30, 200, 80, 180])
-    t_asis.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('FONTSIZE', (0,0), (-1,-1), 7), ('ALIGN', (0,0), (0,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.lightgrey)]))
-    elements.append(t_asis); elements.append(Spacer(1, 10))
-
-    data_footer = [["LUGAR:", cap[4], "HORA DE INICIO:", cap[5]], ["", "", "", ""], ["FIRMA Y TIMBRE RELATOR:", "", "", ""]]
-    t_foot = Table(data_footer, colWidths=[50, 200, 100, 100])
-    t_foot.setStyle(TableStyle([('FONTSIZE', (0,0), (-1,-1), 8), ('LINEBELOW', (1,0), (1,0), 1, colors.black), ('LINEBELOW', (3,0), (3,0), 1, colors.black)]))
-    elements.append(t_foot); elements.append(Spacer(1, 10))
-    elements.append(Paragraph("RSSO-GD-02 | Version 1.0", style_center))
-    doc.build(elements); buffer.seek(0)
-    return buffer
+        data_footer = [["LUGAR:", cap[4], "HORA DE INICIO:", cap[5]], ["", "", "", ""], ["FIRMA Y TIMBRE RELATOR:", "", "", ""]]
+        t_foot = Table(data_footer, colWidths=[50, 200, 100, 100])
+        t_foot.setStyle(TableStyle([('FONTSIZE', (0,0), (-1,-1), 8), ('LINEBELOW', (1,0), (1,0), 1, colors.black), ('LINEBELOW', (3,0), (3,0), 1, colors.black)]))
+        elements.append(t_foot); elements.append(Spacer(1, 10))
+        elements.append(Paragraph("RSSO-GD-02 | Version 1.0", style_center))
+        doc.build(elements); buffer.seek(0)
+        return buffer
+    finally:
+        conn.close()
 
 # ==============================================================================
 # 3. INTERFAZ PROFESIONAL (FRONTEND)
@@ -524,15 +526,11 @@ elif menu == "📱 App Móvil":
         caps = pd.read_sql("SELECT id, tema FROM capacitaciones WHERE estado='PROGRAMADA'", conn)
         if not caps.empty:
             sel_cap_movil = st.selectbox("Seleccione Actividad:", caps['tema'], key="movil_cap")
+            # Corrección crítica: Obtener ID seguro sin split
             id_cap_movil = caps[caps['tema'] == sel_cap_movil]['id'].values[0]
             
             # MOSTRAR SOLO TRABAJADORES PENDIENTES DE FIRMA
-            pendientes = pd.read_sql(f"""
-                SELECT p.nombre, p.rut 
-                FROM asistencia_capacitacion a
-                JOIN personal p ON a.rut_trabajador = p.rut
-                WHERE a.id_capacitacion = {id_cap_movil} AND a.estado = 'PENDIENTE'
-            """, conn)
+            pendientes = pd.read_sql("SELECT p.nombre, p.rut FROM asistencia_capacitacion a JOIN personal p ON a.rut_trabajador = p.rut WHERE a.id_capacitacion = ? AND a.estado = 'PENDIENTE'", conn, params=(id_cap_movil,))
             
             if not pendientes.empty:
                 trabajador_firma = st.selectbox("Seleccione su Nombre:", pendientes['nombre'] + " | " + pendientes['rut'])
@@ -569,7 +567,10 @@ elif menu == "🎓 Gestión Capacitación":
     with tab_firma:
         caps_activas = pd.read_sql("SELECT id, tema, tipo_charla FROM capacitaciones WHERE estado='PROGRAMADA'", conn)
         if not caps_activas.empty:
-            sel_cap = st.selectbox("Seleccione Actividad:", caps_activas['tema'] + " (" + caps_activas['tipo_charla'] + ")"); id_cap_sel = caps_activas[caps_activas['tema'] == sel_cap.split(" (")[0]]['id'].values[0]
+            sel_cap = st.selectbox("Seleccione Actividad:", caps_activas['tema'] + " (" + caps_activas['tipo_charla'] + ")"); 
+            # ID SEGURO
+            id_cap_sel = caps_activas[caps_activas['tema'] == sel_cap.split(" (")[0]]['id'].values[0]
+            
             trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn); asistentes = st.multiselect("Seleccione Asistentes para Enviar a App Móvil:", trabajadores['nombre'])
             if asistentes:
                 if st.button("Enviar a App Móvil"):
@@ -585,7 +586,11 @@ elif menu == "🎓 Gestión Capacitación":
         if not historial.empty:
             st.dataframe(historial, use_container_width=True); sel_pdf = st.selectbox("Descargar Acta PDF:", historial['tema']); id_pdf = historial[historial['tema'] == sel_pdf]['id'].values[0]
             if st.button("📥 Generar PDF (Solo Firmados)"):
-                pdf_bytes = generar_pdf_asistencia_rggd02(id_pdf); st.download_button(label="Guardar Documento", data=pdf_bytes, file_name=f"RG-GD-02_{sel_pdf}.pdf", mime="application/pdf")
+                pdf_bytes = generar_pdf_asistencia_rggd02(id_pdf)
+                if pdf_bytes:
+                    st.download_button(label="Guardar Documento", data=pdf_bytes, file_name=f"RG-GD-02_{sel_pdf}.pdf", mime="application/pdf")
+                else:
+                    st.error("Error al generar PDF: No se encontró la capacitación.")
         else: st.info("No hay registros.")
     conn.close()
 
