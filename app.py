@@ -22,13 +22,28 @@ from reportlab.lib.styles import getSampleStyleSheet
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL)
+# 1. CAPA DE DATOS (SQL RELACIONAL) - BASE DE DATOS + SEGURIDAD
 # ==============================================================================
 def init_erp_db():
     conn = sqlite3.connect('sgsst_full_v3.db')
     c = conn.cursor()
     
-    # --- TABLAS ESTRUCTURALES ---
+    # --- TABLA DE USUARIOS Y SEGURIDAD (NUEVO) ---
+    c.execute('''CREATE TABLE IF NOT EXISTS usuarios (
+                    username TEXT PRIMARY KEY, 
+                    password TEXT, 
+                    rol TEXT)''')
+    
+    # Crear usuario Admin por defecto si no existe
+    # Usuario: admin | Clave: 1234 (Hasheada)
+    c.execute("SELECT count(*) FROM usuarios")
+    if c.fetchone()[0] == 0:
+        pass_hash = hashlib.sha256("1234".encode()).hexdigest()
+        c.execute("INSERT INTO usuarios (username, password, rol) VALUES (?,?,?)", 
+                  ("admin", pass_hash, "ADMINISTRADOR"))
+        conn.commit()
+
+    # --- TABLAS ESTRUCTURALES (EXISTENTES) ---
     c.execute('''CREATE TABLE IF NOT EXISTS personal (
                     rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, 
                     centro_costo TEXT, fecha_contrato DATE, estado TEXT)''')
@@ -45,12 +60,11 @@ def init_erp_db():
                     id INTEGER PRIMARY KEY AUTOINCREMENT, cargo_asociado TEXT, proceso TEXT, 
                     peligro TEXT, riesgo TEXT, consecuencia TEXT, medida_control TEXT, criticidad TEXT)''')
 
-    # --- NUEVA TABLA: INSPECCIONES DE TERRENO (CONEXIÓN MÓVIL) ---
     c.execute('''CREATE TABLE IF NOT EXISTS inspecciones (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, rut_responsable TEXT, fecha DATETIME, 
                     tipo_inspeccion TEXT, hallazgos TEXT, estado TEXT)''')
 
-    # --- CARGA MASIVA AUTOMÁTICA (TU NÓMINA REAL) ---
+    # --- CARGA MASIVA AUTOMÁTICA ---
     c.execute("SELECT count(*) FROM personal")
     if c.fetchone()[0] < 5: 
         staff_completo = [
@@ -89,13 +103,25 @@ def init_erp_db():
     conn.close()
 
 # ==============================================================================
-# 2. FUNCIONES DE SOPORTE DASHBOARD BI Y PDF
+# 2. FUNCIONES DE SOPORTE (BI, PDF, AUTH)
 # ==============================================================================
 CSV_FILE = "base_datos_galvez_v26.csv"
 LOGO_FILE = "logo_empresa_persistente.png"
 MESES_ORDEN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 COLOR_PRIMARY = (183, 28, 28)
 COLOR_SECONDARY = (50, 50, 50)
+
+# --- FUNCIONES DE AUTENTICACIÓN ---
+def hash_pass(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def login_user(username, password):
+    conn = sqlite3.connect('sgsst_full_v3.db')
+    c = conn.cursor()
+    c.execute("SELECT rol FROM usuarios WHERE username=? AND password=?", (username, hash_pass(password)))
+    result = c.fetchone()
+    conn.close()
+    return result[0] if result else None
 
 def get_structure_for_year(year):
     data = []
@@ -280,19 +306,60 @@ def generar_pdf_asistencia(id_cap):
     return buffer
 
 # ==============================================================================
-# 3. INTERFAZ PROFESIONAL (FRONTEND)
+# 3. INTERFAZ PROFESIONAL (FRONTEND CON SEGURIDAD)
 # ==============================================================================
 st.set_page_config(page_title="ERP SGSST - G&D", layout="wide")
 init_erp_db()
 
+# --- CONTROL DE SESIÓN ---
+if 'logged_in' not in st.session_state:
+    st.session_state['logged_in'] = False
+    st.session_state['user_role'] = None
+    st.session_state['username'] = None
+
+# --- PANTALLA DE LOGIN ---
+if not st.session_state['logged_in']:
+    col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
+    with col_l2:
+        st.markdown("<h1 style='text-align: center;'>🔐 Acceso Corporativo</h1>", unsafe_allow_html=True)
+        st.info("Sistema de Gestión SST - Maderas G&D")
+        
+        user_input = st.text_input("Usuario")
+        pass_input = st.text_input("Contraseña", type="password")
+        
+        if st.button("Iniciar Sesión", use_container_width=True):
+            role = login_user(user_input, pass_input)
+            if role:
+                st.session_state['logged_in'] = True
+                st.session_state['user_role'] = role
+                st.session_state['username'] = user_input
+                st.rerun()
+            else:
+                st.error("Credenciales incorrectas")
+    
+    st.markdown("---")
+    st.caption("Admin Default: admin / 1234")
+    st.stop() # DETIENE LA EJECUCIÓN SI NO HAY LOGIN
+
+# --- APLICACIÓN PRINCIPAL (SOLO SI ESTÁ LOGUEADO) ---
 with st.sidebar:
     st.markdown("## MADERAS G&D")
     st.markdown("### ERP GESTIÓN INTEGRAL")
-    st.info(f"Usuario: Alan García\nRol: Administrador APR")
+    st.success(f"Bienvenido: {st.session_state['username']}\nRol: {st.session_state['user_role']}")
+    
+    if st.button("Cerrar Sesión"):
+        st.session_state['logged_in'] = False
+        st.rerun()
+        
     st.divider()
-    menu = st.radio("MÓDULOS ACTIVOS:", 
-             ["📊 Dashboard BI", "👥 Nómina & Personal", "📱 App Móvil", "🎓 Gestión Capacitación", 
-              "📄 Generador IRL", "⚠️ Matriz IPER"])
+    
+    opciones_menu = ["📊 Dashboard BI", "👥 Nómina & Personal", "📱 App Móvil", "🎓 Gestión Capacitación", "📄 Generador IRL", "⚠️ Matriz IPER"]
+    
+    # Agregar opción de gestión de usuarios solo si es Admin
+    if st.session_state['user_role'] == "ADMINISTRADOR":
+        opciones_menu.append("🔐 Gestión Usuarios")
+        
+    menu = st.radio("MÓDULOS ACTIVOS:", opciones_menu)
 
 # --- 1. DASHBOARD BI (INTEGRADO) ---
 if menu == "📊 Dashboard BI":
@@ -634,3 +701,48 @@ elif menu == "📄 Generador IRL":
 # --- 6. MATRIZ IPER ---
 elif menu == "⚠️ Matriz IPER":
     st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_full_v3.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
+
+# --- 7. GESTIÓN DE USUARIOS (SOLO ADMIN) ---
+elif menu == "🔐 Gestión Usuarios" and st.session_state['user_role'] == "ADMINISTRADOR":
+    st.title("Administración de Usuarios del Sistema")
+    st.info("Crea cuentas para supervisores o asistentes.")
+    
+    conn = sqlite3.connect('sgsst_full_v3.db')
+    
+    # Crear usuario
+    with st.form("new_sys_user"):
+        st.subheader("Nuevo Usuario")
+        new_u = st.text_input("Nombre Usuario")
+        new_p = st.text_input("Contraseña", type="password")
+        new_r = st.selectbox("Rol", ["ADMINISTRADOR", "SUPERVISOR", "ASISTENTE"])
+        
+        if st.form_submit_button("Crear Usuario"):
+            if new_u and new_p:
+                try:
+                    c = conn.cursor()
+                    ph = hashlib.sha256(new_p.encode()).hexdigest()
+                    c.execute("INSERT INTO usuarios (username, password, rol) VALUES (?,?,?)", (new_u, ph, new_r))
+                    conn.commit()
+                    st.success(f"Usuario {new_u} creado.")
+                    st.rerun()
+                except:
+                    st.error("El usuario ya existe.")
+    
+    # Listar y borrar
+    st.markdown("---")
+    st.subheader("Usuarios Existentes")
+    users_df = pd.read_sql("SELECT username, rol FROM usuarios", conn)
+    st.dataframe(users_df, use_container_width=True)
+    
+    user_del = st.selectbox("Eliminar Usuario:", users_df['username'])
+    if st.button("Eliminar Seleccionado"):
+        if user_del == "admin":
+            st.error("No puedes eliminar al administrador principal.")
+        else:
+            c = conn.cursor()
+            c.execute("DELETE FROM usuarios WHERE username=?", (user_del,))
+            conn.commit()
+            st.success("Eliminado.")
+            st.rerun()
+            
+    conn.close()
