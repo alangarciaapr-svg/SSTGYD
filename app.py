@@ -27,11 +27,10 @@ from streamlit_drawable_canvas import st_canvas
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL) - V39 (Time Calc & Photo Evidence)
+# 1. CAPA DE DATOS (SQL RELACIONAL) - V40 (Fix PDF Error & Signature Visibility)
 # ==============================================================================
 def init_erp_db():
-    # Nueva DB para actualizar esquema de capacitaciones
-    conn = sqlite3.connect('sgsst_v39_photo_time.db') 
+    conn = sqlite3.connect('sgsst_v40_final_fix.db') 
     c = conn.cursor()
     
     # --- USUARIOS ---
@@ -48,8 +47,7 @@ def init_erp_db():
                     rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, 
                     centro_costo TEXT, fecha_contrato DATE, estado TEXT)''')
     
-    # --- CAPACITACIONES (ACTUALIZADA) ---
-    # Se agregaron campos: hora_termino, duracion, evidencia_foto_b64
+    # --- CAPACITACIONES ---
     c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, 
                     fecha DATE, 
@@ -158,7 +156,7 @@ def hash_pass(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def login_user(username, password):
-    conn = sqlite3.connect('sgsst_v39_photo_time.db')
+    conn = sqlite3.connect('sgsst_v40_final_fix.db')
     c = conn.cursor()
     c.execute("SELECT rol FROM usuarios WHERE username=? AND password=?", (username, hash_pass(password)))
     result = c.fetchone()
@@ -342,7 +340,7 @@ def get_scaled_logo(path, max_w, max_h):
     except: return None
 
 def generar_pdf_asistencia_rggd02(id_cap):
-    conn = sqlite3.connect('sgsst_v39_photo_time.db')
+    conn = sqlite3.connect('sgsst_v40_final_fix.db')
     try:
         cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
         if cap is None: return None
@@ -358,9 +356,8 @@ def generar_pdf_asistencia_rggd02(id_cap):
         G_BLUE = colors.navy; G_WHITE = colors.white
         
         logo_obj = Paragraph("<b>MADERAS G&D</b>", style_title)
-        if os.path.exists(LOGO_FILE):
-            try: logo_obj = Image(LOGO_FILE, width=80, height=45, hAlign='CENTER', preserveAspectRatio=True) # FIX ASPECT RATIO
-            except: pass
+        logo_img = get_scaled_logo(LOGO_FILE, 80, 45)
+        if logo_img: logo_obj = logo_img
             
         center_text = Paragraph("SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA<br/>SISTEMA DE GESTION<br/>SALUD Y SEGURIDAD OCUPACIONAL", style_center)
         f_fecha = clean(datetime.now().strftime('%d/%m/%Y'))
@@ -373,13 +370,9 @@ def generar_pdf_asistencia_rggd02(id_cap):
         elements.append(t_head); elements.append(Spacer(1, 10))
         
         # Extraccion Datos v39
-        c_tipo = clean(cap[8])
-        c_tema = clean(cap[9])
-        c_resp = clean(cap[2])
-        c_lug = clean(cap[4])
-        c_fec = clean(cap[1])
-        c_carg = clean(cap[3])
-        c_dur = clean(cap[7]) # DURACION CALCULADA
+        c_tipo = clean(cap[8]); c_tema = clean(cap[9]); c_resp = clean(cap[2])
+        c_lug = clean(cap[4]); c_fec = clean(cap[1]); c_carg = clean(cap[3])
+        c_dur = clean(cap[7]) if cap[7] else "00:00" # Safe Duration
         
         h_act = Paragraph("ACTIVIDAD", style_cell_header); h_rel = Paragraph("RELATOR", style_cell_header); h_lug = Paragraph("LUGAR", style_cell_header); h_fec = Paragraph("FECHA", style_cell_header)
         d_act = Paragraph(c_tipo, style_center); d_rel = Paragraph(c_resp, style_center); d_lug = Paragraph(c_lug, style_center); d_fec = Paragraph(c_fec, style_center)
@@ -387,7 +380,6 @@ def generar_pdf_asistencia_rggd02(id_cap):
         t_row1.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), G_BLUE), ('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
         elements.append(t_row1)
         
-        # Muestra duracion real
         t_row2 = Table([[f"CARGO: {c_carg}", f"DURACIÓN: {c_dur}"]], colWidths=[310, 180])
         t_row2.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('FONTSIZE', (0,0), (-1,-1), 8), ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold')]))
         elements.append(t_row2); elements.append(Spacer(1, 5))
@@ -403,48 +395,57 @@ def generar_pdf_asistencia_rggd02(id_cap):
         for idx, (nom, rut, car, firma_hash, firma_b64) in enumerate(asistentes, 1):
             row = [Paragraph(clean(nom), style_center), Paragraph(clean(rut), style_center), Paragraph(clean(car), style_center)]
             img_inserted = False
-            if firma_b64 and isinstance(firma_b64, str) and len(firma_b64) > 100:
-                try: img_bytes = base64.b64decode(firma_b64); img_stream = io.BytesIO(img_bytes); img_rl = Image(img_stream, width=60, height=20); row.append(img_rl); img_inserted = True
+            if firma_b64 and len(str(firma_b64)) > 100:
+                try: 
+                    img_bytes = base64.b64decode(firma_b64); img_stream = io.BytesIO(img_bytes)
+                    img_rl = Image(img_stream, width=60, height=20); row.append(img_rl); img_inserted = True
                 except: pass
             if not img_inserted: row.append(Paragraph("Firma Digital", style_center))
             data_asis.append(row)
         if len(data_asis) > 1:
-            t_asis = Table(data_asis, colWidths=[180, 70, 120, 120])
+            t_asis = Table(data_asis, colWidths=[180, 80, 130, 120])
             t_asis.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), G_BLUE), ('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER')]))
-            elements.append(t_asis); elements.append(Spacer(1, 15))
-        
-        # Firma Instructor
+            elements.append(t_asis); elements.append(Spacer(1, 20))
+
         img_instructor = Paragraph("", style_center)
-        firma_inst_data = cap[11] # index 11 en v39
-        if firma_inst_data and isinstance(firma_inst_data, str) and len(firma_inst_data) > 100:
-             try: img_bytes_inst = base64.b64decode(firma_inst_data); img_stream_inst = io.BytesIO(img_bytes_inst); img_instructor = Image(img_stream_inst, width=120, height=50)
+        firma_inst_data = cap[11]
+        if firma_inst_data and len(str(firma_inst_data)) > 100:
+             try: 
+                 img_bytes_inst = base64.b64decode(firma_inst_data); img_stream_inst = io.BytesIO(img_bytes_inst)
+                 img_instructor = Image(img_stream_inst, width=150, height=60)
              except: pass
-        
-        # Evidencia Fotográfica (V39)
+             
         img_evidencia = Paragraph("(Sin Foto)", style_center)
-        foto_b64 = cap[12] # index 12 en v39
+        foto_b64 = cap[12]
         if foto_b64 and len(str(foto_b64)) > 100:
             try:
                 img_bytes_ev = base64.b64decode(foto_b64)
                 img_stream_ev = io.BytesIO(img_bytes_ev)
-                img_evidencia = Image(img_stream_ev, width=180, height=100) # Foto evidencia
+                img_evidencia = Image(img_stream_ev, width=180, height=100)
             except: pass
 
-        c_evidencia = [[Paragraph("EVIDENCIA FOTOGRÁFICA", style_center)], [img_evidencia]]
-        t_evi = Table(c_evidencia, colWidths=[240])
-        t_evi.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTNAME', (0,0), (0,0), 'Helvetica-Bold')]))
+        t_footer_data = [
+            [Paragraph("EVIDENCIA FOTOGRÁFICA", style_center), "", Paragraph("VALIDACIÓN INSTRUCTOR", style_center)],
+            [img_evidencia, "", img_instructor],
+            ["", "", Paragraph(f"<b>{c_resp}</b><br/>Relator/Instructor", style_center)]
+        ]
         
-        c_valid = [[Paragraph("VALIDACIÓN INSTRUCTOR", style_center)], [img_instructor], [Paragraph(f"<b>{c_resp}</b><br/>Relator/Instructor", style_center)]]
-        t_val = Table(c_valid, colWidths=[240])
-        t_val.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTNAME', (0,0), (0,0), 'Helvetica-Bold')]))
-        
-        t_footer = Table([[t_evi, Spacer(10,0), t_val]], colWidths=[240, 10, 240])
+        t_footer = Table(t_footer_data, colWidths=[200, 50, 260])
+        t_footer.setStyle(TableStyle([
+            ('GRID', (0,0), (0,1), 1, colors.black), 
+            ('GRID', (2,0), (2,1), 1, colors.black),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE')
+        ]))
         elements.append(t_footer)
         
-        elements.append(Spacer(1, 20))
+        elements.append(Spacer(1, 15))
         elements.append(Paragraph("Este documento constituye un registro válido del Sistema de Gestión de Seguridad y Salud en el Trabajo.", style_center))
+        
         doc.build(elements); buffer.seek(0); return buffer
-    except Exception as e: st.error(f"Error Generando PDF: {str(e)}"); return None
+    except Exception as e: 
+        st.error(f"Error Generando PDF: {str(e)}")
+        return None
     finally: conn.close()
 
 def generar_pdf_epp_grupo(grupo_id):
@@ -528,7 +529,6 @@ def generar_pdf_riohs(id_reg):
         t_head.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (0,0), 'CENTER')]))
         elements.append(t_head); elements.append(Spacer(1, 40))
         
-        # TEXTO LEGAL AUDITORIA
         preamble = """En cumplimiento a lo dispuesto en el Artículo 156, inciso 2° del Código del Trabajo y la Ley N° 16.744, la empresa <b>SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA</b> cumple con la obligación legal de entregar gratuitamente el Reglamento Interno de Orden, Higiene y Seguridad."""
         style_just = ParagraphStyle('Just', parent=styles['Normal'], alignment=TA_JUSTIFY, fontSize=11, leading=14)
         elements.append(Paragraph(preamble, style_just)); elements.append(Spacer(1, 20))
@@ -646,7 +646,7 @@ if menu == "📊 Dashboard BI":
 elif menu == "👥 Nómina & Personal":
     st.title("Base de Datos Maestra de Personal")
     tab_lista, tab_agregar, tab_excel = st.tabs(["📋 Lista Completa", "➕ Gestión Manual", "📂 Carga Masiva"])
-    conn = sqlite3.connect('sgsst_v39_photo_time.db')
+    conn = sqlite3.connect('sgsst_v40_final_fix.db')
     with tab_lista:
         df = pd.read_sql("SELECT nombre, rut, cargo, centro_costo as 'Lugar', estado FROM personal", conn); st.dataframe(df, use_container_width=True, hide_index=True); st.markdown("---"); st.subheader("🗑️ Dar de Baja / Eliminar"); col_del, col_btn = st.columns([3, 1]); rut_a_borrar = col_del.selectbox("Seleccione Trabajador a Eliminar:", df['rut'] + " - " + df['nombre'])
         if col_btn.button("Eliminar Trabajador"): rut_clean = rut_a_borrar.split(" - ")[0]; c = conn.cursor(); c.execute("DELETE FROM personal WHERE rut=?", (rut_clean,)); conn.commit(); st.success(f"Trabajador {rut_clean} eliminado."); st.rerun()
@@ -690,7 +690,7 @@ elif menu == "👥 Nómina & Personal":
 elif menu == "📱 App Móvil":
     st.title("Conexión App Móvil (Operarios)")
     st.markdown("### 📲 Panel de Registro en Terreno")
-    conn = sqlite3.connect('sgsst_v39_photo_time.db')
+    conn = sqlite3.connect('sgsst_v40_final_fix.db')
     tab_asist, tab_insp = st.tabs(["✍️ Firmar Asistencia", "🚨 Reportar Hallazgo"])
     with tab_asist:
         st.subheader("Firma Rápida")
@@ -729,7 +729,7 @@ elif menu == "📱 App Móvil":
     conn.close()
 
 elif menu == "🎓 Gestión Capacitación":
-    st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_v39_photo_time.db')
+    st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_v40_final_fix.db')
     with tab_prog:
         st.subheader("Nueva Capacitación")
         # FORMULARIO V39: TIEMPO + CAMARA
@@ -756,11 +756,9 @@ elif menu == "🎓 Gestión Capacitación":
 
             if st.form_submit_button("Programar Capacitación"):
                 # Calculo Duracion
-                fmt = '%H:%M:%S'
                 t1 = datetime.strptime(str(h_inicio), '%H:%M:%S')
                 t2 = datetime.strptime(str(h_termino), '%H:%M:%S')
                 
-                # Manejo simple de cruce de medianoche si fuera necesario, aqui asumimos mismo dia
                 if t2 < t1:
                     st.error("La hora de término no puede ser anterior a la de inicio.")
                 else:
@@ -773,10 +771,12 @@ elif menu == "🎓 Gestión Capacitación":
                     # Procesar Foto
                     img_str = None
                     if foto_evidencia:
-                        img = PILImage.fromarray(np.array(PILImage.open(foto_evidencia)))
-                        buffered = io.BytesIO()
-                        img.save(buffered, format="JPEG")
-                        img_str = base64.b64encode(buffered.getvalue()).decode()
+                        try:
+                            img = PILImage.fromarray(np.array(PILImage.open(foto_evidencia)))
+                            buffered = io.BytesIO()
+                            img.save(buffered, format="JPEG")
+                            img_str = base64.b64encode(buffered.getvalue()).decode()
+                        except: pass
 
                     c = conn.cursor()
                     c.execute("""INSERT INTO capacitaciones 
@@ -798,7 +798,7 @@ elif menu == "🎓 Gestión Capacitación":
             opciones = [f"ID {r['id']} - {r['tema']} ({r['tipo_charla']})" for i, r in caps_activas.iterrows()]; sel_cap = st.selectbox("Seleccione Actividad:", opciones); id_cap_sel = int(sel_cap.split(" - ")[0].replace("ID ", "")); trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
             
             def enviar_asistentes_callback(id_cap, df_trab):
-                c_cb = sqlite3.connect('sgsst_v39_photo_time.db'); cursor_cb = c_cb.cursor(); selection = st.session_state.selector_asistentes
+                c_cb = sqlite3.connect('sgsst_v40_final_fix.db'); cursor_cb = c_cb.cursor(); selection = st.session_state.selector_asistentes
                 if selection:
                     for nombre in selection:
                         rut_t = df_trab[df_trab['nombre'] == nombre]['rut'].values[0]
@@ -819,15 +819,16 @@ elif menu == "🎓 Gestión Capacitación":
         if not historial.empty:
             st.dataframe(historial, use_container_width=True); opciones_hist = [f"ID {r['id']} - {r['tema']}" for i, r in historial.iterrows()]; sel_pdf = st.selectbox("Gestionar Capacitación (Firmar/PDF):", opciones_hist); id_pdf = int(sel_pdf.split(" - ")[0].replace("ID ", "")); st.markdown("#### ✍️ Firma del Difusor (Instructor)")
             
-            # --- CONSULTA INSTANTANEA DE FIRMA ---
-            conn_sig = sqlite3.connect('sgsst_v39_photo_time.db')
+            # --- CONSULTA INSTANTANEA V40 ---
+            # Nueva conexion dedicada para verificar firma
+            conn_sig = sqlite3.connect('sgsst_v40_final_fix.db')
             firmado_db = pd.read_sql("SELECT firma_instructor_b64 FROM capacitaciones WHERE id=?", conn_sig, params=(id_pdf,))
             conn_sig.close()
             
             ya_firmado = False
             if not firmado_db.empty:
                 val = firmado_db.iloc[0,0]
-                if val is not None and len(str(val)) > 100:
+                if val and len(str(val)) > 200:
                     ya_firmado = True
 
             if ya_firmado:
@@ -836,22 +837,21 @@ elif menu == "🎓 Gestión Capacitación":
                     c = conn.cursor(); c.execute("UPDATE capacitaciones SET firma_instructor_b64=NULL WHERE id=?", (id_pdf,)); conn.commit(); st.rerun()
             else:
                 st.info("Firme en el cuadro grande abajo:")
-                if 'canvas_inst_key' not in st.session_state: st.session_state['canvas_inst_key'] = 0
-                # Canvas Grande 600x300 Azul
-                canvas_inst = st_canvas(stroke_width=3, stroke_color="#00008B", background_color="#ffffff", height=300, width=600, drawing_mode="freedraw", key=f"canvas_inst_{st.session_state['canvas_inst_key']}")
+                # UNIQUE KEY FOR CANVAS TO FORCE RENDER
+                key_canv = f"canvas_inst_{id_pdf}" 
+                canvas_inst = st_canvas(stroke_width=3, stroke_color="#00008B", background_color="#ffffff", height=300, width=600, drawing_mode="freedraw", key=key_canv)
                 
                 if st.button("Guardar Firma Difusor"):
                     if canvas_inst.image_data is not None:
                         img = PILImage.fromarray(canvas_inst.image_data.astype('uint8'), 'RGBA'); buffered = io.BytesIO(); img.save(buffered, format="PNG"); img_str = base64.b64encode(buffered.getvalue()).decode()
                         c = conn.cursor(); c.execute("UPDATE capacitaciones SET firma_instructor_b64=? WHERE id=?", (img_str, id_pdf)); conn.commit(); 
-                        st.session_state['canvas_inst_key'] += 1; 
-                        st.rerun() # RERUN OBLIGATORIO PARA OCULTAR CUADRO
+                        st.rerun() # Refresh to hide canvas
             
             st.markdown("---")
             if st.button("📥 Generar PDF (Solo Firmados)"):
                 pdf_bytes = generar_pdf_asistencia_rggd02(id_pdf)
                 if pdf_bytes: st.download_button(label="Guardar Documento", data=pdf_bytes, file_name=f"RG-GD-02_{id_pdf}.pdf", mime="application/pdf")
-                else: st.error("Error: No se encontraron datos para esta capacitación.")
+                # Error is handled inside function now
         else: st.info("No hay registros.")
     conn.close()
 
@@ -862,7 +862,7 @@ elif menu == "🦺 Registro EPP":
     if 'epp_cart' not in st.session_state:
         st.session_state.epp_cart = []
         
-    conn = sqlite3.connect('sgsst_v39_photo_time.db')
+    conn = sqlite3.connect('sgsst_v40_final_fix.db')
     trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
     opciones_trab = [f"{r['rut']} - {r['nombre']}" for i, r in trabajadores.iterrows()]
     
@@ -951,7 +951,7 @@ elif menu == "🦺 Registro EPP":
 
 elif menu == "📘 Entrega RIOHS":
     st.title("Entrega Reglamento Interno (RIOHS)")
-    conn = sqlite3.connect('sgsst_v39_photo_time.db')
+    conn = sqlite3.connect('sgsst_v40_final_fix.db')
     trabajadores = pd.read_sql("SELECT rut, nombre FROM personal", conn)
     opciones_trab = [f"{r['rut']} - {r['nombre']}" for i, r in trabajadores.iterrows()]
     
@@ -1012,13 +1012,13 @@ elif menu == "📘 Entrega RIOHS":
     conn.close()
 
 elif menu == "📄 Generador IRL":
-    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_v39_photo_time.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn); sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
+    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_v40_final_fix.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn); sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
 
 elif menu == "⚠️ Matriz IPER":
-    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_v39_photo_time.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
+    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_v40_final_fix.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
 
 elif menu == "🔐 Gestión Usuarios" and st.session_state['user_role'] == "ADMINISTRADOR":
-    st.title("Administración de Usuarios del Sistema"); conn = sqlite3.connect('sgsst_v39_photo_time.db')
+    st.title("Administración de Usuarios del Sistema"); conn = sqlite3.connect('sgsst_v40_final_fix.db')
     with st.form("new_sys_user"):
         st.subheader("Nuevo Usuario"); new_u = st.text_input("Nombre Usuario"); new_p = st.text_input("Contraseña", type="password"); new_r = st.selectbox("Rol", ["ADMINISTRADOR", "SUPERVISOR", "ASISTENTE"])
         if st.form_submit_button("Crear Usuario"):
