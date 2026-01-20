@@ -8,6 +8,8 @@ import os
 import shutil
 import tempfile
 import numpy as np
+import base64 # NUEVO: Para manejar imágenes en texto
+from PIL import Image as PILImage # NUEVO: Para procesar el dibujo del canvas
 import matplotlib
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
@@ -15,20 +17,20 @@ from fpdf import FPDF
 from io import BytesIO
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, landscape
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
-from streamlit_drawable_canvas import st_canvas # LIBRERÍA NECESARIA PARA FIRMAR EN PANTALLA
+from streamlit_drawable_canvas import st_canvas
 
 # Configuración Matplotlib
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL)
+# 1. CAPA DE DATOS (SQL RELACIONAL) - V7 (Soporte Gráfico)
 # ==============================================================================
 def init_erp_db():
-    # CAMBIO: Nueva versión de DB para soportar el campo de firma gráfica (BLOB/TEXT)
-    conn = sqlite3.connect('sgsst_v6_signature.db')
+    # CAMBIO: V7 para asegurar almacenamiento de imágenes
+    conn = sqlite3.connect('sgsst_v7_graphic.db')
     c = conn.cursor()
     
     # --- USUARIOS ---
@@ -51,7 +53,7 @@ def init_erp_db():
                     cargo_responsable TEXT, lugar TEXT, hora_inicio TEXT,
                     tipo_charla TEXT, tema TEXT, estado TEXT)''')
     
-    # --- ASISTENCIA (AHORA CON SOPORTE PARA IMAGEN DE FIRMA) ---
+    # --- ASISTENCIA (CAMPO FIRMA_IMAGEN_B64 ES CRÍTICO AQUÍ) ---
     c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, 
                     id_capacitacion INTEGER, 
@@ -120,7 +122,7 @@ def hash_pass(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def login_user(username, password):
-    conn = sqlite3.connect('sgsst_v6_signature.db')
+    conn = sqlite3.connect('sgsst_v7_graphic.db')
     c = conn.cursor()
     c.execute("SELECT rol FROM usuarios WHERE username=? AND password=?", (username, hash_pass(password)))
     result = c.fetchone()
@@ -285,14 +287,14 @@ class PDF_SST(FPDF):
             self.cell(100, 7, f" {label}", 1, 0, 'L'); self.cell(45, 7, str(val_m), 1, 0, 'C'); self.cell(45, 7, str(val_a), 1, 1, 'C')
 
 def generar_pdf_asistencia_rggd02(id_cap):
-    conn = sqlite3.connect('sgsst_v6_signature.db')
+    conn = sqlite3.connect('sgsst_v7_graphic.db')
     try:
         cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
         if cap is None:
             return None
             
         asistentes = conn.execute("""
-            SELECT p.nombre, p.rut, p.cargo, a.firma_digital_hash 
+            SELECT p.nombre, p.rut, p.cargo, a.firma_digital_hash, a.firma_imagen_b64 
             FROM asistencia_capacitacion a
             JOIN personal p ON a.rut_trabajador = p.rut
             WHERE a.id_capacitacion = ? AND a.estado = 'FIRMADO'
@@ -328,13 +330,28 @@ def generar_pdf_asistencia_rggd02(id_cap):
         elements.append(Paragraph("<b>TIPO DE CHARLA:</b>", style_small)); elements.append(t_types); elements.append(Spacer(1, 10))
         elements.append(Paragraph(f"<b>TEMA:</b> {cap[7]}", style_small)); elements.append(Spacer(1, 10))
 
-        header_asis = ["N°", "NOMBRE", "R.U.T.", "FIRMA (Hash Digital)"]
+        header_asis = ["N°", "NOMBRE", "R.U.T.", "FIRMA (Gráfica)"]
         data_asis = [header_asis]
-        for idx, (nom, rut, car, firma) in enumerate(asistentes, 1):
-            data_asis.append([str(idx), nom, rut, firma[:10] + "...(VALIDADO)"])
+        
+        # PROCESAMIENTO DE IMÁGENES DE FIRMA
+        for idx, (nom, rut, car, firma_hash, firma_b64) in enumerate(asistentes, 1):
+            row = [str(idx), nom, rut]
+            if firma_b64:
+                try:
+                    # Convertir Base64 a Imagen ReportLab
+                    img_bytes = base64.b64decode(firma_b64)
+                    img_stream = io.BytesIO(img_bytes)
+                    img_rl = Image(img_stream, width=80, height=30) # Redimensionar
+                    row.append(img_rl)
+                except:
+                    row.append("Error img")
+            else:
+                row.append("Firma Digital (Hash)")
+            data_asis.append(row)
+            
         while len(data_asis) < 21: data_asis.append([str(len(data_asis)), "", "", ""])
         t_asis = Table(data_asis, colWidths=[30, 200, 80, 180])
-        t_asis.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('FONTSIZE', (0,0), (-1,-1), 7), ('ALIGN', (0,0), (0,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,0), colors.lightgrey)]))
+        t_asis.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('FONTSIZE', (0,0), (-1,-1), 7), ('ALIGN', (0,0), (0,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BACKGROUND', (0,0), (-1,0), colors.lightgrey)]))
         elements.append(t_asis); elements.append(Spacer(1, 10))
 
         data_footer = [["LUGAR:", cap[4], "HORA DE INICIO:", cap[5]], ["", "", "", ""], ["FIRMA Y TIMBRE RELATOR:", "", "", ""]]
@@ -551,11 +568,16 @@ elif menu == "📱 App Móvil":
 
                 if st.button("CONFIRMAR FIRMA"):
                     if canvas_result.image_data is not None:
-                        # Guardar Hash Y la Imagen (como base64 string si quisieramos, pero por ahora hash para cumplir flujo)
+                        # Convertir numpy array a imagen bytes
+                        img = PILImage.fromarray(canvas_result.image_data.astype('uint8'), 'RGBA')
+                        buffered = io.BytesIO()
+                        img.save(buffered, format="PNG")
+                        img_str = base64.b64encode(buffered.getvalue()).decode()
+                        
                         hash_firma = hashlib.sha256(f"{rut_firmante}{datetime.now()}".encode()).hexdigest()
                         c = conn.cursor()
-                        c.execute("UPDATE asistencia_capacitacion SET estado='FIRMADO', hora_firma=?, firma_digital_hash=? WHERE id_capacitacion=? AND rut_trabajador=?",
-                                  (datetime.now(), hash_firma, id_cap_movil, rut_firmante))
+                        c.execute("UPDATE asistencia_capacitacion SET estado='FIRMADO', hora_firma=?, firma_digital_hash=?, firma_imagen_b64=? WHERE id_capacitacion=? AND rut_trabajador=?",
+                                  (datetime.now(), hash_firma, img_str, id_cap_movil, rut_firmante))
                         conn.commit()
                         st.success("✅ Firma registrada correctamente en la nube.")
                         st.rerun()
