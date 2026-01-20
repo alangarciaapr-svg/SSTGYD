@@ -16,7 +16,7 @@ import plotly.graph_objects as go
 from fpdf import FPDF
 from io import BytesIO
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.pagesizes import letter, landscape
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
@@ -369,6 +369,7 @@ def generar_pdf_asistencia_rggd02(id_cap):
 st.set_page_config(page_title="ERP SGSST - G&D", layout="wide")
 init_erp_db()
 
+# CONTROL DE SESIÓN
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
     st.session_state['user_role'] = None
@@ -387,6 +388,7 @@ if not st.session_state['logged_in']:
             else: st.error("Credenciales incorrectas")
     st.markdown("---"); st.caption("Admin Default: admin / 1234"); st.stop()
 
+# APP PRINCIPAL
 with st.sidebar:
     st.markdown("## MADERAS G&D")
     st.markdown("### ERP GESTIÓN INTEGRAL")
@@ -540,7 +542,6 @@ elif menu == "📱 App Móvil":
         st.subheader("Firma Rápida")
         caps = pd.read_sql("SELECT id, tema FROM capacitaciones WHERE estado='PROGRAMADA'", conn)
         if not caps.empty:
-            # FIX CRITICO: Mostrar ID en el texto para evitar ambiguedad y errores de ID
             opciones_caps = [f"ID {r['id']} - {r['tema']}" for i, r in caps.iterrows()]
             sel_cap_movil = st.selectbox("Seleccione Actividad:", opciones_caps, key="movil_cap")
             id_cap_movil = int(sel_cap_movil.split(" - ")[0].replace("ID ", ""))
@@ -551,45 +552,23 @@ elif menu == "📱 App Móvil":
                 trabajador_firma = st.selectbox("Seleccione su Nombre:", pendientes['nombre'] + " | " + pendientes['rut'])
                 rut_firmante = trabajador_firma.split(" | ")[1]
                 
-                # --- CANVAS PARA FIRMA ---
                 st.write("Dibuje su firma abajo:")
                 
-                # FIX 2: KEY DINÁMICA PARA REINICIAR CANVAS
+                # FIX 2: KEY DINÁMICA
                 if 'canvas_key' not in st.session_state: st.session_state['canvas_key'] = 0
                 
-                canvas_result = st_canvas(
-                    stroke_width=2,
-                    stroke_color="#000000",
-                    background_color="#ffffff",
-                    height=150,
-                    width=400,
-                    drawing_mode="freedraw",
-                    key=f"canvas_firma_{st.session_state['canvas_key']}" # Key dinámica
-                )
+                canvas_result = st_canvas(stroke_width=2, stroke_color="#000000", background_color="#ffffff", height=150, width=400, drawing_mode="freedraw", key=f"canvas_firma_{st.session_state['canvas_key']}")
 
                 if st.button("CONFIRMAR FIRMA"):
                     if canvas_result.image_data is not None:
-                        img = PILImage.fromarray(canvas_result.image_data.astype('uint8'), 'RGBA')
-                        buffered = io.BytesIO()
-                        img.save(buffered, format="PNG")
-                        img_str = base64.b64encode(buffered.getvalue()).decode()
-                        
+                        img = PILImage.fromarray(canvas_result.image_data.astype('uint8'), 'RGBA'); buffered = io.BytesIO(); img.save(buffered, format="PNG"); img_str = base64.b64encode(buffered.getvalue()).decode()
                         hash_firma = hashlib.sha256(f"{rut_firmante}{datetime.now()}".encode()).hexdigest()
                         c = conn.cursor()
-                        c.execute("UPDATE asistencia_capacitacion SET estado='FIRMADO', hora_firma=?, firma_digital_hash=?, firma_imagen_b64=? WHERE id_capacitacion=? AND rut_trabajador=?",
-                                  (datetime.now(), hash_firma, img_str, id_cap_movil, rut_firmante))
-                        conn.commit()
-                        st.success("✅ Firma registrada correctamente en la nube.")
-                        
-                        # FIX 2: Incrementar key para limpiar canvas
-                        st.session_state['canvas_key'] += 1
-                        st.rerun()
-                    else:
-                        st.warning("Por favor dibuje su firma antes de confirmar.")
-            else:
-                st.info("No hay trabajadores pendientes de firma para esta actividad.")
-        else:
-            st.warning("No hay capacitaciones programadas.")
+                        c.execute("UPDATE asistencia_capacitacion SET estado='FIRMADO', hora_firma=?, firma_digital_hash=?, firma_imagen_b64=? WHERE id_capacitacion=? AND rut_trabajador=?", (datetime.now(), hash_firma, img_str, id_cap_movil, rut_firmante))
+                        conn.commit(); st.success("✅ Firma registrada correctamente en la nube."); st.session_state['canvas_key'] += 1; st.rerun()
+                    else: st.warning("Por favor dibuje su firma antes de confirmar.")
+            else: st.info("No hay trabajadores pendientes de firma para esta actividad.")
+        else: st.warning("No hay capacitaciones programadas.")
     with tab_insp:
         st.subheader("Inspección de Seguridad")
         with st.form("form_hallazgo"):
@@ -608,34 +587,37 @@ elif menu == "🎓 Gestión Capacitación":
     with tab_firma:
         caps_activas = pd.read_sql("SELECT id, tema, tipo_charla FROM capacitaciones WHERE estado='PROGRAMADA'", conn)
         if not caps_activas.empty:
-            # FIX: Usar ID en el selectbox para evitar errores de duplicidad
             opciones = [f"ID {r['id']} - {r['tema']} ({r['tipo_charla']})" for i, r in caps_activas.iterrows()]
             sel_cap = st.selectbox("Seleccione Actividad:", opciones)
             id_cap_sel = int(sel_cap.split(" - ")[0].replace("ID ", ""))
             
             trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
-            # FIX 3: REINICIO SELECCION
-            if 'multi_asistentes' not in st.session_state: st.session_state['multi_asistentes'] = []
             
-            asistentes = st.multiselect("Seleccione Asistentes para Enviar a App Móvil:", trabajadores['nombre'], key="selector_asistentes")
+            # FIX 3: Callback para limpiar selección
+            def enviar_movil_callback(id_cap, df_trab):
+                conn_cb = sqlite3.connect('sgsst_v6_signature.db')
+                c_cb = conn_cb.cursor()
+                seleccion = st.session_state.selector_asistentes
+                for nombre in seleccion:
+                    rut_t = df_trab[df_trab['nombre'] == nombre]['rut'].values[0]
+                    c_cb.execute("INSERT INTO asistencia_capacitacion (id_capacitacion, rut_trabajador, estado) VALUES (?,?,?)", (id_cap, rut_t, "PENDIENTE"))
+                conn_cb.commit()
+                conn_cb.close()
+                st.session_state.selector_asistentes = [] # Limpiar widget
+                st.session_state.exito_envio = True
+
+            st.multiselect("Seleccione Asistentes para Enviar a App Móvil:", trabajadores['nombre'], key="selector_asistentes")
+            st.button("Enviar a App Móvil", on_click=enviar_movil_callback, args=(id_cap_sel, trabajadores))
             
-            if asistentes:
-                if st.button("Enviar a App Móvil"):
-                    c = conn.cursor()
-                    for nombre in asistentes:
-                        rut_t = trabajadores[trabajadores['nombre'] == nombre]['rut'].values[0]
-                        c.execute("INSERT INTO asistencia_capacitacion (id_capacitacion, rut_trabajador, estado) VALUES (?,?,?)", (id_cap_sel, rut_t, "PENDIENTE"))
-                    conn.commit()
-                    st.success("Asistentes generados exitosamente") # Mensaje solicitado
-                    # FIX 3: Limpiar selección (requiere rerun)
-                    st.session_state["selector_asistentes"] = [] 
-                    st.rerun()
+            if st.session_state.get("exito_envio"):
+                st.success("Asistentes generados exitosamente")
+                st.session_state.exito_envio = False
+                
         else: st.warning("No hay capacitaciones pendientes.")
     with tab_hist:
         historial = pd.read_sql("SELECT * FROM capacitaciones WHERE estado='PROGRAMADA' OR estado='EJECUTADA'", conn)
         if not historial.empty:
             st.dataframe(historial, use_container_width=True)
-            # FIX: Usar ID en selectbox para evitar el error TypeError en PDF
             opciones_hist = [f"ID {r['id']} - {r['tema']}" for i, r in historial.iterrows()]
             sel_pdf = st.selectbox("Descargar Acta PDF:", opciones_hist)
             id_pdf = int(sel_pdf.split(" - ")[0].replace("ID ", ""))
