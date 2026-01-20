@@ -542,6 +542,7 @@ elif menu == "📱 App Móvil":
         st.subheader("Firma Rápida")
         caps = pd.read_sql("SELECT id, tema FROM capacitaciones WHERE estado='PROGRAMADA'", conn)
         if not caps.empty:
+            # FIX CRITICO: Mostrar ID en el texto para evitar ambiguedad y errores de ID
             opciones_caps = [f"ID {r['id']} - {r['tema']}" for i, r in caps.iterrows()]
             sel_cap_movil = st.selectbox("Seleccione Actividad:", opciones_caps, key="movil_cap")
             id_cap_movil = int(sel_cap_movil.split(" - ")[0].replace("ID ", ""))
@@ -552,23 +553,45 @@ elif menu == "📱 App Móvil":
                 trabajador_firma = st.selectbox("Seleccione su Nombre:", pendientes['nombre'] + " | " + pendientes['rut'])
                 rut_firmante = trabajador_firma.split(" | ")[1]
                 
+                # --- CANVAS PARA FIRMA ---
                 st.write("Dibuje su firma abajo:")
                 
-                # FIX 2: KEY DINÁMICA
+                # FIX 2: KEY DINÁMICA PARA REINICIAR CANVAS
                 if 'canvas_key' not in st.session_state: st.session_state['canvas_key'] = 0
                 
-                canvas_result = st_canvas(stroke_width=2, stroke_color="#000000", background_color="#ffffff", height=150, width=400, drawing_mode="freedraw", key=f"canvas_firma_{st.session_state['canvas_key']}")
+                canvas_result = st_canvas(
+                    stroke_width=2,
+                    stroke_color="#000000",
+                    background_color="#ffffff",
+                    height=150,
+                    width=400,
+                    drawing_mode="freedraw",
+                    key=f"canvas_firma_{st.session_state['canvas_key']}" # Key dinámica
+                )
 
                 if st.button("CONFIRMAR FIRMA"):
                     if canvas_result.image_data is not None:
-                        img = PILImage.fromarray(canvas_result.image_data.astype('uint8'), 'RGBA'); buffered = io.BytesIO(); img.save(buffered, format="PNG"); img_str = base64.b64encode(buffered.getvalue()).decode()
+                        img = PILImage.fromarray(canvas_result.image_data.astype('uint8'), 'RGBA')
+                        buffered = io.BytesIO()
+                        img.save(buffered, format="PNG")
+                        img_str = base64.b64encode(buffered.getvalue()).decode()
+                        
                         hash_firma = hashlib.sha256(f"{rut_firmante}{datetime.now()}".encode()).hexdigest()
                         c = conn.cursor()
-                        c.execute("UPDATE asistencia_capacitacion SET estado='FIRMADO', hora_firma=?, firma_digital_hash=?, firma_imagen_b64=? WHERE id_capacitacion=? AND rut_trabajador=?", (datetime.now(), hash_firma, img_str, id_cap_movil, rut_firmante))
-                        conn.commit(); st.success("✅ Firma registrada correctamente en la nube."); st.session_state['canvas_key'] += 1; st.rerun()
-                    else: st.warning("Por favor dibuje su firma antes de confirmar.")
-            else: st.info("No hay trabajadores pendientes de firma para esta actividad.")
-        else: st.warning("No hay capacitaciones programadas.")
+                        c.execute("UPDATE asistencia_capacitacion SET estado='FIRMADO', hora_firma=?, firma_digital_hash=?, firma_imagen_b64=? WHERE id_capacitacion=? AND rut_trabajador=?",
+                                  (datetime.now(), hash_firma, img_str, id_cap_movil, rut_firmante))
+                        conn.commit()
+                        st.success("✅ Firma registrada correctamente en la nube.")
+                        
+                        # FIX 2: Incrementar key para limpiar canvas
+                        st.session_state['canvas_key'] += 1
+                        st.rerun()
+                    else:
+                        st.warning("Por favor dibuje su firma antes de confirmar.")
+            else:
+                st.info("No hay trabajadores pendientes de firma para esta actividad.")
+        else:
+            st.warning("No hay capacitaciones programadas.")
     with tab_insp:
         st.subheader("Inspección de Seguridad")
         with st.form("form_hallazgo"):
@@ -580,13 +603,39 @@ elif menu == "📱 App Móvil":
 elif menu == "🎓 Gestión Capacitación":
     st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_v6_signature.db')
     with tab_prog:
+        # 1. CREATION FORM (Keep as is)
+        st.subheader("Nueva Capacitación")
         with st.form("new_cap"):
             col1, col2 = st.columns(2); fecha = col1.date_input("Fecha Ejecución"); hora = col2.time_input("Hora Inicio"); col3, col4 = st.columns(2); resp = col3.text_input("Responsable Capacitación", value="Alan García"); cargo = col4.text_input("Cargo Responsable", value="APR"); lugar = st.text_input("Lugar", "Sala de Capacitación Faena"); tipos = ["CHARLA DE 5 MIN.", "PROCEDIMIENTO", "INSTRUCTIVO", "REGLAMENTO INTERNO", "AST", "CHARLA OPERACIONAL", "TRIPTICO", "RECAPACITACION", "OTROS"]; tipo_charla = st.selectbox("Tipo de Actividad (RG-GD-02)", tipos); tema = st.text_area("Tema a Tratar")
             if st.form_submit_button("Programar Capacitación"):
                 c = conn.cursor(); c.execute("INSERT INTO capacitaciones (fecha, responsable, cargo_responsable, lugar, hora_inicio, tipo_charla, tema, estado) VALUES (?,?,?,?,?,?,?,?)", (fecha, resp, cargo, lugar, str(hora), tipo_charla, tema, "PROGRAMADA")); conn.commit(); st.success("Capacitación creada bajo formato oficial RG-GD-02."); st.rerun()
+
+        # 2. DELETION SECTION (New)
+        st.markdown("---")
+        st.subheader("🗑️ Eliminar Capacitación Existente")
+        # Fetch data
+        df_caps = pd.read_sql("SELECT id, fecha, tema FROM capacitaciones ORDER BY id DESC", conn)
+        if not df_caps.empty:
+            # Create a list of strings like "ID 5 | 2023-10-20 | Uso de Extintores"
+            opciones_del = [f"ID {row['id']} | {row['fecha']} | {row['tema']}" for i, row in df_caps.iterrows()]
+            sel_del = st.selectbox("Seleccione capacitación a eliminar:", opciones_del)
+            
+            if st.button("Eliminar Seleccionada", type="primary"):
+                id_borrar = int(sel_del.split(" | ")[0].replace("ID ", ""))
+                c = conn.cursor()
+                # Delete from both tables
+                c.execute("DELETE FROM capacitaciones WHERE id=?", (id_borrar,))
+                c.execute("DELETE FROM asistencia_capacitacion WHERE id_capacitacion=?", (id_borrar,))
+                conn.commit()
+                st.success("Capacitación eliminada correctamente.")
+                st.rerun()
+        else:
+            st.info("No hay capacitaciones creadas.")
+
     with tab_firma:
         caps_activas = pd.read_sql("SELECT id, tema, tipo_charla FROM capacitaciones WHERE estado='PROGRAMADA'", conn)
         if not caps_activas.empty:
+            # FIX: Usar ID en el selectbox para evitar errores de duplicidad
             opciones = [f"ID {r['id']} - {r['tema']} ({r['tipo_charla']})" for i, r in caps_activas.iterrows()]
             sel_cap = st.selectbox("Seleccione Actividad:", opciones)
             id_cap_sel = int(sel_cap.split(" - ")[0].replace("ID ", ""))
@@ -618,6 +667,7 @@ elif menu == "🎓 Gestión Capacitación":
         historial = pd.read_sql("SELECT * FROM capacitaciones WHERE estado='PROGRAMADA' OR estado='EJECUTADA'", conn)
         if not historial.empty:
             st.dataframe(historial, use_container_width=True)
+            # FIX: Usar ID en selectbox para evitar el error TypeError en PDF
             opciones_hist = [f"ID {r['id']} - {r['tema']}" for i, r in historial.iterrows()]
             sel_pdf = st.selectbox("Descargar Acta PDF:", opciones_hist)
             id_pdf = int(sel_pdf.split(" - ")[0].replace("ID ", ""))
