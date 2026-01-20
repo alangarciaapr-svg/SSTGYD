@@ -9,6 +9,7 @@ import shutil
 import tempfile
 import numpy as np
 import base64
+import uuid
 from PIL import Image as PILImage
 import matplotlib
 import matplotlib.pyplot as plt
@@ -26,10 +27,11 @@ from streamlit_drawable_canvas import st_canvas
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL) - V24 (PDFs EPP y RIOHS)
+# 1. CAPA DE DATOS (SQL RELACIONAL) - V25 (EPP Multi-Item + Talla + Firma)
 # ==============================================================================
 def init_erp_db():
-    conn = sqlite3.connect('sgsst_v24_complete.db')
+    # Cambiamos nombre DB para forzar actualizacion de esquema
+    conn = sqlite3.connect('sgsst_v25_epp_advanced.db') 
     c = conn.cursor()
     
     # --- USUARIOS ---
@@ -73,15 +75,19 @@ def init_erp_db():
                     id INTEGER PRIMARY KEY AUTOINCREMENT, rut_responsable TEXT, fecha DATETIME, 
                     tipo_inspeccion TEXT, hallazgos TEXT, estado TEXT)''')
 
-    # --- REGISTRO EPP ---
+    # --- REGISTRO EPP (ACTUALIZADO) ---
+    # grupo_id permite agrupar varios items en una sola "entrega" (PDF unico)
     c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    grupo_id TEXT, 
                     rut_trabajador TEXT,
                     nombre_trabajador TEXT,
                     producto TEXT,
                     cantidad INTEGER,
+                    talla TEXT,
                     motivo TEXT,
-                    fecha_entrega DATE)''')
+                    fecha_entrega DATE,
+                    firma_trabajador_b64 TEXT)''')
 
     # --- ENTREGA RIOHS ---
     c.execute('''CREATE TABLE IF NOT EXISTS entrega_riohs (
@@ -140,7 +146,7 @@ def hash_pass(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def login_user(username, password):
-    conn = sqlite3.connect('sgsst_v24_complete.db')
+    conn = sqlite3.connect('sgsst_v25_epp_advanced.db')
     c = conn.cursor()
     c.execute("SELECT rol FROM usuarios WHERE username=? AND password=?", (username, hash_pass(password)))
     result = c.fetchone()
@@ -312,7 +318,7 @@ class PDF_SST(FPDF):
 def clean(val): return str(val).strip() if val is not None else " "
 
 def generar_pdf_asistencia_rggd02(id_cap):
-    conn = sqlite3.connect('sgsst_v24_complete.db')
+    conn = sqlite3.connect('sgsst_v25_epp_advanced.db')
     try:
         cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
         if cap is None: return None
@@ -385,50 +391,75 @@ def generar_pdf_asistencia_rggd02(id_cap):
     except Exception as e: st.error(f"Error Generando PDF: {str(e)}"); return None
     finally: conn.close()
 
-def generar_pdf_epp(id_reg):
-    conn = sqlite3.connect('sgsst_v24_complete.db')
+def generar_pdf_epp_grupo(grupo_id):
+    conn = sqlite3.connect('sgsst_v25_epp_advanced.db')
     try:
-        reg = conn.execute("SELECT * FROM registro_epp WHERE id=?", (id_reg,)).fetchone()
-        if not reg: return None
+        regs = conn.execute("SELECT * FROM registro_epp WHERE grupo_id=?", (grupo_id,)).fetchall()
+        if not regs: return None
+        
+        # Datos del trabajador (tomamos del primer registro)
+        rut_t = clean(regs[0][2])
+        nom_t = clean(regs[0][3])
+        fecha_t = clean(regs[0][8])
+        firma_b64 = regs[0][9]
+        
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter)
         elements = []
         styles = getSampleStyleSheet()
-        G_BLUE = colors.navy
+        style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER)
+        
+        # Encabezado Logo
         logo_obj = Paragraph("<b>MADERAS G&D</b>", styles['Title'])
         if os.path.exists(LOGO_FILE):
              try: logo_obj = Image(LOGO_FILE, width=60, height=40)
              except: pass
         
-        t_head = Table([[logo_obj, Paragraph("COMPROBANTE DE ENTREGA DE EPP", styles['Title'])]], colWidths=[100, 300])
+        t_head = Table([[logo_obj, Paragraph("COMPROBANTE DE ENTREGA DE EPP", styles['Title'])]], colWidths=[100, 350])
         t_head.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
         elements.append(t_head); elements.append(Spacer(1, 20))
         
-        data_info = [
-            ["NOMBRE TRABAJADOR:", clean(reg[2])],
-            ["RUT:", clean(reg[1])],
-            ["FECHA ENTREGA:", clean(reg[6])],
-            ["PRODUCTO:", clean(reg[3])],
-            ["CANTIDAD:", clean(reg[4])],
-            ["MOTIVO:", clean(reg[5])]
-        ]
-        t_info = Table(data_info, colWidths=[150, 300])
-        t_info.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('BACKGROUND', (0,0), (0,-1), colors.lightgrey)]))
-        elements.append(t_info); elements.append(Spacer(1, 20))
+        # Datos Personales
+        p_info = f"<b>NOMBRE:</b> {nom_t}   <b>RUT:</b> {rut_t}   <b>FECHA:</b> {fecha_t}"
+        elements.append(Paragraph(p_info, styles['Normal'])); elements.append(Spacer(1, 15))
         
-        legal_text = "Declaro haber recibido los Elementos de Protección Personal (EPP) detallados anteriormente... (Art 53 DS 594)"
-        elements.append(Paragraph(legal_text, styles['Normal'])); elements.append(Spacer(1, 40))
+        # Tabla Detalle EPP
+        data_epp = [["PRODUCTO", "CANTIDAD", "TALLA", "MOTIVO"]]
+        for r in regs:
+            data_epp.append([clean(r[4]), str(r[5]), clean(r[6]), clean(r[7])])
+            
+        t_epp = Table(data_epp, colWidths=[200, 80, 80, 150])
+        t_epp.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 1, colors.black),
+            ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold')
+        ]))
+        elements.append(t_epp); elements.append(Spacer(1, 30))
         
-        t_sign = Table([["__________________________", "__________________________"], ["FIRMA TRABAJADOR", "FIRMA SUPERVISOR"]], colWidths=[200, 200])
-        t_sign.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER')]))
+        # Texto Legal
+        legal = "Declaro haber recibido los Elementos de Protección Personal detallados, en buen estado, y me comprometo a utilizarlos correctamente según el Art. 53 del D.S. 594."
+        elements.append(Paragraph(legal, styles['Normal'])); elements.append(Spacer(1, 40))
+        
+        # Firma
+        img_firma = Paragraph("Sin Firma Digital", style_center)
+        if firma_b64 and len(str(firma_b64)) > 100:
+             try:
+                 img_bytes = base64.b64decode(firma_b64)
+                 img_io = io.BytesIO(img_bytes)
+                 img_firma = Image(img_io, width=100, height=40)
+             except: pass
+        
+        t_sign = Table([[img_firma, "__________________________"], ["FIRMA TRABAJADOR", "FIRMA SUPERVISOR"]], colWidths=[200, 200])
+        t_sign.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'BOTTOM')]))
         elements.append(t_sign)
         
         doc.build(elements); buffer.seek(0); return buffer
-    except: return None
+    except Exception as e: st.error(f"Error PDF EPP: {e}"); return None
     finally: conn.close()
 
 def generar_pdf_riohs(id_reg):
-    conn = sqlite3.connect('sgsst_v24_complete.db')
+    conn = sqlite3.connect('sgsst_v25_epp_advanced.db')
     try:
         reg = conn.execute("SELECT * FROM entrega_riohs WHERE id=?", (id_reg,)).fetchone()
         if not reg: return None
@@ -444,11 +475,12 @@ def generar_pdf_riohs(id_reg):
         t_head = Table([[logo_obj, Paragraph("ENTREGA DE REGLAMENTO INTERNO (RIOHS)", styles['Title'])]], colWidths=[100, 350])
         elements.append(t_head); elements.append(Spacer(1, 20))
         
-        txt = f"Yo, <b>{clean(reg[2])}</b>, RUT <b>{clean(reg[1])}</b>, declaro haber recibido gratuitamente una copia del Reglamento Interno de Orden, Higiene y Seguridad..."
+        txt = f"Yo, <b>{clean(reg[2])}</b>, RUT <b>{clean(reg[1])}</b>, declaro haber recibido gratuitamente una copia del Reglamento Interno de Orden, Higiene y Seguridad de la empresa."
         elements.append(Paragraph(txt, styles['Normal'])); elements.append(Spacer(1, 20))
         
-        data_det = [["FECHA:", clean(reg[4])], ["FORMATO:", clean(reg[3])]]
-        t_det = Table(data_det); elements.append(t_det); elements.append(Spacer(1, 40))
+        data_det = [["FECHA RECEPCIÓN:", clean(reg[4])], ["FORMATO DE ENTREGA:", clean(reg[3])]]
+        t_det = Table(data_det, colWidths=[150, 200]); t_det.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black)]))
+        elements.append(t_det); elements.append(Spacer(1, 40))
         
         elements.append(Paragraph("__________________________<br/>FIRMA TRABAJADOR", styles['Normal']))
         doc.build(elements); buffer.seek(0); return buffer
@@ -545,7 +577,7 @@ if menu == "📊 Dashboard BI":
 elif menu == "👥 Nómina & Personal":
     st.title("Base de Datos Maestra de Personal")
     tab_lista, tab_agregar, tab_excel = st.tabs(["📋 Lista Completa", "➕ Gestión Manual", "📂 Carga Masiva"])
-    conn = sqlite3.connect('sgsst_v24_complete.db')
+    conn = sqlite3.connect('sgsst_v25_epp_advanced.db')
     with tab_lista:
         df = pd.read_sql("SELECT nombre, rut, cargo, centro_costo as 'Lugar', estado FROM personal", conn); st.dataframe(df, use_container_width=True, hide_index=True); st.markdown("---"); st.subheader("🗑️ Dar de Baja / Eliminar"); col_del, col_btn = st.columns([3, 1]); rut_a_borrar = col_del.selectbox("Seleccione Trabajador a Eliminar:", df['rut'] + " - " + df['nombre'])
         if col_btn.button("Eliminar Trabajador"): rut_clean = rut_a_borrar.split(" - ")[0]; c = conn.cursor(); c.execute("DELETE FROM personal WHERE rut=?", (rut_clean,)); conn.commit(); st.success(f"Trabajador {rut_clean} eliminado."); st.rerun()
@@ -564,12 +596,8 @@ elif menu == "👥 Nómina & Personal":
         with col_plantilla:
             st.info("¿Necesitas el formato?")
             def generar_plantilla_excel_detallada():
-                output = io.BytesIO(); data = {'NOMBRE': ['JUAN PEREZ (EJEMPLO)', 'MARIA SOTO (EJEMPLO)'], 'RUT': ['11.222.333-K', '12.345.678-9'], 'CARGO': ['OPERADOR ASERRADERO', 'AYUDANTE'], 'LUGAR DE TRABAJO': ['ASERRADERO', 'FAENA'], 'F. CONTRATO': ['2025-01-01', '01-03-2024'], 'DIRECCION': ['CALLE 1, OSORNO', 'AVENIDA 2'], 'ESTADO CIVIL': ['SOLTERO', 'CASADA'], 'SALUD': ['FONASA', 'ISAPRE'], 'AFP': ['MODELO', 'CAPITAL'], 'CORREO': ['ejemplo@gyd.cl', ''], 'TELEFONO': ['912345678', '']}
-                df_template = pd.DataFrame(data)
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    pd.DataFrame(["GUÍA DE FORMATO OBLIGATORIO - LEA ANTES DE LLENAR - LOS DATOS COMIENZAN EN LA FILA 4"]).to_excel(writer, startrow=0, startcol=0, index=False, header=False)
-                    pd.DataFrame(["RUT: Con puntos y guion (Ej: 11.222.333-K) | FECHAS: DD-MM-AAAA o AAAA-MM-DD | LUGAR: Use solo 'ASERRADERO', 'FAENA', 'OFICINA' | NO BORRAR ENCABEZADOS DE LA FILA 3"]).to_excel(writer, startrow=1, startcol=0, index=False, header=False)
-                    df_template.to_excel(writer, startrow=2, index=False, sheet_name='Plantilla')
+                output = io.BytesIO(); data = {'NOMBRE': ['JUAN PEREZ (EJEMPLO)', 'MARIA SOTO (EJEMPLO)'], 'RUT': ['11.222.333-K', '12.345.678-9'], 'CARGO': ['OPERADOR ASERRADERO', 'AYUDANTE'], 'LUGAR DE TRABAJO': ['ASERRADERO', 'FAENA'], 'F. CONTRATO': ['2025-01-01', '01-03-2024'], 'DIRECCION': ['CALLE 1, OSORNO', 'AVENIDA 2'], 'ESTADO CIVIL': ['SOLTERO', 'CASADA'], 'SALUD': ['FONASA', 'ISAPRE'], 'AFP': ['MODELO', 'CAPITAL'], 'CORREO': ['ejemplo@gyd.cl', ''], 'TELEFONO': ['912345678', '']}; df_template = pd.DataFrame(data)
+                with pd.ExcelWriter(output, engine='openpyxl') as writer: pd.DataFrame(["GUÍA DE FORMATO OBLIGATORIO - LEA ANTES DE LLENAR - LOS DATOS COMIENZAN EN LA FILA 4"]).to_excel(writer, startrow=0, startcol=0, index=False, header=False); pd.DataFrame(["RUT: Con puntos y guion (Ej: 11.222.333-K) | FECHAS: DD-MM-AAAA o AAAA-MM-DD | LUGAR: Use solo 'ASERRADERO', 'FAENA', 'OFICINA' | NO BORRAR ENCABEZADOS DE LA FILA 3"]).to_excel(writer, startrow=1, startcol=0, index=False, header=False); df_template.to_excel(writer, startrow=2, index=False, sheet_name='Plantilla')
                 return output.getvalue()
             plantilla_data = generar_plantilla_excel_detallada(); st.download_button(label="📥 Bajar Plantilla Instructiva", data=plantilla_data, file_name="plantilla_carga_nomina_v2.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         uploaded_file = st.file_uploader("📂 Actualizar Nómina (Subir Excel Completo)", type=['xlsx', 'csv'])
@@ -593,7 +621,7 @@ elif menu == "👥 Nómina & Personal":
 elif menu == "📱 App Móvil":
     st.title("Conexión App Móvil (Operarios)")
     st.markdown("### 📲 Panel de Registro en Terreno")
-    conn = sqlite3.connect('sgsst_v24_complete.db')
+    conn = sqlite3.connect('sgsst_v25_epp_advanced.db')
     tab_asist, tab_insp = st.tabs(["✍️ Firmar Asistencia", "🚨 Reportar Hallazgo"])
     with tab_asist:
         st.subheader("Firma Rápida")
@@ -632,7 +660,7 @@ elif menu == "📱 App Móvil":
     conn.close()
 
 elif menu == "🎓 Gestión Capacitación":
-    st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_v24_complete.db')
+    st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_v25_epp_advanced.db')
     with tab_prog:
         st.subheader("Nueva Capacitación")
         with st.form("new_cap"):
@@ -649,7 +677,7 @@ elif menu == "🎓 Gestión Capacitación":
             opciones = [f"ID {r['id']} - {r['tema']} ({r['tipo_charla']})" for i, r in caps_activas.iterrows()]; sel_cap = st.selectbox("Seleccione Actividad:", opciones); id_cap_sel = int(sel_cap.split(" - ")[0].replace("ID ", "")); trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
             
             def enviar_asistentes_callback(id_cap, df_trab):
-                c_cb = sqlite3.connect('sgsst_v24_complete.db'); cursor_cb = c_cb.cursor(); selection = st.session_state.selector_asistentes
+                c_cb = sqlite3.connect('sgsst_v25_epp_advanced.db'); cursor_cb = c_cb.cursor(); selection = st.session_state.selector_asistentes
                 if selection:
                     for nombre in selection:
                         rut_t = df_trab[df_trab['nombre'] == nombre]['rut'].values[0]
@@ -671,7 +699,7 @@ elif menu == "🎓 Gestión Capacitación":
             st.dataframe(historial, use_container_width=True); opciones_hist = [f"ID {r['id']} - {r['tema']}" for i, r in historial.iterrows()]; sel_pdf = st.selectbox("Gestionar Capacitación (Firmar/PDF):", opciones_hist); id_pdf = int(sel_pdf.split(" - ")[0].replace("ID ", "")); st.markdown("#### ✍️ Firma del Difusor (Instructor)")
             
             # --- CONSULTA INSTANTANEA DE FIRMA ---
-            conn_sig = sqlite3.connect('sgsst_v24_complete.db')
+            conn_sig = sqlite3.connect('sgsst_v25_epp_advanced.db')
             firmado_db = pd.read_sql("SELECT firma_instructor_b64 FROM capacitaciones WHERE id=?", conn_sig, params=(id_pdf,))
             conn_sig.close()
             
@@ -708,48 +736,99 @@ elif menu == "🎓 Gestión Capacitación":
 
 elif menu == "🦺 Registro EPP":
     st.title("Control de Entrega de EPP")
-    conn = sqlite3.connect('sgsst_v24_complete.db')
+    st.markdown("### Seleccione Trabajador e Items a Entregar")
+    
+    # Initialize "cart" in session state
+    if 'epp_cart' not in st.session_state:
+        st.session_state.epp_cart = []
+        
+    conn = sqlite3.connect('sgsst_v25_epp_advanced.db')
     trabajadores = pd.read_sql("SELECT rut, nombre FROM personal", conn)
     opciones_trab = [f"{r['rut']} - {r['nombre']}" for i, r in trabajadores.iterrows()]
     
-    with st.form("form_epp"):
-        sel_trab = st.selectbox("Trabajador:", opciones_trab)
-        c1, c2 = st.columns(2)
-        prod = c1.selectbox("Elemento EPP:", ["Casco de Seguridad", "Lentes de Seguridad", "Guantes de Cabritilla", "Guantes de Nitrilo", "Zapatos de Seguridad", "Chaleco Reflectante", "Protector Auditivo", "Bloqueador Solar"])
-        cant = c2.number_input("Cantidad:", 1, 10, 1)
-        c3, c4 = st.columns(2)
-        motivo = c3.selectbox("Motivo:", ["Entrega Inicial", "Reposición por Deterioro", "Pérdida"])
-        fecha_epp = c4.date_input("Fecha Entrega:")
+    sel_trab = st.selectbox("Trabajador:", opciones_trab)
+    
+    # Cart Interface
+    c1, c2, c3 = st.columns(3)
+    prod = c1.selectbox("Elemento EPP:", ["Casco de Seguridad", "Lentes de Seguridad", "Guantes de Cabritilla", "Guantes de Nitrilo", "Zapatos de Seguridad", "Chaleco Reflectante", "Protector Auditivo", "Bloqueador Solar", "Ropa de Trabajo"])
+    cant = c2.number_input("Cantidad:", 1, 10, 1)
+    talla = c3.text_input("Talla (Opcional):", placeholder="Ej: L, 42, Única")
+    motivo = st.selectbox("Motivo:", ["Entrega Inicial", "Reposición por Deterioro", "Pérdida"])
+    
+    if st.button("➕ Agregar a la Lista"):
+        st.session_state.epp_cart.append({
+            "Producto": prod, "Cantidad": cant, "Talla": talla, "Motivo": motivo
+        })
+        st.success("Item agregado.")
         
-        if st.form_submit_button("Registrar Entrega"):
-            rut_t = sel_trab.split(" - ")[0]
-            nombre_t = sel_trab.split(" - ")[1]
-            c = conn.cursor()
-            c.execute("INSERT INTO registro_epp (rut_trabajador, nombre_trabajador, producto, cantidad, motivo, fecha_entrega) VALUES (?,?,?,?,?,?)", (rut_t, nombre_t, prod, cant, motivo, fecha_epp))
-            conn.commit()
-            st.success("Entrega registrada correctamente.")
+    # Show Cart
+    if st.session_state.epp_cart:
+        st.markdown("### 🛒 Lista de Entrega")
+        st.table(pd.DataFrame(st.session_state.epp_cart))
+        
+        if st.button("🗑️ Limpiar Lista"):
+            st.session_state.epp_cart = []
             st.rerun()
 
-    st.markdown("---")
-    st.subheader("Historial de Entregas")
-    hist_epp = pd.read_sql("SELECT * FROM registro_epp ORDER BY id DESC", conn)
+        st.markdown("---")
+        st.markdown("#### ✍️ Firma del Trabajador")
+        st.info("Por favor firme para confirmar la recepción de TODOS los elementos listados arriba.")
+        canvas_epp = st_canvas(stroke_width=2, stroke_color="#00008B", background_color="#ffffff", height=200, width=600, drawing_mode="freedraw", key="canvas_epp_delivery")
+        
+        if st.button("💾 Registrar Entrega y Guardar"):
+            if canvas_epp.image_data is not None:
+                # Prepare data
+                rut_t = sel_trab.split(" - ")[0]
+                nombre_t = sel_trab.split(" - ")[1]
+                fecha_hoy = date.today()
+                grupo_id = str(uuid.uuid4()) # Unique ID for this delivery batch
+                
+                # Process Signature
+                img = PILImage.fromarray(canvas_epp.image_data.astype('uint8'), 'RGBA')
+                buffered = io.BytesIO()
+                img.save(buffered, format="PNG")
+                img_str = base64.b64encode(buffered.getvalue()).decode()
+                
+                c = conn.cursor()
+                for item in st.session_state.epp_cart:
+                    c.execute("""
+                        INSERT INTO registro_epp 
+                        (grupo_id, rut_trabajador, nombre_trabajador, producto, cantidad, talla, motivo, fecha_entrega, firma_trabajador_b64) 
+                        VALUES (?,?,?,?,?,?,?,?,?)
+                    """, (grupo_id, rut_t, nombre_t, item['Producto'], item['Cantidad'], item['Talla'], item['Motivo'], fecha_hoy, img_str))
+                
+                conn.commit()
+                st.session_state.epp_cart = [] # Clear cart
+                st.success("Entrega registrada exitosamente!")
+                st.rerun()
+            else:
+                st.warning("Debe firmar antes de guardar.")
     
-    # PDF EPP
+    st.markdown("---")
+    st.subheader("Historial de Entregas (Grupos)")
+    # Show history grouped by delivery
+    hist_epp = pd.read_sql("SELECT grupo_id, fecha_entrega, nombre_trabajador, count(*) as items FROM registro_epp GROUP BY grupo_id ORDER BY id DESC", conn)
+    
     if not hist_epp.empty:
         st.dataframe(hist_epp, use_container_width=True)
-        opciones_epp = [f"ID {r['id']} | {r['fecha_entrega']} | {r['nombre_trabajador']}" for i, r in hist_epp.iterrows()]
-        sel_epp = st.selectbox("Descargar Comprobante EPP:", opciones_epp)
+        opciones_descarga = [f"{r['fecha_entrega']} | {r['nombre_trabajador']} | ID: {r['grupo_id']}" for i, r in hist_epp.iterrows()]
+        sel_descarga = st.selectbox("Seleccione Entrega para PDF:", opciones_descarga)
+        
         if st.button("📥 Descargar Comprobante EPP"):
-            id_epp = int(sel_epp.split(" | ")[0].replace("ID ", ""))
-            pdf_epp = generar_pdf_epp(id_epp)
-            if pdf_epp: st.download_button("Guardar PDF", pdf_epp, f"EPP_{id_epp}.pdf", "application/pdf")
-            else: st.error("Error al generar.")
-    else: st.info("No hay registros.")
+            grp_id = sel_descarga.split("ID: ")[1]
+            pdf_bytes = generar_pdf_epp_grupo(grp_id)
+            if pdf_bytes:
+                st.download_button("Guardar PDF", pdf_bytes, f"EPP_{grp_id}.pdf", "application/pdf")
+            else:
+                st.error("Error generando PDF.")
+    else:
+        st.info("No hay registros aún.")
+        
     conn.close()
 
 elif menu == "📘 Entrega RIOHS":
     st.title("Entrega Reglamento Interno (RIOHS)")
-    conn = sqlite3.connect('sgsst_v24_complete.db')
+    conn = sqlite3.connect('sgsst_v25_epp_advanced.db')
     trabajadores = pd.read_sql("SELECT rut, nombre FROM personal", conn)
     opciones_trab = [f"{r['rut']} - {r['nombre']}" for i, r in trabajadores.iterrows()]
     
@@ -772,7 +851,6 @@ elif menu == "📘 Entrega RIOHS":
     st.subheader("Control de Entrega RIOHS")
     hist_riohs = pd.read_sql("SELECT * FROM entrega_riohs ORDER BY id DESC", conn)
     
-    # PDF RIOHS
     if not hist_riohs.empty:
         st.dataframe(hist_riohs, use_container_width=True)
         opciones_riohs = [f"ID {r['id']} | {r['fecha_entrega']} | {r['nombre_trabajador']}" for i, r in hist_riohs.iterrows()]
@@ -786,13 +864,13 @@ elif menu == "📘 Entrega RIOHS":
     conn.close()
 
 elif menu == "📄 Generador IRL":
-    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_v24_complete.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn); sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
+    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_v25_epp_advanced.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn); sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
 
 elif menu == "⚠️ Matriz IPER":
-    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_v24_complete.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
+    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_v25_epp_advanced.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
 
 elif menu == "🔐 Gestión Usuarios" and st.session_state['user_role'] == "ADMINISTRADOR":
-    st.title("Administración de Usuarios del Sistema"); conn = sqlite3.connect('sgsst_v24_complete.db')
+    st.title("Administración de Usuarios del Sistema"); conn = sqlite3.connect('sgsst_v25_epp_advanced.db')
     with st.form("new_sys_user"):
         st.subheader("Nuevo Usuario"); new_u = st.text_input("Nombre Usuario"); new_p = st.text_input("Contraseña", type="password"); new_r = st.selectbox("Rol", ["ADMINISTRADOR", "SUPERVISOR", "ASISTENTE"])
         if st.form_submit_button("Crear Usuario"):
