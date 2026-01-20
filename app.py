@@ -27,11 +27,10 @@ from streamlit_drawable_canvas import st_canvas
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL) - V26 (EPP Cargo + PDF Pro)
+# 1. CAPA DE DATOS (SQL RELACIONAL) - V27 (Fix PDF EPP Error)
 # ==============================================================================
 def init_erp_db():
-    # Nueva versión de DB para incluir campo cargo en EPP
-    conn = sqlite3.connect('sgsst_v26_epp_pro.db') 
+    conn = sqlite3.connect('sgsst_v27_stable.db') 
     c = conn.cursor()
     
     # --- USUARIOS ---
@@ -75,7 +74,7 @@ def init_erp_db():
                     id INTEGER PRIMARY KEY AUTOINCREMENT, rut_responsable TEXT, fecha DATETIME, 
                     tipo_inspeccion TEXT, hallazgos TEXT, estado TEXT)''')
 
-    # --- REGISTRO EPP (ACTUALIZADO CON CARGO) ---
+    # --- REGISTRO EPP ---
     c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     grupo_id TEXT, 
@@ -146,7 +145,7 @@ def hash_pass(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def login_user(username, password):
-    conn = sqlite3.connect('sgsst_v26_epp_pro.db')
+    conn = sqlite3.connect('sgsst_v27_stable.db')
     c = conn.cursor()
     c.execute("SELECT rol FROM usuarios WHERE username=? AND password=?", (username, hash_pass(password)))
     result = c.fetchone()
@@ -318,7 +317,7 @@ class PDF_SST(FPDF):
 def clean(val): return str(val).strip() if val is not None else " "
 
 def generar_pdf_asistencia_rggd02(id_cap):
-    conn = sqlite3.connect('sgsst_v26_epp_pro.db')
+    conn = sqlite3.connect('sgsst_v27_stable.db')
     try:
         cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
         if cap is None: return None
@@ -397,28 +396,30 @@ def generar_pdf_epp_grupo(grupo_id):
         regs = conn.execute("SELECT * FROM registro_epp WHERE grupo_id=?", (grupo_id,)).fetchall()
         if not regs: return None
         
-        # Datos del trabajador
+        # Datos del trabajador (tomamos del primer registro del grupo)
         rut_t = clean(regs[0][2])
         nom_t = clean(regs[0][3])
-        # Intentamos obtener cargo de la DB, si no existe ponemos 'No Especificado'
-        cargo_t = clean(regs[0][4]) if len(regs[0]) > 4 else "No Especificado"
-        fecha_t = clean(regs[0][9]) # Fecha en indice 9 segun nueva estructura
-        firma_b64 = regs[0][10] # Firma en indice 10
+        cargo_t = clean(regs[0][4]) # Campo Cargo
+        fecha_t = clean(regs[0][9])
+        firma_b64 = regs[0][10]
         
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=20, bottomMargin=20)
+        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=20, bottomMargin=20, leftMargin=20, rightMargin=20)
         elements = []
         styles = getSampleStyleSheet()
+        
+        # Estilos Custom
         style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10)
         style_bold = ParagraphStyle(name='Bold', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10)
-        style_head = ParagraphStyle(name='Head', parent=styles['Normal'], textColor=colors.white, fontName='Helvetica-Bold', alignment=TA_CENTER)
-        
-        # COLORES OFICIALES
+        style_head = ParagraphStyle(name='Head', parent=styles['Normal'], textColor=colors.white, fontName='Helvetica-Bold', alignment=TA_CENTER, fontSize=9)
+        style_cell = ParagraphStyle(name='Cell', parent=styles['Normal'], alignment=TA_CENTER, fontSize=9)
+        style_title = ParagraphStyle(name='Title', parent=styles['Normal'], alignment=TA_CENTER, fontSize=14, fontName='Helvetica-Bold')
+
         G_BLUE = colors.navy
         G_WHITE = colors.white
 
-        # --- ENCABEZADO OFICIAL ---
-        logo_obj = Paragraph("<b>MADERAS G&D</b>", style_title=ParagraphStyle(name='TitleLog', fontSize=14, fontName='Helvetica-Bold', alignment=TA_CENTER))
+        # --- ENCABEZADO OFICIAL (Igual al de capacitación) ---
+        logo_obj = Paragraph("<b>MADERAS G&D</b>", style_title)
         if os.path.exists(LOGO_FILE):
              try: logo_obj = Image(LOGO_FILE, width=60, height=40)
              except: pass
@@ -426,26 +427,30 @@ def generar_pdf_epp_grupo(grupo_id):
         center_text = Paragraph("SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA<br/>SISTEMA DE GESTION SST", style_center)
         
         # Tabla Control
-        control_data = [["REGISTRO DE EPP"], ["CODIGO: RG-EPP-01"], ["VERSION: 01"], [f"FECHA: {datetime.now().strftime('%d/%m/%Y')}"]]
-        t_control = Table(control_data, colWidths=[120], rowHeights=[12]*4)
+        f_hoy = datetime.now().strftime('%d/%m/%Y')
+        control_data = [
+            [Paragraph("REGISTRO DE EPP", ParagraphStyle('tiny', fontSize=6, textColor=G_WHITE, alignment=TA_CENTER))],
+            [Paragraph("CODIGO: RG-EPP-01", ParagraphStyle('tiny', fontSize=6, alignment=TA_CENTER))],
+            [Paragraph("VERSION: 01", ParagraphStyle('tiny', fontSize=6, alignment=TA_CENTER))],
+            [Paragraph(f"FECHA: {f_hoy}", ParagraphStyle('tiny', fontSize=6, alignment=TA_CENTER))],
+            [Paragraph("PAGINA: 1", ParagraphStyle('tiny', fontSize=6, alignment=TA_CENTER))]
+        ]
+        t_control = Table(control_data, colWidths=[120], rowHeights=[12]*5)
         t_control.setStyle(TableStyle([
             ('GRID', (0,0), (-1,-1), 0.5, colors.black),
             ('BACKGROUND', (0,0), (0,0), G_BLUE),
-            ('TEXTCOLOR', (0,0), (0,0), G_WHITE),
-            ('FONTNAME', (0,0), (0,0), 'Helvetica-Bold'),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('FONTSIZE', (0,0), (-1,-1), 8)
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE')
         ]))
         
-        t_head = Table([[logo_obj, center_text, t_control]], colWidths=[100, 270, 130])
+        t_head = Table([[logo_obj, center_text, t_control]], colWidths=[110, 260, 130])
         t_head.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
         elements.append(t_head); elements.append(Spacer(1, 20))
         
-        # --- DATOS TRABAJADOR (Con Cargo) ---
+        # --- DATOS TRABAJADOR ---
         d_nom = Paragraph(f"<b>NOMBRE:</b> {nom_t}", style_center)
         d_rut = Paragraph(f"<b>RUT:</b> {rut_t}", style_center)
         d_car = Paragraph(f"<b>CARGO:</b> {cargo_t}", style_center)
-        d_fec = Paragraph(f"<b>FECHA:</b> {fecha_t}", style_center)
+        d_fec = Paragraph(f"<b>FECHA ENTREGA:</b> {fecha_t}", style_center)
         
         t_personal = Table([[d_nom, d_rut], [d_car, d_fec]], colWidths=[250, 250])
         t_personal.setStyle(TableStyle([
@@ -455,51 +460,56 @@ def generar_pdf_epp_grupo(grupo_id):
         ]))
         elements.append(t_personal); elements.append(Spacer(1, 20))
         
-        # --- TABLA DETALLE ---
+        # --- TABLA DETALLE PRODUCTOS ---
         h_prod = Paragraph("ELEMENTO DE PROTECCIÓN (EPP)", style_head)
         h_cant = Paragraph("CANT.", style_head)
         h_talla = Paragraph("TALLA", style_head)
         h_mot = Paragraph("MOTIVO ENTREGA", style_head)
         
         data_epp = [[h_prod, h_cant, h_talla, h_mot]]
+        
         for r in regs:
-            # Indices basados en la nueva estructura
-            data_epp.append([clean(r[5]), str(r[6]), clean(r[7]), clean(r[8])])
+            # Indices: 5=Producto, 6=Cantidad, 7=Talla, 8=Motivo
+            data_epp.append([
+                Paragraph(clean(r[5]), style_cell), 
+                Paragraph(str(r[6]), style_cell), 
+                Paragraph(clean(r[7]), style_cell), 
+                Paragraph(clean(r[8]), style_cell)
+            ])
             
         t_epp = Table(data_epp, colWidths=[220, 60, 60, 160])
         t_epp.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), G_BLUE), # Header Azul
             ('GRID', (0,0), (-1,-1), 1, colors.black),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE')
         ]))
         elements.append(t_epp); elements.append(Spacer(1, 30))
         
-        # --- DECLARACIÓN LEGAL ---
-        legal_text = """<b>DECLARACIÓN DE RECEPCIÓN Y RESPONSABILIDAD:</b><br/>
-        Declaro haber recibido los Elementos de Protección Personal (EPP) detallados anteriormente, en buen estado de conservación. 
-        Me comprometo a utilizarlos correctamente durante mi jornada laboral, a cuidarlos y a solicitar su reposición en caso de deterioro, 
-        dando cumplimiento a lo establecido en el Art. 53 del D.S. 594 y el Reglamento Interno de la empresa. Entiendo que su uso es obligatorio 
-        para mi seguridad."""
+        # --- DECLARACIÓN LEGAL (ART 53 DS 594) ---
+        legal_text = """<b>DECLARACIÓN DE RECEPCIÓN Y RESPONSABILIDAD:</b><br/><br/>
+        Declaro haber recibido los Elementos de Protección Personal (EPP) detallados anteriormente, de forma gratuita y en buen estado de conservación. 
+        Me comprometo a utilizarlos correctamente durante mi jornada laboral, a cuidarlos y a solicitar su reposición inmediata en caso de deterioro o pérdida, 
+        dando estricto cumplimiento a lo establecido en el Art. 53 del D.S. 594 y el Reglamento Interno de Orden, Higiene y Seguridad de la empresa. 
+        Entiendo que el uso de estos elementos es obligatorio para proteger mi integridad física y salud."""
         
-        elements.append(Paragraph(legal_text, ParagraphStyle('Legal', parent=styles['Normal'], fontSize=9, alignment=TA_JUSTIFY)))
+        elements.append(Paragraph(legal_text, ParagraphStyle('Legal', parent=styles['Normal'], fontSize=9, alignment=TA_JUSTIFY, leading=12)))
         elements.append(Spacer(1, 50))
         
-        # --- FIRMA TRABAJADOR (GRANDE Y SOLA) ---
+        # --- FIRMA TRABAJADOR (SOLA Y GRANDE) ---
         img_firma = Paragraph("Sin Firma Digital", style_center)
         if firma_b64 and len(str(firma_b64)) > 100:
              try:
                  img_bytes = base64.b64decode(firma_b64)
                  img_io = io.BytesIO(img_bytes)
-                 # Firma grande (200x80)
-                 img_firma = Image(img_io, width=200, height=80)
+                 # Firma muy grande (250x100)
+                 img_firma = Image(img_io, width=250, height=100)
              except: pass
         
-        t_sign = Table([[img_firma], [Paragraph(f"<b>{nom_t}</b><br/>FIRMA TRABAJADOR", style_center)]], colWidths=[300])
+        t_sign = Table([[img_firma], [Paragraph(f"<b>{nom_t}</b><br/>{rut_t}<br/>FIRMA TRABAJADOR", style_center)]], colWidths=[300])
         t_sign.setStyle(TableStyle([
             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
             ('VALIGN', (0,0), (-1,-1), 'BOTTOM'),
-            ('LINEABOVE', (0,1), (0,1), 1, colors.black) # Linea sobre el nombre
+            ('LINEABOVE', (0,1), (0,1), 1, colors.black) # Linea firma
         ]))
         elements.append(t_sign)
         
@@ -819,20 +829,22 @@ elif menu == "🦺 Registro EPP":
             st.rerun()
 
         st.markdown("---")
-        st.markdown("#### ✍️ Firma del Trabajador")
-        st.info("Por favor firme para confirmar la recepción de TODOS los elementos listados arriba.")
-        canvas_epp = st_canvas(stroke_width=2, stroke_color="#00008B", background_color="#ffffff", height=200, width=600, drawing_mode="freedraw", key="canvas_epp_delivery")
+        st.markdown("#### ✍️ Firma del Trabajador (App Móvil)")
+        st.info("Firme en el recuadro para confirmar recepción:")
+        
+        # Cuadro de firma grande para el trabajador
+        canvas_epp = st_canvas(stroke_width=2, stroke_color="#00008B", background_color="#ffffff", height=250, width=600, drawing_mode="freedraw", key="canvas_epp_delivery")
         
         if st.button("💾 Registrar Entrega y Guardar"):
             if canvas_epp.image_data is not None:
                 rut_t = sel_trab.split(" - ")[0]
-                # Buscar cargo en dataframe local
+                # Obtener Cargo Automaticamente
                 cargo_t = trabajadores[trabajadores['rut'] == rut_t]['cargo'].values[0]
                 nombre_t = sel_trab.split(" - ")[1]
                 fecha_hoy = date.today()
                 grupo_id = str(uuid.uuid4())
                 
-                # Process Signature
+                # Procesar Firma
                 img = PILImage.fromarray(canvas_epp.image_data.astype('uint8'), 'RGBA')
                 buffered = io.BytesIO()
                 img.save(buffered, format="PNG")
