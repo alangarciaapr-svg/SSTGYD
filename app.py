@@ -27,10 +27,10 @@ from streamlit_drawable_canvas import st_canvas
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL) - V29 (PDF EPP PRO & Fix Visual)
+# 1. CAPA DE DATOS (SQL RELACIONAL) - V30 (PDF Fix Aspect Ratio & Overlap)
 # ==============================================================================
 def init_erp_db():
-    conn = sqlite3.connect('sgsst_v29_pro_style.db') 
+    conn = sqlite3.connect('sgsst_v30_final_pro.db') 
     c = conn.cursor()
     
     # --- USUARIOS ---
@@ -145,7 +145,7 @@ def hash_pass(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def login_user(username, password):
-    conn = sqlite3.connect('sgsst_v29_pro_style.db')
+    conn = sqlite3.connect('sgsst_v30_final_pro.db')
     c = conn.cursor()
     c.execute("SELECT rol FROM usuarios WHERE username=? AND password=?", (username, hash_pass(password)))
     result = c.fetchone()
@@ -317,7 +317,7 @@ class PDF_SST(FPDF):
 def clean(val): return str(val).strip() if val is not None else " "
 
 def generar_pdf_asistencia_rggd02(id_cap):
-    conn = sqlite3.connect('sgsst_v29_pro_style.db')
+    conn = sqlite3.connect('sgsst_v30_final_pro.db')
     try:
         cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
         if cap is None: return None
@@ -333,15 +333,16 @@ def generar_pdf_asistencia_rggd02(id_cap):
         G_BLUE = colors.navy; G_WHITE = colors.white
         logo_obj = Paragraph("<b>MADERAS G&D</b>", style_title)
         if os.path.exists(LOGO_FILE):
-            try: logo_obj = Image(LOGO_FILE, width=60, height=40)
+            try: logo_obj = Image(LOGO_FILE, width=80, height=45, hAlign='CENTER', preserveAspectRatio=True) # FIX ASPECT RATIO
             except: pass
         center_text = Paragraph("SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA<br/>SISTEMA DE GESTION<br/>SALUD Y SEGURIDAD OCUPACIONAL", style_center)
         f_fecha = clean(datetime.now().strftime('%d/%m/%Y'))
+        # FIX OVERLAP: Removed fixed rowHeights
         control_data = [["REGISTRO DE CAPACITACIÓN"], ["CODIGO: RG-GD-02"], ["VERSION: 01"], [f"FECHA: {f_fecha}"], ["PAGINA: 1"]]
-        t_control = Table(control_data, colWidths=[130], rowHeights=[12]*5)
+        t_control = Table(control_data, colWidths=[130]) 
         t_control.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('FONTSIZE', (0,0), (-1,-1), 7), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (0,0), G_BLUE), ('TEXTCOLOR', (0,0), (0,0), G_WHITE), ('FONTNAME', (0,0), (0,0), 'Helvetica-Bold')]))
         data_header = [[logo_obj, center_text, t_control]]
-        t_head = Table(data_header, colWidths=[100, 250, 140])
+        t_head = Table(data_header, colWidths=[110, 260, 130])
         t_head.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER')]))
         elements.append(t_head); elements.append(Spacer(1, 10))
         c_tipo = clean(cap[6]); c_resp = clean(cap[2]); c_lug = clean(cap[4]); c_fec = clean(cap[1]); c_carg = clean(cap[3]); c_tema = clean(cap[7])
@@ -391,7 +392,7 @@ def generar_pdf_asistencia_rggd02(id_cap):
     finally: conn.close()
 
 def generar_pdf_epp_grupo(grupo_id):
-    conn = sqlite3.connect('sgsst_v29_pro_style.db')
+    conn = sqlite3.connect('sgsst_v30_final_pro.db')
     try:
         regs = conn.execute("SELECT * FROM registro_epp WHERE grupo_id=?", (grupo_id,)).fetchall()
         if not regs: return None
@@ -413,7 +414,6 @@ def generar_pdf_epp_grupo(grupo_id):
         style_bold = ParagraphStyle(name='Bold', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10)
         style_head = ParagraphStyle(name='Head', parent=styles['Normal'], textColor=colors.white, fontName='Helvetica-Bold', alignment=TA_CENTER, fontSize=9)
         style_cell = ParagraphStyle(name='Cell', parent=styles['Normal'], alignment=TA_CENTER, fontSize=9)
-        # FIX: Eliminado style_title argumento incorrecto
         style_title_log = ParagraphStyle(name='TitleLog', fontSize=14, fontName='Helvetica-Bold', alignment=TA_CENTER)
 
         G_BLUE = colors.navy
@@ -422,22 +422,26 @@ def generar_pdf_epp_grupo(grupo_id):
         # --- ENCABEZADO OFICIAL ---
         logo_obj = Paragraph("<b>MADERAS G&D</b>", style_title_log)
         if os.path.exists(LOGO_FILE):
-             try: logo_obj = Image(LOGO_FILE, width=85, height=55) # Mas grande y lleno
+             try: logo_obj = Image(LOGO_FILE, width=80, height=45, hAlign='CENTER', preserveAspectRatio=True)
              except: pass
         
         center_text = Paragraph("SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA<br/>SISTEMA DE GESTION SST", style_center)
         
         # Tabla Control
         f_fecha = "05/01/2026"
-        control_data = [["REGISTRO DE EPP"], ["CODIGO: RG-GD-01"], ["VERSION: 01"], [f"FECHA: {f_fecha}"], ["PAGINA: 1"]]
-        t_control = Table(control_data, colWidths=[120], rowHeights=[12]*5)
+        # FIX OVERLAP: Removed fixed rowHeights
+        control_data = [
+            [Paragraph("REGISTRO DE EPP", ParagraphStyle('tiny', fontSize=6, textColor=G_WHITE, alignment=TA_CENTER))],
+            [Paragraph("CODIGO: RG-GD-01", ParagraphStyle('tiny', fontSize=6, alignment=TA_CENTER))],
+            [Paragraph("VERSION: 01", ParagraphStyle('tiny', fontSize=6, alignment=TA_CENTER))],
+            [Paragraph(f"FECHA: {f_fecha}", ParagraphStyle('tiny', fontSize=6, alignment=TA_CENTER))],
+            [Paragraph("PAGINA: 1", ParagraphStyle('tiny', fontSize=6, alignment=TA_CENTER))]
+        ]
+        t_control = Table(control_data, colWidths=[120])
         t_control.setStyle(TableStyle([
             ('GRID', (0,0), (-1,-1), 0.5, colors.black),
             ('BACKGROUND', (0,0), (0,0), G_BLUE),
-            ('TEXTCOLOR', (0,0), (0,0), G_WHITE),
-            ('FONTNAME', (0,0), (0,0), 'Helvetica-Bold'),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('FONTSIZE', (0,0), (-1,-1), 8)
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE')
         ]))
         
         t_head = Table([[logo_obj, center_text, t_control]], colWidths=[110, 270, 130])
@@ -522,7 +526,7 @@ def generar_pdf_epp_grupo(grupo_id):
     finally: conn.close()
 
 def generar_pdf_riohs(id_reg):
-    conn = sqlite3.connect('sgsst_v29_pro_style.db')
+    conn = sqlite3.connect('sgsst_v30_final_pro.db')
     try:
         reg = conn.execute("SELECT * FROM entrega_riohs WHERE id=?", (id_reg,)).fetchone()
         if not reg: return None
@@ -539,22 +543,26 @@ def generar_pdf_riohs(id_reg):
         # Logo
         logo_obj = Paragraph("<b>MADERAS G&D</b>", style_title_log)
         if os.path.exists(LOGO_FILE):
-             try: logo_obj = Image(LOGO_FILE, width=85, height=55)
+             try: logo_obj = Image(LOGO_FILE, width=80, height=45, hAlign='CENTER', preserveAspectRatio=True)
              except: pass
         
         center_text = Paragraph("SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA<br/>SISTEMA DE GESTION SST", style_center)
         
         # Tabla Control
         f_fecha = "05/01/2026"
-        control_data = [["ENTREGA RIOHS"], ["CODIGO: RG-GD-01"], ["VERSION: 01"], [f"FECHA: {f_fecha}"], ["PAGINA: 1"]]
-        t_control = Table(control_data, colWidths=[120], rowHeights=[12]*5)
+        # FIX OVERLAP: Removed fixed rowHeights
+        control_data = [
+            [Paragraph("ENTREGA RIOHS", ParagraphStyle('tiny', fontSize=6, textColor=G_WHITE, alignment=TA_CENTER))],
+            [Paragraph("CODIGO: RG-GD-01", ParagraphStyle('tiny', fontSize=6, alignment=TA_CENTER))],
+            [Paragraph("VERSION: 01", ParagraphStyle('tiny', fontSize=6, alignment=TA_CENTER))],
+            [Paragraph(f"FECHA: {f_fecha}", ParagraphStyle('tiny', fontSize=6, alignment=TA_CENTER))],
+            [Paragraph("PAGINA: 1", ParagraphStyle('tiny', fontSize=6, alignment=TA_CENTER))]
+        ]
+        t_control = Table(control_data, colWidths=[120])
         t_control.setStyle(TableStyle([
             ('GRID', (0,0), (-1,-1), 0.5, colors.black),
             ('BACKGROUND', (0,0), (0,0), G_BLUE),
-            ('TEXTCOLOR', (0,0), (0,0), G_WHITE),
-            ('FONTNAME', (0,0), (0,0), 'Helvetica-Bold'),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('FONTSIZE', (0,0), (-1,-1), 8)
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE')
         ]))
         
         t_head = Table([[logo_obj, center_text, t_control]], colWidths=[110, 270, 130])
@@ -673,7 +681,7 @@ if menu == "📊 Dashboard BI":
 elif menu == "👥 Nómina & Personal":
     st.title("Base de Datos Maestra de Personal")
     tab_lista, tab_agregar, tab_excel = st.tabs(["📋 Lista Completa", "➕ Gestión Manual", "📂 Carga Masiva"])
-    conn = sqlite3.connect('sgsst_v29_pro_style.db')
+    conn = sqlite3.connect('sgsst_v30_final_pro.db')
     with tab_lista:
         df = pd.read_sql("SELECT nombre, rut, cargo, centro_costo as 'Lugar', estado FROM personal", conn); st.dataframe(df, use_container_width=True, hide_index=True); st.markdown("---"); st.subheader("🗑️ Dar de Baja / Eliminar"); col_del, col_btn = st.columns([3, 1]); rut_a_borrar = col_del.selectbox("Seleccione Trabajador a Eliminar:", df['rut'] + " - " + df['nombre'])
         if col_btn.button("Eliminar Trabajador"): rut_clean = rut_a_borrar.split(" - ")[0]; c = conn.cursor(); c.execute("DELETE FROM personal WHERE rut=?", (rut_clean,)); conn.commit(); st.success(f"Trabajador {rut_clean} eliminado."); st.rerun()
@@ -717,7 +725,7 @@ elif menu == "👥 Nómina & Personal":
 elif menu == "📱 App Móvil":
     st.title("Conexión App Móvil (Operarios)")
     st.markdown("### 📲 Panel de Registro en Terreno")
-    conn = sqlite3.connect('sgsst_v29_pro_style.db')
+    conn = sqlite3.connect('sgsst_v30_final_pro.db')
     tab_asist, tab_insp = st.tabs(["✍️ Firmar Asistencia", "🚨 Reportar Hallazgo"])
     with tab_asist:
         st.subheader("Firma Rápida")
@@ -756,7 +764,7 @@ elif menu == "📱 App Móvil":
     conn.close()
 
 elif menu == "🎓 Gestión Capacitación":
-    st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_v29_pro_style.db')
+    st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_v30_final_pro.db')
     with tab_prog:
         st.subheader("Nueva Capacitación")
         with st.form("new_cap"):
@@ -773,7 +781,7 @@ elif menu == "🎓 Gestión Capacitación":
             opciones = [f"ID {r['id']} - {r['tema']} ({r['tipo_charla']})" for i, r in caps_activas.iterrows()]; sel_cap = st.selectbox("Seleccione Actividad:", opciones); id_cap_sel = int(sel_cap.split(" - ")[0].replace("ID ", "")); trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
             
             def enviar_asistentes_callback(id_cap, df_trab):
-                c_cb = sqlite3.connect('sgsst_v29_pro_style.db'); cursor_cb = c_cb.cursor(); selection = st.session_state.selector_asistentes
+                c_cb = sqlite3.connect('sgsst_v30_final_pro.db'); cursor_cb = c_cb.cursor(); selection = st.session_state.selector_asistentes
                 if selection:
                     for nombre in selection:
                         rut_t = df_trab[df_trab['nombre'] == nombre]['rut'].values[0]
@@ -795,7 +803,7 @@ elif menu == "🎓 Gestión Capacitación":
             st.dataframe(historial, use_container_width=True); opciones_hist = [f"ID {r['id']} - {r['tema']}" for i, r in historial.iterrows()]; sel_pdf = st.selectbox("Gestionar Capacitación (Firmar/PDF):", opciones_hist); id_pdf = int(sel_pdf.split(" - ")[0].replace("ID ", "")); st.markdown("#### ✍️ Firma del Difusor (Instructor)")
             
             # --- CONSULTA INSTANTANEA DE FIRMA ---
-            conn_sig = sqlite3.connect('sgsst_v29_pro_style.db')
+            conn_sig = sqlite3.connect('sgsst_v30_final_pro.db')
             firmado_db = pd.read_sql("SELECT firma_instructor_b64 FROM capacitaciones WHERE id=?", conn_sig, params=(id_pdf,))
             conn_sig.close()
             
@@ -837,7 +845,7 @@ elif menu == "🦺 Registro EPP":
     if 'epp_cart' not in st.session_state:
         st.session_state.epp_cart = []
         
-    conn = sqlite3.connect('sgsst_v29_pro_style.db')
+    conn = sqlite3.connect('sgsst_v30_final_pro.db')
     trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
     opciones_trab = [f"{r['rut']} - {r['nombre']}" for i, r in trabajadores.iterrows()]
     
@@ -926,7 +934,7 @@ elif menu == "🦺 Registro EPP":
 
 elif menu == "📘 Entrega RIOHS":
     st.title("Entrega Reglamento Interno (RIOHS)")
-    conn = sqlite3.connect('sgsst_v29_pro_style.db')
+    conn = sqlite3.connect('sgsst_v30_final_pro.db')
     trabajadores = pd.read_sql("SELECT rut, nombre FROM personal", conn)
     opciones_trab = [f"{r['rut']} - {r['nombre']}" for i, r in trabajadores.iterrows()]
     
@@ -962,13 +970,13 @@ elif menu == "📘 Entrega RIOHS":
     conn.close()
 
 elif menu == "📄 Generador IRL":
-    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_v29_pro_style.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn); sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
+    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_v30_final_pro.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn); sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
 
 elif menu == "⚠️ Matriz IPER":
-    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_v29_pro_style.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
+    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_v30_final_pro.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
 
 elif menu == "🔐 Gestión Usuarios" and st.session_state['user_role'] == "ADMINISTRADOR":
-    st.title("Administración de Usuarios del Sistema"); conn = sqlite3.connect('sgsst_v29_pro_style.db')
+    st.title("Administración de Usuarios del Sistema"); conn = sqlite3.connect('sgsst_v30_final_pro.db')
     with st.form("new_sys_user"):
         st.subheader("Nuevo Usuario"); new_u = st.text_input("Nombre Usuario"); new_p = st.text_input("Contraseña", type="password"); new_r = st.selectbox("Rol", ["ADMINISTRADOR", "SUPERVISOR", "ASISTENTE"])
         if st.form_submit_button("Crear Usuario"):
