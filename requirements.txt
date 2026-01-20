@@ -7,3 +7,4 @@ matplotlib
 fpdf
 numpy
 streamlit-drawable-canvas
+Pillow
