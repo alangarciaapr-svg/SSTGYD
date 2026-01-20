@@ -16,7 +16,7 @@ import plotly.graph_objects as go
 from fpdf import FPDF
 from io import BytesIO
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter, landscape
+from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
@@ -26,10 +26,10 @@ from streamlit_drawable_canvas import st_canvas
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL) - V14 (PDF Fix Final)
+# 1. CAPA DE DATOS (SQL RELACIONAL) - V15 (Robustez Total)
 # ==============================================================================
 def init_erp_db():
-    conn = sqlite3.connect('sgsst_v14_pdf_fix.db')
+    conn = sqlite3.connect('sgsst_v15_stable.db')
     c = conn.cursor()
     
     # --- USUARIOS ---
@@ -122,7 +122,7 @@ def hash_pass(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def login_user(username, password):
-    conn = sqlite3.connect('sgsst_v14_pdf_fix.db')
+    conn = sqlite3.connect('sgsst_v15_stable.db')
     c = conn.cursor()
     c.execute("SELECT rol FROM usuarios WHERE username=? AND password=?", (username, hash_pass(password)))
     result = c.fetchone()
@@ -286,12 +286,14 @@ class PDF_SST(FPDF):
             self.ln()
             self.cell(100, 7, f" {label}", 1, 0, 'L'); self.cell(45, 7, str(val_m), 1, 0, 'C'); self.cell(45, 7, str(val_a), 1, 1, 'C')
 
+# ==============================================================================
+# 3. MOTOR PDF ROBUSTO (RG-GD-02)
+# ==============================================================================
 def generar_pdf_asistencia_rggd02(id_cap):
-    conn = sqlite3.connect('sgsst_v14_pdf_fix.db')
+    conn = sqlite3.connect('sgsst_v15_stable.db')
     try:
         cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
-        if cap is None:
-            return None
+        if cap is None: return None
             
         asistentes = conn.execute("""
             SELECT p.nombre, p.rut, p.cargo, a.firma_digital_hash, a.firma_imagen_b64 
@@ -312,37 +314,36 @@ def generar_pdf_asistencia_rggd02(id_cap):
         G_BLUE = colors.navy
         G_WHITE = colors.white
 
+        # Helper para evitar valores None
+        def safe_str(val):
+            return str(val) if val is not None else " "
+
         logo_text = Paragraph("<b>MADERAS G&D</b>", style_title)
         center_text = Paragraph("SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA<br/>SISTEMA DE GESTION<br/>SALUD Y SEGURIDAD OCUPACIONAL", style_center)
+        f_fecha = safe_str(datetime.now().strftime('%d/%m/%Y'))
         
-        # FIX: Safe String Conversion for Date
-        now_str = datetime.now().strftime('%d/%m/%Y')
-        
-        control_data = [["REGISTRO DE CAPACITACIÓN"], ["CODIGO: RG-GD-02"], ["VERSION: 01"], [f"FECHA: {now_str}"], ["PAGINA: 1"]]
-        t_control = Table(control_data, colWidths=[130], rowHeights=[12,12,12,12,12])
+        control_data = [["REGISTRO DE CAPACITACIÓN"], ["CODIGO: RG-GD-02"], ["VERSION: 01"], [f"FECHA: {f_fecha}"], ["PAGINA: 1"]]
+        t_control = Table(control_data, colWidths=[130], rowHeights=[12]*5)
         t_control.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('FONTSIZE', (0,0), (-1,-1), 7), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (0,0), G_BLUE), ('TEXTCOLOR', (0,0), (0,0), G_WHITE), ('FONTNAME', (0,0), (0,0), 'Helvetica-Bold')]))
+        
         data_header = [[logo_text, center_text, t_control]]
         t_head = Table(data_header, colWidths=[100, 250, 140])
         t_head.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER')]))
         elements.append(t_head); elements.append(Spacer(1, 10))
 
-        # --- FIX: Safe String Handling (Prevents 'int' object is not iterable / NoneType error) ---
-        def safe_str(val):
-            if val is None: return ""
-            return str(val)
+        # Datos seguros
+        c_tipo = safe_str(cap[6]); c_resp = safe_str(cap[2]); c_lug = safe_str(cap[4])
+        c_fec = safe_str(cap[1]); c_carg = safe_str(cap[3]); c_tema = safe_str(cap[7])
 
-        c_tipo = safe_str(cap[6])
-        c_resp = safe_str(cap[2])
-        c_lug = safe_str(cap[4])
-        c_fec = safe_str(cap[1])
-        c_carg = safe_str(cap[3])
-        c_tema = safe_str(cap[7])
-
-        h_act = Paragraph("ACTIVIDAD", style_cell_header); h_rel = Paragraph("RELATOR", style_cell_header); h_lug = Paragraph("LUGAR", style_cell_header); h_fec = Paragraph("FECHA", style_cell_header)
-        d_act = Paragraph(c_tipo, style_center); d_rel = Paragraph(c_resp, style_center); d_lug = Paragraph(c_lug, style_center); d_fec = Paragraph(c_fec, style_center)
+        h_act = Paragraph("ACTIVIDAD", style_cell_header); h_rel = Paragraph("RELATOR", style_cell_header)
+        h_lug = Paragraph("LUGAR", style_cell_header); h_fec = Paragraph("FECHA", style_cell_header)
+        d_act = Paragraph(c_tipo, style_center); d_rel = Paragraph(c_resp, style_center)
+        d_lug = Paragraph(c_lug, style_center); d_fec = Paragraph(c_fec, style_center)
+        
         t_row1 = Table([[h_act, h_rel, h_lug, h_fec], [d_act, d_rel, d_lug, d_fec]], colWidths=[180, 130, 120, 60])
         t_row1.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), G_BLUE), ('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
         elements.append(t_row1)
+        
         t_row2 = Table([[f"CARGO: {c_carg}", "DURACIÓN: 15 min"]], colWidths=[310, 180])
         t_row2.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('FONTSIZE', (0,0), (-1,-1), 8), ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold')]))
         elements.append(t_row2); elements.append(Spacer(1, 5))
@@ -350,8 +351,6 @@ def generar_pdf_asistencia_rggd02(id_cap):
         t_temario_title = Table([[Paragraph("TEMARIO / CONTENIDOS", style_cell_header)]], colWidths=[490])
         t_temario_title.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-1), G_BLUE), ('ALIGN', (0,0), (-1,-1), 'LEFT')]))
         elements.append(t_temario_title)
-        
-        # Enclose theme in a box
         t_temario_body = Table([[Paragraph(c_tema, style_small)]], colWidths=[490], rowHeights=[60])
         t_temario_body.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'TOP')]))
         elements.append(t_temario_body); elements.append(Spacer(1, 10))
@@ -360,31 +359,40 @@ def generar_pdf_asistencia_rggd02(id_cap):
         data_asis = [header_asis]
         for idx, (nom, rut, car, firma_hash, firma_b64) in enumerate(asistentes, 1):
             row = [Paragraph(safe_str(nom), style_center), Paragraph(safe_str(rut), style_center), Paragraph(safe_str(car), style_center)]
-            if firma_b64:
+            img_inserted = False
+            if firma_b64 and len(firma_b64) > 100:
                 try:
-                    img_bytes = base64.b64decode(firma_b64); img_stream = io.BytesIO(img_bytes); img_rl = Image(img_stream, width=60, height=20); row.append(img_rl)
-                except: row.append("Firma Digital")
-            else: row.append("Validado")
+                    img_bytes = base64.b64decode(firma_b64); img_stream = io.BytesIO(img_bytes)
+                    img_rl = Image(img_stream, width=60, height=20); row.append(img_rl); img_inserted = True
+                except: pass
+            if not img_inserted: row.append("Firma Digital")
             data_asis.append(row)
         
-        t_asis = Table(data_asis, colWidths=[180, 70, 120, 120])
-        t_asis.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), G_BLUE), ('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER')]))
-        elements.append(t_asis); elements.append(Spacer(1, 15))
+        if len(data_asis) > 1: # Solo añadir tabla si hay datos
+            t_asis = Table(data_asis, colWidths=[180, 70, 120, 120])
+            t_asis.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), G_BLUE), ('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER')]))
+            elements.append(t_asis); elements.append(Spacer(1, 15))
 
         img_instructor = Paragraph("", style_center)
-        if cap[9]: 
-             try: img_bytes_inst = base64.b64decode(cap[9]); img_stream_inst = io.BytesIO(img_bytes_inst); img_instructor = Image(img_stream_inst, width=100, height=40)
+        if cap[9] and len(cap[9]) > 100: 
+             try: 
+                 img_bytes_inst = base64.b64decode(cap[9]); img_stream_inst = io.BytesIO(img_bytes_inst)
+                 img_instructor = Image(img_stream_inst, width=120, height=50) # Firma instructor más grande
              except: pass
+             
         c_evidencia = [[Paragraph("EVIDENCIA FOTOGRÁFICA", style_center)], ["\n\n\n(Espacio para foto)\n\n\n"]]
         t_evi = Table(c_evidencia, colWidths=[240])
         t_evi.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTNAME', (0,0), (0,0), 'Helvetica-Bold')]))
+        
         c_valid = [[Paragraph("VALIDACIÓN INSTRUCTOR", style_center)], [img_instructor], [Paragraph(f"<b>{c_resp}</b><br/>Relator/Instructor", style_center)]]
         t_val = Table(c_valid, colWidths=[240])
         t_val.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTNAME', (0,0), (0,0), 'Helvetica-Bold')]))
+        
         t_footer = Table([[t_evi, Spacer(10,0), t_val]], colWidths=[240, 10, 240])
         elements.append(t_footer)
+        
         doc.build(elements); buffer.seek(0); return buffer
-    except Exception as e: st.error(f"Error técnico generando PDF: {e}"); return None
+    except Exception as e: st.error(f"Error PDF Crítico: {e}"); return None
     finally: conn.close()
 
 # ==============================================================================
@@ -468,7 +476,7 @@ if menu == "📊 Dashboard BI":
 elif menu == "👥 Nómina & Personal":
     st.title("Base de Datos Maestra de Personal")
     tab_lista, tab_agregar, tab_excel = st.tabs(["📋 Lista Completa", "➕ Gestión Manual", "📂 Carga Masiva"])
-    conn = sqlite3.connect('sgsst_v14_pdf_fix.db')
+    conn = sqlite3.connect('sgsst_v15_stable.db')
     with tab_lista:
         df = pd.read_sql("SELECT nombre, rut, cargo, centro_costo as 'Lugar', estado FROM personal", conn); st.dataframe(df, use_container_width=True, hide_index=True); st.markdown("---"); st.subheader("🗑️ Dar de Baja / Eliminar"); col_del, col_btn = st.columns([3, 1]); rut_a_borrar = col_del.selectbox("Seleccione Trabajador a Eliminar:", df['rut'] + " - " + df['nombre'])
         if col_btn.button("Eliminar Trabajador"): rut_clean = rut_a_borrar.split(" - ")[0]; c = conn.cursor(); c.execute("DELETE FROM personal WHERE rut=?", (rut_clean,)); conn.commit(); st.success(f"Trabajador {rut_clean} eliminado."); st.rerun()
@@ -517,7 +525,7 @@ elif menu == "👥 Nómina & Personal":
 elif menu == "📱 App Móvil":
     st.title("Conexión App Móvil (Operarios)")
     st.markdown("### 📲 Panel de Registro en Terreno")
-    conn = sqlite3.connect('sgsst_v14_pdf_fix.db')
+    conn = sqlite3.connect('sgsst_v15_stable.db')
     tab_asist, tab_insp = st.tabs(["✍️ Firmar Asistencia", "🚨 Reportar Hallazgo"])
     with tab_asist:
         st.subheader("Firma Rápida")
@@ -556,7 +564,7 @@ elif menu == "📱 App Móvil":
     conn.close()
 
 elif menu == "🎓 Gestión Capacitación":
-    st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_v14_pdf_fix.db')
+    st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_v15_stable.db')
     with tab_prog:
         st.subheader("Nueva Capacitación")
         with st.form("new_cap"):
@@ -573,7 +581,7 @@ elif menu == "🎓 Gestión Capacitación":
             opciones = [f"ID {r['id']} - {r['tema']} ({r['tipo_charla']})" for i, r in caps_activas.iterrows()]; sel_cap = st.selectbox("Seleccione Actividad:", opciones); id_cap_sel = int(sel_cap.split(" - ")[0].replace("ID ", "")); trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
             
             def enviar_asistentes_callback(id_cap, df_trab):
-                c_cb = sqlite3.connect('sgsst_v14_pdf_fix.db'); cursor_cb = c_cb.cursor(); selection = st.session_state.selector_asistentes
+                c_cb = sqlite3.connect('sgsst_v15_stable.db'); cursor_cb = c_cb.cursor(); selection = st.session_state.selector_asistentes
                 if selection:
                     for nombre in selection:
                         rut_t = df_trab[df_trab['nombre'] == nombre]['rut'].values[0]
@@ -597,17 +605,18 @@ elif menu == "🎓 Gestión Capacitación":
             firmado_db = pd.read_sql("SELECT firma_instructor_b64 FROM capacitaciones WHERE id=?", conn, params=(id_pdf,))
             ya_firmado = firmado_db.iloc[0,0] if not firmado_db.empty else None
 
-            if ya_firmado:
+            # Lógica corregida para mostrar/ocultar firma
+            if ya_firmado and len(str(ya_firmado)) > 100:
                 st.success("✅ Firma guardada con éxito.")
                 if st.button("🗑️ Borrar Firma y Volver a Firmar"):
                     c = conn.cursor(); c.execute("UPDATE capacitaciones SET firma_instructor_b64=NULL WHERE id=?", (id_pdf,)); conn.commit(); st.rerun()
             else:
                 st.info("Firme en el cuadro grande abajo:")
                 if 'canvas_inst_key' not in st.session_state: st.session_state['canvas_inst_key'] = 0
-                canvas_inst = st_canvas(stroke_width=2, stroke_color="#00008B", background_color="#ffffff", height=250, width=600, drawing_mode="freedraw", key=f"canvas_inst_{st.session_state['canvas_inst_key']}")
+                canvas_inst = st_canvas(stroke_width=2, stroke_color="#00008B", background_color="#ffffff", height=300, width=600, drawing_mode="freedraw", key=f"canvas_inst_{st.session_state['canvas_inst_key']}")
                 if st.button("Guardar Firma Difusor"):
                     if canvas_inst.image_data is not None:
-                        img = PILImage.fromarray(canvas_inst.image_data.astype('uint8'), 'RGBA'); buffered = io.BytesIO(); img.save(buffered, format="PNG"); img_str = base64.b64encode(buffered.getvalue()).decode(); c = conn.cursor(); c.execute("UPDATE capacitaciones SET firma_instructor_b64=? WHERE id=?", (img_str, id_pdf)); conn.commit(); st.success("Firma del instructor guardada."); st.session_state['canvas_inst_key'] += 1; st.rerun()
+                        img = PILImage.fromarray(canvas_inst.image_data.astype('uint8'), 'RGBA'); buffered = io.BytesIO(); img.save(buffered, format="PNG"); img_str = base64.b64encode(buffered.getvalue()).decode(); c = conn.cursor(); c.execute("UPDATE capacitaciones SET firma_instructor_b64=? WHERE id=?", (img_str, id_pdf)); conn.commit(); st.session_state['canvas_inst_key'] += 1; st.rerun()
             st.markdown("---")
             if st.button("📥 Generar PDF (Solo Firmados)"):
                 pdf_bytes = generar_pdf_asistencia_rggd02(id_pdf)
@@ -617,13 +626,13 @@ elif menu == "🎓 Gestión Capacitación":
     conn.close()
 
 elif menu == "📄 Generador IRL":
-    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_v14_pdf_fix.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn); sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
+    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_v15_stable.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn); sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
 
 elif menu == "⚠️ Matriz IPER":
-    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_v14_pdf_fix.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
+    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_v15_stable.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
 
 elif menu == "🔐 Gestión Usuarios" and st.session_state['user_role'] == "ADMINISTRADOR":
-    st.title("Administración de Usuarios del Sistema"); conn = sqlite3.connect('sgsst_v14_pdf_fix.db')
+    st.title("Administración de Usuarios del Sistema"); conn = sqlite3.connect('sgsst_v15_stable.db')
     with st.form("new_sys_user"):
         st.subheader("Nuevo Usuario"); new_u = st.text_input("Nombre Usuario"); new_p = st.text_input("Contraseña", type="password"); new_r = st.selectbox("Rol", ["ADMINISTRADOR", "SUPERVISOR", "ASISTENTE"])
         if st.form_submit_button("Crear Usuario"):
