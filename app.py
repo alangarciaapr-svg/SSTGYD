@@ -26,10 +26,10 @@ from streamlit_drawable_canvas import st_canvas
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL) - V22 (Final Stable)
+# 1. CAPA DE DATOS (SQL RELACIONAL) - V23 (EPP + RIOHS)
 # ==============================================================================
 def init_erp_db():
-    conn = sqlite3.connect('sgsst_v22_stable.db')
+    conn = sqlite3.connect('sgsst_v23_complete.db')
     c = conn.cursor()
     
     # --- USUARIOS ---
@@ -72,6 +72,24 @@ def init_erp_db():
     c.execute('''CREATE TABLE IF NOT EXISTS inspecciones (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, rut_responsable TEXT, fecha DATETIME, 
                     tipo_inspeccion TEXT, hallazgos TEXT, estado TEXT)''')
+
+    # --- NUEVO: REGISTRO EPP ---
+    c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    rut_trabajador TEXT,
+                    nombre_trabajador TEXT,
+                    producto TEXT,
+                    cantidad INTEGER,
+                    motivo TEXT,
+                    fecha_entrega DATE)''')
+
+    # --- NUEVO: ENTREGA RIOHS ---
+    c.execute('''CREATE TABLE IF NOT EXISTS entrega_riohs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    rut_trabajador TEXT,
+                    nombre_trabajador TEXT,
+                    tipo_entrega TEXT,
+                    fecha_entrega DATE)''')
 
     # --- CARGA MASIVA DE TRABAJADORES ---
     c.execute("SELECT count(*) FROM personal")
@@ -122,7 +140,7 @@ def hash_pass(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def login_user(username, password):
-    conn = sqlite3.connect('sgsst_v22_stable.db')
+    conn = sqlite3.connect('sgsst_v23_complete.db')
     c = conn.cursor()
     c.execute("SELECT rol FROM usuarios WHERE username=? AND password=?", (username, hash_pass(password)))
     result = c.fetchone()
@@ -290,7 +308,7 @@ class PDF_SST(FPDF):
 # 3. MOTOR PDF ROBUSTO - V22 (RG-GD-02)
 # ==============================================================================
 def generar_pdf_asistencia_rggd02(id_cap):
-    conn = sqlite3.connect('sgsst_v22_stable.db')
+    conn = sqlite3.connect('sgsst_v23_complete.db')
     try:
         # CONSULTA PRINCIPAL
         cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
@@ -451,7 +469,7 @@ with st.sidebar:
             f.write(uploaded_logo.getbuffer())
         st.success("Logo cargado.")
     
-    opciones_menu = ["📊 Dashboard BI", "👥 Nómina & Personal", "📱 App Móvil", "🎓 Gestión Capacitación", "📄 Generador IRL", "⚠️ Matriz IPER"]; 
+    opciones_menu = ["📊 Dashboard BI", "👥 Nómina & Personal", "📱 App Móvil", "🎓 Gestión Capacitación", "🦺 Registro EPP", "📘 Entrega RIOHS", "📄 Generador IRL", "⚠️ Matriz IPER"]; 
     if st.session_state['user_role'] == "ADMINISTRADOR": opciones_menu.append("🔐 Gestión Usuarios")
     menu = st.radio("MÓDULOS ACTIVOS:", opciones_menu)
 
@@ -512,7 +530,7 @@ if menu == "📊 Dashboard BI":
 elif menu == "👥 Nómina & Personal":
     st.title("Base de Datos Maestra de Personal")
     tab_lista, tab_agregar, tab_excel = st.tabs(["📋 Lista Completa", "➕ Gestión Manual", "📂 Carga Masiva"])
-    conn = sqlite3.connect('sgsst_v22_stable.db')
+    conn = sqlite3.connect('sgsst_v23_complete.db')
     with tab_lista:
         df = pd.read_sql("SELECT nombre, rut, cargo, centro_costo as 'Lugar', estado FROM personal", conn); st.dataframe(df, use_container_width=True, hide_index=True); st.markdown("---"); st.subheader("🗑️ Dar de Baja / Eliminar"); col_del, col_btn = st.columns([3, 1]); rut_a_borrar = col_del.selectbox("Seleccione Trabajador a Eliminar:", df['rut'] + " - " + df['nombre'])
         if col_btn.button("Eliminar Trabajador"): rut_clean = rut_a_borrar.split(" - ")[0]; c = conn.cursor(); c.execute("DELETE FROM personal WHERE rut=?", (rut_clean,)); conn.commit(); st.success(f"Trabajador {rut_clean} eliminado."); st.rerun()
@@ -560,7 +578,7 @@ elif menu == "👥 Nómina & Personal":
 elif menu == "📱 App Móvil":
     st.title("Conexión App Móvil (Operarios)")
     st.markdown("### 📲 Panel de Registro en Terreno")
-    conn = sqlite3.connect('sgsst_v22_stable.db')
+    conn = sqlite3.connect('sgsst_v23_complete.db')
     tab_asist, tab_insp = st.tabs(["✍️ Firmar Asistencia", "🚨 Reportar Hallazgo"])
     with tab_asist:
         st.subheader("Firma Rápida")
@@ -599,7 +617,7 @@ elif menu == "📱 App Móvil":
     conn.close()
 
 elif menu == "🎓 Gestión Capacitación":
-    st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_v22_stable.db')
+    st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_v23_complete.db')
     with tab_prog:
         st.subheader("Nueva Capacitación")
         with st.form("new_cap"):
@@ -616,7 +634,7 @@ elif menu == "🎓 Gestión Capacitación":
             opciones = [f"ID {r['id']} - {r['tema']} ({r['tipo_charla']})" for i, r in caps_activas.iterrows()]; sel_cap = st.selectbox("Seleccione Actividad:", opciones); id_cap_sel = int(sel_cap.split(" - ")[0].replace("ID ", "")); trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
             
             def enviar_asistentes_callback(id_cap, df_trab):
-                c_cb = sqlite3.connect('sgsst_v22_stable.db'); cursor_cb = c_cb.cursor(); selection = st.session_state.selector_asistentes
+                c_cb = sqlite3.connect('sgsst_v23_complete.db'); cursor_cb = c_cb.cursor(); selection = st.session_state.selector_asistentes
                 if selection:
                     for nombre in selection:
                         rut_t = df_trab[df_trab['nombre'] == nombre]['rut'].values[0]
@@ -637,15 +655,15 @@ elif menu == "🎓 Gestión Capacitación":
         if not historial.empty:
             st.dataframe(historial, use_container_width=True); opciones_hist = [f"ID {r['id']} - {r['tema']}" for i, r in historial.iterrows()]; sel_pdf = st.selectbox("Gestionar Capacitación (Firmar/PDF):", opciones_hist); id_pdf = int(sel_pdf.split(" - ")[0].replace("ID ", "")); st.markdown("#### ✍️ Firma del Difusor (Instructor)")
             
-            # --- FIRMA DIFUSOR V22 ---
-            # FIX: Key dinámica para el canvas
-            canvas_key = f"canvas_inst_{id_pdf}"
+            # --- CONSULTA INSTANTANEA DE FIRMA ---
+            conn_sig = sqlite3.connect('sgsst_v23_complete.db')
+            firmado_db = pd.read_sql("SELECT firma_instructor_b64 FROM capacitaciones WHERE id=?", conn_sig, params=(id_pdf,))
+            conn_sig.close()
             
-            firmado_db = pd.read_sql("SELECT firma_instructor_b64 FROM capacitaciones WHERE id=?", conn, params=(id_pdf,))
             ya_firmado = False
             if not firmado_db.empty:
                 val = firmado_db.iloc[0,0]
-                if val and len(str(val)) > 200:
+                if val is not None and len(str(val)) > 100:
                     ya_firmado = True
 
             if ya_firmado:
@@ -654,13 +672,16 @@ elif menu == "🎓 Gestión Capacitación":
                     c = conn.cursor(); c.execute("UPDATE capacitaciones SET firma_instructor_b64=NULL WHERE id=?", (id_pdf,)); conn.commit(); st.rerun()
             else:
                 st.info("Firme en el cuadro grande abajo:")
-                canvas_inst = st_canvas(stroke_width=3, stroke_color="#00008B", background_color="#ffffff", height=300, width=600, drawing_mode="freedraw", key=canvas_key)
+                if 'canvas_inst_key' not in st.session_state: st.session_state['canvas_inst_key'] = 0
+                # Canvas Grande 600x300 Azul
+                canvas_inst = st_canvas(stroke_width=3, stroke_color="#00008B", background_color="#ffffff", height=300, width=600, drawing_mode="freedraw", key=f"canvas_inst_{st.session_state['canvas_inst_key']}")
                 
                 if st.button("Guardar Firma Difusor"):
                     if canvas_inst.image_data is not None:
                         img = PILImage.fromarray(canvas_inst.image_data.astype('uint8'), 'RGBA'); buffered = io.BytesIO(); img.save(buffered, format="PNG"); img_str = base64.b64encode(buffered.getvalue()).decode()
                         c = conn.cursor(); c.execute("UPDATE capacitaciones SET firma_instructor_b64=? WHERE id=?", (img_str, id_pdf)); conn.commit(); 
-                        st.rerun()
+                        st.session_state['canvas_inst_key'] += 1; 
+                        st.rerun() # RERUN OBLIGATORIO PARA OCULTAR CUADRO
             
             st.markdown("---")
             if st.button("📥 Generar PDF (Solo Firmados)"):
@@ -670,14 +691,71 @@ elif menu == "🎓 Gestión Capacitación":
         else: st.info("No hay registros.")
     conn.close()
 
+elif menu == "🦺 Registro EPP":
+    st.title("Control de Entrega de EPP")
+    conn = sqlite3.connect('sgsst_v23_complete.db')
+    trabajadores = pd.read_sql("SELECT rut, nombre FROM personal", conn)
+    opciones_trab = [f"{r['rut']} - {r['nombre']}" for i, r in trabajadores.iterrows()]
+    
+    with st.form("form_epp"):
+        sel_trab = st.selectbox("Trabajador:", opciones_trab)
+        c1, c2 = st.columns(2)
+        prod = c1.selectbox("Elemento EPP:", ["Casco de Seguridad", "Lentes de Seguridad", "Guantes de Cabritilla", "Guantes de Nitrilo", "Zapatos de Seguridad", "Chaleco Reflectante", "Protector Auditivo", "Bloqueador Solar"])
+        cant = c2.number_input("Cantidad:", 1, 10, 1)
+        c3, c4 = st.columns(2)
+        motivo = c3.selectbox("Motivo:", ["Entrega Inicial", "Reposición por Deterioro", "Pérdida"])
+        fecha_epp = c4.date_input("Fecha Entrega:")
+        
+        if st.form_submit_button("Registrar Entrega"):
+            rut_t = sel_trab.split(" - ")[0]
+            nombre_t = sel_trab.split(" - ")[1]
+            c = conn.cursor()
+            c.execute("INSERT INTO registro_epp (rut_trabajador, nombre_trabajador, producto, cantidad, motivo, fecha_entrega) VALUES (?,?,?,?,?,?)", (rut_t, nombre_t, prod, cant, motivo, fecha_epp))
+            conn.commit()
+            st.success("Entrega registrada correctamente.")
+            st.rerun()
+
+    st.markdown("---")
+    st.subheader("Historial de Entregas")
+    hist_epp = pd.read_sql("SELECT * FROM registro_epp ORDER BY id DESC", conn)
+    st.dataframe(hist_epp, use_container_width=True)
+    conn.close()
+
+elif menu == "📘 Entrega RIOHS":
+    st.title("Entrega Reglamento Interno (RIOHS)")
+    conn = sqlite3.connect('sgsst_v23_complete.db')
+    trabajadores = pd.read_sql("SELECT rut, nombre FROM personal", conn)
+    opciones_trab = [f"{r['rut']} - {r['nombre']}" for i, r in trabajadores.iterrows()]
+    
+    with st.form("form_riohs"):
+        sel_trab = st.selectbox("Trabajador:", opciones_trab)
+        c1, c2 = st.columns(2)
+        tipo_copia = c1.selectbox("Formato de Entrega:", ["Copia Física (Papel)", "Copia Digital (PDF/Email)"])
+        fecha_riohs = c2.date_input("Fecha de Recepción:")
+        
+        if st.form_submit_button("Registrar Entrega RIOHS"):
+            rut_t = sel_trab.split(" - ")[0]
+            nombre_t = sel_trab.split(" - ")[1]
+            c = conn.cursor()
+            c.execute("INSERT INTO entrega_riohs (rut_trabajador, nombre_trabajador, tipo_entrega, fecha_entrega) VALUES (?,?,?,?)", (rut_t, nombre_t, tipo_copia, fecha_riohs))
+            conn.commit()
+            st.success("Entrega de reglamento registrada.")
+            st.rerun()
+
+    st.markdown("---")
+    st.subheader("Control de Entrega RIOHS")
+    hist_riohs = pd.read_sql("SELECT * FROM entrega_riohs ORDER BY id DESC", conn)
+    st.dataframe(hist_riohs, use_container_width=True)
+    conn.close()
+
 elif menu == "📄 Generador IRL":
-    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_v22_stable.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn); sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
+    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_v23_complete.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn); sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
 
 elif menu == "⚠️ Matriz IPER":
-    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_v22_stable.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
+    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_v23_complete.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
 
 elif menu == "🔐 Gestión Usuarios" and st.session_state['user_role'] == "ADMINISTRADOR":
-    st.title("Administración de Usuarios del Sistema"); conn = sqlite3.connect('sgsst_v22_stable.db')
+    st.title("Administración de Usuarios del Sistema"); conn = sqlite3.connect('sgsst_v23_complete.db')
     with st.form("new_sys_user"):
         st.subheader("Nuevo Usuario"); new_u = st.text_input("Nombre Usuario"); new_p = st.text_input("Contraseña", type="password"); new_r = st.selectbox("Rol", ["ADMINISTRADOR", "SUPERVISOR", "ASISTENTE"])
         if st.form_submit_button("Crear Usuario"):
