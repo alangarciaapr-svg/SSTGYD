@@ -309,11 +309,9 @@ def generar_pdf_asistencia_rggd02(id_cap):
         style_small = ParagraphStyle(name='Small', parent=styles['Normal'], fontSize=8)
         style_cell_header = ParagraphStyle(name='CellHeader', parent=styles['Normal'], alignment=TA_CENTER, fontSize=8, textColor=colors.white, fontName='Helvetica-Bold')
 
-        # COLORES OFICIALES
         G_BLUE = colors.navy
         G_WHITE = colors.white
 
-        # 1. ENCABEZADO
         logo_text = Paragraph("<b>MADERAS G&D</b>", style_title)
         center_text = Paragraph("SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA<br/>SISTEMA DE GESTION<br/>SALUD Y SEGURIDAD OCUPACIONAL", style_center)
         control_data = [["REGISTRO DE CAPACITACIÓN"], ["CODIGO: RG-GD-02"], ["VERSION: 01"], [f"FECHA: {datetime.now().strftime('%d/%m/%Y')}"], ["PAGINA: 1"]]
@@ -324,7 +322,6 @@ def generar_pdf_asistencia_rggd02(id_cap):
         t_head.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER')]))
         elements.append(t_head); elements.append(Spacer(1, 10))
 
-        # 2. DATOS DE LA ACTIVIDAD
         h_act = Paragraph("ACTIVIDAD", style_cell_header); h_rel = Paragraph("RELATOR", style_cell_header); h_lug = Paragraph("LUGAR", style_cell_header); h_fec = Paragraph("FECHA", style_cell_header)
         d_act = Paragraph(f"{cap[6]}", style_center); d_rel = Paragraph(cap[2], style_center); d_lug = Paragraph(cap[4], style_center); d_fec = Paragraph(cap[1], style_center)
         t_row1 = Table([[h_act, h_rel, h_lug, h_fec], [d_act, d_rel, d_lug, d_fec]], colWidths=[180, 130, 120, 60])
@@ -334,7 +331,6 @@ def generar_pdf_asistencia_rggd02(id_cap):
         t_row2.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('FONTSIZE', (0,0), (-1,-1), 8), ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold')]))
         elements.append(t_row2); elements.append(Spacer(1, 5))
 
-        # 3. TEMARIO EN CUADRO
         t_temario_title = Table([[Paragraph("TEMARIO / CONTENIDOS", style_cell_header)]], colWidths=[490])
         t_temario_title.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-1), G_BLUE), ('ALIGN', (0,0), (-1,-1), 'LEFT')]))
         elements.append(t_temario_title)
@@ -342,7 +338,6 @@ def generar_pdf_asistencia_rggd02(id_cap):
         t_temario_body.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'TOP')]))
         elements.append(t_temario_body); elements.append(Spacer(1, 10))
 
-        # 4. TABLA DE ASISTENCIA
         header_asis = [Paragraph("NOMBRE", style_cell_header), Paragraph("RUT", style_cell_header), Paragraph("CARGO", style_cell_header), Paragraph("FIRMA", style_cell_header)]
         data_asis = [header_asis]
         for idx, (nom, rut, car, firma_hash, firma_b64) in enumerate(asistentes, 1):
@@ -358,7 +353,6 @@ def generar_pdf_asistencia_rggd02(id_cap):
         t_asis.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), G_BLUE), ('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER')]))
         elements.append(t_asis); elements.append(Spacer(1, 15))
 
-        # 5. PIE DE PAGINA
         img_instructor = Paragraph("", style_center)
         if cap[9]: 
              try: img_bytes_inst = base64.b64decode(cap[9]); img_stream_inst = io.BytesIO(img_bytes_inst); img_instructor = Image(img_stream_inst, width=100, height=40)
@@ -406,7 +400,10 @@ if menu == "📊 Dashboard BI":
     years_present = st.session_state['df_main']['Año'].unique(); c_y1, c_y2 = st.sidebar.columns(2); new_year_input = c_y1.number_input("Nuevo Año", 2000, 2050, 2024)
     if c_y2.button("Crear Año"):
         if new_year_input not in years_present: df_new = get_structure_for_year(new_year_input); st.session_state['df_main'] = pd.concat([st.session_state['df_main'], df_new], ignore_index=True); save_data(st.session_state['df_main'], factor_hht); st.rerun()
-    def to_excel(df): output = BytesIO();  with pd.ExcelWriter(output, engine='openpyxl') as writer: df.to_excel(writer, index=False, sheet_name='SST_Data'); return output.getvalue()
+    def to_excel(df):
+        output = BytesIO(); 
+        with pd.ExcelWriter(output, engine='openpyxl') as writer: df.to_excel(writer, index=False, sheet_name='SST_Data')
+        return output.getvalue()
     excel_data = to_excel(st.session_state['df_main']); st.sidebar.download_button("📊 Excel Base", data=excel_data, file_name="Base_SST_Completa.xlsx"); meta_ta = st.sidebar.slider("Meta Tasa Acc.", 0.0, 8.0, 3.0); meta_gestion = st.sidebar.slider("Meta Gestión", 50, 100, 90); metas = {'meta_ta': meta_ta, 'meta_gestion': meta_gestion}; df = st.session_state['df_main']; tab_dash, tab_editor = st.tabs(["📊 DASHBOARD EJECUTIVO", "📝 EDITOR DE DATOS"]); years = sorted(df['Año'].unique(), reverse=True);  
     if not years: years = [2026]
     with tab_dash:
@@ -491,18 +488,35 @@ elif menu == "👥 Nómina & Personal":
     conn.close()
 
 elif menu == "📱 App Móvil":
-    st.title("Conexión App Móvil (Operarios)"); st.markdown("### 📲 Panel de Registro en Terreno"); conn = sqlite3.connect('sgsst_v8_final.db'); tab_asist, tab_insp = st.tabs(["✍️ Firmar Asistencia", "🚨 Reportar Hallazgo"])
+    st.title("Conexión App Móvil (Operarios)")
+    st.markdown("### 📲 Panel de Registro en Terreno")
+    conn = sqlite3.connect('sgsst_v8_final.db')
+    tab_asist, tab_insp = st.tabs(["✍️ Firmar Asistencia", "🚨 Reportar Hallazgo"])
     with tab_asist:
-        st.subheader("Firma Rápida"); caps = pd.read_sql("SELECT id, tema FROM capacitaciones WHERE estado='PROGRAMADA'", conn)
+        st.subheader("Firma Rápida")
+        caps = pd.read_sql("SELECT id, tema FROM capacitaciones WHERE estado='PROGRAMADA'", conn)
         if not caps.empty:
-            opciones_caps = [f"ID {r['id']} - {r['tema']}" for i, r in caps.iterrows()]; sel_cap_movil = st.selectbox("Seleccione Actividad:", opciones_caps, key="movil_cap"); id_cap_movil = int(sel_cap_movil.split(" - ")[0].replace("ID ", "")); pendientes = pd.read_sql("SELECT p.nombre, p.rut FROM asistencia_capacitacion a JOIN personal p ON a.rut_trabajador = p.rut WHERE a.id_capacitacion = ? AND a.estado = 'PENDIENTE'", conn, params=(id_cap_movil,))
+            opciones_caps = [f"ID {r['id']} - {r['tema']}" for i, r in caps.iterrows()]
+            sel_cap_movil = st.selectbox("Seleccione Actividad:", opciones_caps, key="movil_cap")
+            id_cap_movil = int(sel_cap_movil.split(" - ")[0].replace("ID ", ""))
+            
+            pendientes = pd.read_sql("SELECT p.nombre, p.rut FROM asistencia_capacitacion a JOIN personal p ON a.rut_trabajador = p.rut WHERE a.id_capacitacion = ? AND a.estado = 'PENDIENTE'", conn, params=(id_cap_movil,))
+            
             if not pendientes.empty:
-                trabajador_firma = st.selectbox("Seleccione su Nombre:", pendientes['nombre'] + " | " + pendientes['rut']); rut_firmante = trabajador_firma.split(" | ")[1]; st.write("Dibuje su firma abajo:")
+                trabajador_firma = st.selectbox("Seleccione su Nombre:", pendientes['nombre'] + " | " + pendientes['rut'])
+                rut_firmante = trabajador_firma.split(" | ")[1]
+                
+                st.write("Dibuje su firma abajo:")
                 if 'canvas_key' not in st.session_state: st.session_state['canvas_key'] = 0
                 canvas_result = st_canvas(stroke_width=2, stroke_color="#000000", background_color="#ffffff", height=150, width=400, drawing_mode="freedraw", key=f"canvas_firma_{st.session_state['canvas_key']}")
+
                 if st.button("CONFIRMAR FIRMA"):
                     if canvas_result.image_data is not None:
-                        img = PILImage.fromarray(canvas_result.image_data.astype('uint8'), 'RGBA'); buffered = io.BytesIO(); img.save(buffered, format="PNG"); img_str = base64.b64encode(buffered.getvalue()).decode(); hash_firma = hashlib.sha256(f"{rut_firmante}{datetime.now()}".encode()).hexdigest(); c = conn.cursor(); c.execute("UPDATE asistencia_capacitacion SET estado='FIRMADO', hora_firma=?, firma_digital_hash=?, firma_imagen_b64=? WHERE id_capacitacion=? AND rut_trabajador=?", (datetime.now(), hash_firma, img_str, id_cap_movil, rut_firmante)); conn.commit(); st.success("✅ Firma registrada correctamente en la nube."); st.session_state['canvas_key'] += 1; st.rerun()
+                        img = PILImage.fromarray(canvas_result.image_data.astype('uint8'), 'RGBA'); buffered = io.BytesIO(); img.save(buffered, format="PNG"); img_str = base64.b64encode(buffered.getvalue()).decode()
+                        hash_firma = hashlib.sha256(f"{rut_firmante}{datetime.now()}".encode()).hexdigest()
+                        c = conn.cursor()
+                        c.execute("UPDATE asistencia_capacitacion SET estado='FIRMADO', hora_firma=?, firma_digital_hash=?, firma_imagen_b64=? WHERE id_capacitacion=? AND rut_trabajador=?", (datetime.now(), hash_firma, img_str, id_cap_movil, rut_firmante))
+                        conn.commit(); st.success("✅ Firma registrada correctamente en la nube."); st.session_state['canvas_key'] += 1; st.rerun()
                     else: st.warning("Por favor dibuje su firma antes de confirmar.")
             else: st.info("No hay trabajadores pendientes de firma para esta actividad.")
         else: st.warning("No hay capacitaciones programadas.")
@@ -531,26 +545,20 @@ elif menu == "🎓 Gestión Capacitación":
         if not caps_activas.empty:
             opciones = [f"ID {r['id']} - {r['tema']} ({r['tipo_charla']})" for i, r in caps_activas.iterrows()]; sel_cap = st.selectbox("Seleccione Actividad:", opciones); id_cap_sel = int(sel_cap.split(" - ")[0].replace("ID ", "")); trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
             
-            # FIX: Callback para resetear selección
             def enviar_asistentes_callback(id_cap, df_trab):
-                c_cb = sqlite3.connect('sgsst_v8_final.db'); cursor_cb = c_cb.cursor()
-                selection = st.session_state.selector_asistentes
+                c_cb = sqlite3.connect('sgsst_v8_final.db'); cursor_cb = c_cb.cursor(); selection = st.session_state.selector_asistentes
                 if selection:
                     for nombre in selection:
                         rut_t = df_trab[df_trab['nombre'] == nombre]['rut'].values[0]
                         cursor_cb.execute("INSERT INTO asistencia_capacitacion (id_capacitacion, rut_trabajador, estado) VALUES (?,?,?)", (id_cap, rut_t, "PENDIENTE"))
-                    c_cb.commit()
-                    st.session_state.exito_msg_envio = True
-                c_cb.close()
-                st.session_state.selector_asistentes = []
+                    c_cb.commit(); st.session_state.exito_msg_envio = True
+                c_cb.close(); st.session_state.selector_asistentes = []
 
             if 'selector_asistentes' not in st.session_state: st.session_state.selector_asistentes = []
             
             st.multiselect("Seleccione Asistentes para Enviar a App Móvil:", trabajadores['nombre'], key="selector_asistentes")
             st.button("Enviar a App Móvil", on_click=enviar_asistentes_callback, args=(id_cap_sel, trabajadores))
-            
-            if st.session_state.get("exito_msg_envio"):
-                st.success("Asistentes generados exitosamente"); st.session_state.exito_msg_envio = False
+            if st.session_state.get("exito_msg_envio"): st.success("Asistentes generados exitosamente"); st.session_state.exito_msg_envio = False
         else: st.warning("No hay capacitaciones pendientes.")
     with tab_hist:
         historial = pd.read_sql("SELECT * FROM capacitaciones WHERE estado='PROGRAMADA' OR estado='EJECUTADA'", conn)
