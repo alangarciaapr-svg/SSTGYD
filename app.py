@@ -19,7 +19,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from streamlit_drawable_canvas import st_canvas
 
 # Configuración Matplotlib
@@ -285,15 +285,10 @@ class PDF_SST(FPDF):
             self.ln()
             self.cell(100, 7, f" {label}", 1, 0, 'L'); self.cell(45, 7, str(val_m), 1, 0, 'C'); self.cell(45, 7, str(val_a), 1, 1, 'C')
 
-# ==============================================================================
-# 3. MOTOR PDF REPLICADO (RG-GD-02)
-# ==============================================================================
 def generar_pdf_asistencia_rggd02(id_cap):
     conn = sqlite3.connect('sgsst_v6_signature.db')
     try:
         cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
-        
-        # Validar si existe la capacitación
         if cap is None:
             return None
             
@@ -305,197 +300,66 @@ def generar_pdf_asistencia_rggd02(id_cap):
         """, (id_cap,)).fetchall()
         
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=15, bottomMargin=15, leftMargin=15, rightMargin=15)
+        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=20, bottomMargin=20)
         elements = []
         styles = getSampleStyleSheet()
-        style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=8)
+        style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10)
         style_title = ParagraphStyle(name='Title', parent=styles['Normal'], alignment=TA_CENTER, fontSize=12, fontName='Helvetica-Bold')
-        style_header_cell = ParagraphStyle(name='HCell', parent=styles['Normal'], alignment=TA_CENTER, fontSize=8, fontName='Helvetica-Bold')
         
-        # COLORES G&D (Basado en tu PDF)
-        G_BLUE = colors.navy
-        G_WHITE = colors.white
+        # --- FIX 1: DEFINIR style_small ---
+        style_small = ParagraphStyle(name='Small', parent=styles['Normal'], fontSize=8)
 
-        # 1. ENCABEZADO ESTRUCTURADO (Logo | Títulos | Código)
-        # Replicando visualmente la estructura de tablas anidadas o celdas divididas
-        
-        # Lado Izquierdo (Logo) - Simulado con texto por no tener el archivo de imagen a mano
-        logo_ph = Paragraph("<b>MADERAS G&D</b>", style_title)
-        
-        # Centro (Titulos)
-        center_text = Paragraph("SOCIEDAD MADERERA GALVEZ Y DI GÉNOVA LTDA.<br/>SISTEMA DE GESTION INTEGRADO", style_center)
-        
-        # Derecha (Tabla de Control)
-        # Código RG-GD-02 | Version 01 | Fecha | Pagina
-        sub_table_data = [
-            ["REGISTRO DE CAPACITACIÓN"],
-            ["CODIGO RG-GD-02"],
-            ["VERSION 01"],
-            [f"FECHA {datetime.now().strftime('%d/%m/%Y')}"],
-            ["PAGINA 1"]
-        ]
-        t_sub = Table(sub_table_data, colWidths=[120])
-        t_sub.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-            ('FONTSIZE', (0,0), (-1,-1), 7),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('BACKGROUND', (0,0), (0,0), G_BLUE),
-            ('TEXTCOLOR', (0,0), (0,0), G_WHITE),
-            ('FONTNAME', (0,0), (0,0), 'Helvetica-Bold')
-        ]))
+        data_header = [[Paragraph("<b>MADERAS G&D</b><br/>SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA<br/>SISTEMA DE GESTION<br/>SALUD Y SEGURIDAD OCUPACIONAL", style_center), Paragraph("<b>REGISTRO DE CAPACITACION</b>", style_title)]]
+        t_header = Table(data_header, colWidths=[300, 200])
+        t_header.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+        elements.append(t_header); elements.append(Spacer(1, 10))
 
-        data_header = [[logo_ph, center_text, t_sub]]
-        t_head = Table(data_header, colWidths=[100, 280, 130])
-        t_head.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 1, colors.black),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER')
-        ]))
-        elements.append(t_head)
-        elements.append(Spacer(1, 10))
+        data_resp = [["RESPONSABLE DE CAPACITACION:", cap[2]], ["CARGO:", cap[3]], ["FECHA:", cap[1]]]
+        t_resp = Table(data_resp, colWidths=[200, 300])
+        t_resp.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (0,-1), colors.lightgrey), ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 8)]))
+        elements.append(t_resp); elements.append(Spacer(1, 10))
 
-        # 2. DATOS DE LA ACTIVIDAD (TABLA DE ENCABEZADO)
-        # Fila 1: ACTIVIDAD (Título grande), RELATOR, LUGAR, FECHA
-        # Fila 2: CARGO, DURACION
-        
-        # Mapeo de datos:
-        # Actividad = Tipo Charla + Tema
-        # Relator = Responsable
-        
-        # Estilo para celdas azules
-        s_blue = TableStyle([
-            ('BACKGROUND', (0,0), (-1,-1), G_BLUE),
-            ('TEXTCOLOR', (0,0), (-1,-1), G_WHITE),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0,0), (-1,-1), 8),
-            ('GRID', (0,0), (-1,-1), 1, colors.black)
-        ])
-        
-        # Tabla superior de datos
-        # Encabezados
-        row1_h = [
-            Paragraph("<b>ACTIVIDAD / TEMA</b>", ParagraphStyle('w', textColor=colors.white, alignment=TA_CENTER, fontSize=8)),
-            Paragraph("<b>RELATOR</b>", ParagraphStyle('w', textColor=colors.white, alignment=TA_CENTER, fontSize=8)),
-            Paragraph("<b>LUGAR</b>", ParagraphStyle('w', textColor=colors.white, alignment=TA_CENTER, fontSize=8)),
-            Paragraph("<b>FECHA</b>", ParagraphStyle('w', textColor=colors.white, alignment=TA_CENTER, fontSize=8))
-        ]
-        row1_d = [
-            Paragraph(f"{cap[6]}<br/>{cap[7]}", style_center), # Tipo + Tema
-            Paragraph(cap[2], style_center), # Responsable
-            Paragraph(cap[4], style_center), # Lugar
-            Paragraph(cap[1], style_center)  # Fecha
-        ]
-        
-        t_info1 = Table([row1_h, row1_d], colWidths=[180, 130, 120, 80])
-        t_info1.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), G_BLUE),
-            ('GRID', (0,0), (-1,-1), 1, colors.black),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE')
-        ]))
-        elements.append(t_info1)
-        
-        # Segunda fila de info (Cargo y Duración)
-        row2 = [
-            f"CARGO: {cap[3]}", # Cargo
-            f"DURACIÓN: 15 min" # Estático o calculado si tuvieramos fin
-        ]
-        t_info2 = Table([row2], colWidths=[310, 200])
-        t_info2.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 1, colors.black),
-            ('FONTSIZE', (0,0), (-1,-1), 8),
-            ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold')
-        ]))
-        elements.append(t_info2)
-        elements.append(Spacer(1, 5))
+        tipos_posibles = ["CHARLA DE 5 MIN.", "PROCEDIMIENTO", "INSTRUCTIVO", "REGLAMENTO INTERNO", "AST", "CHARLA OPERACIONAL", "TRIPTICO", "RECAPACITACION", "OTROS"]
+        grid_data = []; row = []
+        for i, tipo in enumerate(tipos_posibles):
+            mark = "[ X ]" if tipo == cap[6] else "[   ]"
+            row.append(f"{mark} {tipo}")
+            if (i + 1) % 3 == 0: grid_data.append(row); row = []
+        if row: grid_data.append(row)
+        t_types = Table(grid_data, colWidths=[160, 160, 160])
+        t_types.setStyle(TableStyle([('FONTSIZE', (0,0), (-1,-1), 8), ('BOX', (0,0), (-1,-1), 1, colors.black), ('INNERGRID', (0,0), (-1,-1), 0.5, colors.grey)]))
+        elements.append(Paragraph("<b>TIPO DE CHARLA:</b>", style_small)); elements.append(t_types); elements.append(Spacer(1, 10))
+        elements.append(Paragraph(f"<b>TEMA:</b> {cap[7]}", style_small)); elements.append(Spacer(1, 10))
 
-        # 3. TEMARIO / CONTENIDOS
-        # Título Azul
-        t_temario_title = Table([[Paragraph("<b>TEMARIO / CONTENIDOS</b>", ParagraphStyle('w', textColor=colors.white, fontSize=9))]], colWidths=[510])
-        t_temario_title.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-1), G_BLUE), ('ALIGN', (0,0), (-1,-1), 'LEFT')]))
-        elements.append(t_temario_title)
-        
-        # Contenido (El tema repetido o descripción larga)
-        elements.append(Paragraph(cap[7], style_small))
-        elements.append(Spacer(1, 10))
-
-        # 4. TABLA DE ASISTENCIA
-        # Encabezados Azules
-        header_asis = [
-            Paragraph("<b>NOMBRE</b>", ParagraphStyle('w', textColor=colors.white, fontSize=8, alignment=TA_CENTER)),
-            Paragraph("<b>RUT</b>", ParagraphStyle('w', textColor=colors.white, fontSize=8, alignment=TA_CENTER)),
-            Paragraph("<b>CARGO</b>", ParagraphStyle('w', textColor=colors.white, fontSize=8, alignment=TA_CENTER)),
-            Paragraph("<b>FIRMA</b>", ParagraphStyle('w', textColor=colors.white, fontSize=8, alignment=TA_CENTER))
-        ]
-        
+        header_asis = ["N°", "NOMBRE", "R.U.T.", "FIRMA (Gráfica)"]
         data_asis = [header_asis]
         
-        # Procesar firmas
         for idx, (nom, rut, car, firma_hash, firma_b64) in enumerate(asistentes, 1):
-            row = [
-                Paragraph(nom, style_center),
-                Paragraph(rut, style_center),
-                Paragraph(car, style_center)
-            ]
-            
-            # Imagen de firma
+            row = [str(idx), nom, rut]
             if firma_b64:
                 try:
                     img_bytes = base64.b64decode(firma_b64)
                     img_stream = io.BytesIO(img_bytes)
-                    img_rl = Image(img_stream, width=60, height=25)
+                    img_rl = Image(img_stream, width=80, height=30)
                     row.append(img_rl)
                 except:
-                    row.append("Firma Digital")
+                    row.append("Error img")
             else:
-                row.append("Validado")
-            
+                row.append("Firma Digital (Hash)")
             data_asis.append(row)
             
-        # Rellenar filas vacias para estética
-        while len(data_asis) < 15:
-            data_asis.append(["", "", "", ""])
+        while len(data_asis) < 21: data_asis.append([str(len(data_asis)), "", "", ""])
+        t_asis = Table(data_asis, colWidths=[30, 200, 80, 180])
+        t_asis.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('FONTSIZE', (0,0), (-1,-1), 7), ('ALIGN', (0,0), (0,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BACKGROUND', (0,0), (-1,0), colors.lightgrey)]))
+        elements.append(t_asis); elements.append(Spacer(1, 10))
 
-        t_asis = Table(data_asis, colWidths=[180, 70, 130, 130])
-        t_asis.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), G_BLUE),
-            ('GRID', (0,0), (-1,-1), 1, colors.black),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER')
-        ]))
-        elements.append(t_asis)
-        elements.append(Spacer(1, 15))
-
-        # 5. PIE DE PAGINA (EVIDENCIA Y VALIDACION)
-        # Dos grandes cuadros
-        
-        # Cuadro Izquierdo: Evidencia
-        c_evidencia = [
-            [Paragraph("<b>EVIDENCIA FOTOGRÁFICA</b>", style_center)],
-            ["\n\n\n(Espacio para foto)\n\n\n"]
-        ]
-        t_evi = Table(c_evidencia, colWidths=[250])
-        t_evi.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('ALIGN', (0,0), (-1,-1), 'CENTER')]))
-
-        # Cuadro Derecho: Validación Instructor
-        c_valid = [
-            [Paragraph("<b>VALIDACIÓN INSTRUCTOR</b>", style_center)],
-            ["\n\n\n"], # Espacio para firma
-            [Paragraph(f"<b>{cap[2]}</b><br/>Relator/Instructor", style_center)]
-        ]
-        t_val = Table(c_valid, colWidths=[250])
-        t_val.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('ALIGN', (0,0), (-1,-1), 'CENTER')]))
-
-        # Tabla contenedora de los dos cuadros
-        t_footer = Table([[t_evi, Spacer(10,0), t_val]], colWidths=[250, 10, 250])
-        elements.append(t_footer)
-
-        doc.build(elements)
-        buffer.seek(0)
+        data_footer = [["LUGAR:", cap[4], "HORA DE INICIO:", cap[5]], ["", "", "", ""], ["FIRMA Y TIMBRE RELATOR:", "", "", ""]]
+        t_foot = Table(data_footer, colWidths=[50, 200, 100, 100])
+        t_foot.setStyle(TableStyle([('FONTSIZE', (0,0), (-1,-1), 8), ('LINEBELOW', (1,0), (1,0), 1, colors.black), ('LINEBELOW', (3,0), (3,0), 1, colors.black)]))
+        elements.append(t_foot); elements.append(Spacer(1, 10))
+        elements.append(Paragraph("RSSO-GD-02 | Version 1.0", style_center))
+        doc.build(elements); buffer.seek(0)
         return buffer
-    except Exception as e:
-        st.error(f"Error técnico generando PDF: {e}")
-        return None
     finally:
         conn.close()
 
@@ -533,6 +397,7 @@ with st.sidebar:
     if st.session_state['user_role'] == "ADMINISTRADOR": opciones_menu.append("🔐 Gestión Usuarios")
     menu = st.radio("MÓDULOS ACTIVOS:", opciones_menu)
 
+# --- DASHBOARD BI ---
 if menu == "📊 Dashboard BI":
     if 'df_main' not in st.session_state: st.session_state['df_main'] = load_data()
     st.sidebar.markdown("---"); st.sidebar.markdown("### ⚙️ Config. BI")
@@ -620,6 +485,7 @@ if menu == "📊 Dashboard BI":
                     df.at[row_idx, 'Masa Laboral'] = val_masa; df.at[row_idx, 'Horas Extras'] = val_extras; df.at[row_idx, 'Horas Ausentismo'] = val_aus; df.at[row_idx, 'Accidentes CTP'] = val_acc; df.at[row_idx, 'Días Perdidos'] = val_dias; df.at[row_idx, 'Accidentes Fatales'] = val_fatales; df.at[row_idx, 'Días Cargo'] = val_cargo; df.at[row_idx, 'Enf. Profesionales'] = val_ep; df.at[row_idx, 'Días Perdidos EP'] = val_dias_ep; df.at[row_idx, 'Pensionados'] = val_pen; df.at[row_idx, 'Indemnizados'] = val_ind; df.at[row_idx, 'Insp. Programadas'] = val_insp_p; df.at[row_idx, 'Insp. Ejecutadas'] = val_insp_e; df.at[row_idx, 'Cap. Programadas'] = val_cap_p; df.at[row_idx, 'Cap. Ejecutadas'] = val_cap_e; df.at[row_idx, 'Medidas Abiertas'] = val_med_ab; df.at[row_idx, 'Medidas Cerradas'] = val_med_ce; df.at[row_idx, 'Expuestos Silice/Ruido'] = val_exp; df.at[row_idx, 'Vig. Salud Vigente'] = val_vig; df.at[row_idx, 'Observaciones'] = val_obs; st.session_state['df_main'] = save_data(df, factor_hht); st.success("Guardado."); st.rerun()
         except Exception as e: st.error(f"Error al cargar registro: {e}")
 
+# --- 2. GESTIÓN NÓMINA ---
 elif menu == "👥 Nómina & Personal":
     st.title("Base de Datos Maestra de Personal")
     tab_lista, tab_agregar, tab_excel = st.tabs(["📋 Lista Completa", "➕ Gestión Manual", "📂 Carga Masiva"])
@@ -687,6 +553,10 @@ elif menu == "📱 App Móvil":
                 
                 # --- CANVAS PARA FIRMA ---
                 st.write("Dibuje su firma abajo:")
+                
+                # FIX 2: KEY DINÁMICA PARA REINICIAR CANVAS
+                if 'canvas_key' not in st.session_state: st.session_state['canvas_key'] = 0
+                
                 canvas_result = st_canvas(
                     stroke_width=2,
                     stroke_color="#000000",
@@ -694,12 +564,11 @@ elif menu == "📱 App Móvil":
                     height=150,
                     width=400,
                     drawing_mode="freedraw",
-                    key="canvas_firma"
+                    key=f"canvas_firma_{st.session_state['canvas_key']}" # Key dinámica
                 )
 
                 if st.button("CONFIRMAR FIRMA"):
                     if canvas_result.image_data is not None:
-                        # Convertir numpy array a imagen bytes
                         img = PILImage.fromarray(canvas_result.image_data.astype('uint8'), 'RGBA')
                         buffered = io.BytesIO()
                         img.save(buffered, format="PNG")
@@ -711,6 +580,9 @@ elif menu == "📱 App Móvil":
                                   (datetime.now(), hash_firma, img_str, id_cap_movil, rut_firmante))
                         conn.commit()
                         st.success("✅ Firma registrada correctamente en la nube.")
+                        
+                        # FIX 2: Incrementar key para limpiar canvas
+                        st.session_state['canvas_key'] += 1
                         st.rerun()
                     else:
                         st.warning("Por favor dibuje su firma antes de confirmar.")
@@ -741,15 +613,23 @@ elif menu == "🎓 Gestión Capacitación":
             sel_cap = st.selectbox("Seleccione Actividad:", opciones)
             id_cap_sel = int(sel_cap.split(" - ")[0].replace("ID ", ""))
             
-            trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn); asistentes = st.multiselect("Seleccione Asistentes para Enviar a App Móvil:", trabajadores['nombre'])
+            trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
+            # FIX 3: REINICIO SELECCION
+            if 'multi_asistentes' not in st.session_state: st.session_state['multi_asistentes'] = []
+            
+            asistentes = st.multiselect("Seleccione Asistentes para Enviar a App Móvil:", trabajadores['nombre'], key="selector_asistentes")
+            
             if asistentes:
                 if st.button("Enviar a App Móvil"):
                     c = conn.cursor()
                     for nombre in asistentes:
                         rut_t = trabajadores[trabajadores['nombre'] == nombre]['rut'].values[0]
-                        # Insertar como PENDIENTE
                         c.execute("INSERT INTO asistencia_capacitacion (id_capacitacion, rut_trabajador, estado) VALUES (?,?,?)", (id_cap_sel, rut_t, "PENDIENTE"))
-                    conn.commit(); st.success(f"Se enviaron {len(asistentes)} trabajadores a la App Móvil para firma."); st.rerun()
+                    conn.commit()
+                    st.success("Asistentes generados exitosamente") # Mensaje solicitado
+                    # FIX 3: Limpiar selección (requiere rerun)
+                    st.session_state["selector_asistentes"] = [] 
+                    st.rerun()
         else: st.warning("No hay capacitaciones pendientes.")
     with tab_hist:
         historial = pd.read_sql("SELECT * FROM capacitaciones WHERE estado='PROGRAMADA' OR estado='EJECUTADA'", conn)
