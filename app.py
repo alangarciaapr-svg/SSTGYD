@@ -467,7 +467,27 @@ elif menu == "👥 Nómina & Personal":
         col_plantilla, col_upload = st.columns([1, 2])
         with col_plantilla:
             st.info("¿Necesitas el formato?")
-            def generar_plantilla_excel_detallada(): output = io.BytesIO(); data = {'NOMBRE': ['JUAN PEREZ (EJEMPLO)', 'MARIA SOTO (EJEMPLO)'], 'RUT': ['11.222.333-K', '12.345.678-9'], 'CARGO': ['OPERADOR ASERRADERO', 'AYUDANTE'], 'LUGAR DE TRABAJO': ['ASERRADERO', 'FAENA'], 'F. CONTRATO': ['2025-01-01', '01-03-2024'], 'DIRECCION': ['CALLE 1, OSORNO', 'AVENIDA 2'], 'ESTADO CIVIL': ['SOLTERO', 'CASADA'], 'SALUD': ['FONASA', 'ISAPRE'], 'AFP': ['MODELO', 'CAPITAL'], 'CORREO': ['ejemplo@gyd.cl', ''], 'TELEFONO': ['912345678', '']}; df_template = pd.DataFrame(data); with pd.ExcelWriter(output, engine='openpyxl') as writer: pd.DataFrame(["GUÍA DE FORMATO OBLIGATORIO - LEA ANTES DE LLENAR - LOS DATOS COMIENZAN EN LA FILA 4"]).to_excel(writer, startrow=0, startcol=0, index=False, header=False); pd.DataFrame(["RUT: Con puntos y guion (Ej: 11.222.333-K) | FECHAS: DD-MM-AAAA o AAAA-MM-DD | LUGAR: Use solo 'ASERRADERO', 'FAENA', 'OFICINA' | NO BORRAR ENCABEZADOS DE LA FILA 3"]).to_excel(writer, startrow=1, startcol=0, index=False, header=False); df_template.to_excel(writer, startrow=2, index=False, sheet_name='Plantilla'); return output.getvalue()
+            def generar_plantilla_excel_detallada():
+                output = io.BytesIO()
+                data = {
+                    'NOMBRE': ['JUAN PEREZ (EJEMPLO)', 'MARIA SOTO (EJEMPLO)'],
+                    'RUT': ['11.222.333-K', '12.345.678-9'],
+                    'CARGO': ['OPERADOR ASERRADERO', 'AYUDANTE'],
+                    'LUGAR DE TRABAJO': ['ASERRADERO', 'FAENA'],
+                    'F. CONTRATO': ['2025-01-01', '01-03-2024'],
+                    'DIRECCION': ['CALLE 1, OSORNO', 'AVENIDA 2'],
+                    'ESTADO CIVIL': ['SOLTERO', 'CASADA'],
+                    'SALUD': ['FONASA', 'ISAPRE'],
+                    'AFP': ['MODELO', 'CAPITAL'],
+                    'CORREO': ['ejemplo@gyd.cl', ''],
+                    'TELEFONO': ['912345678', '']
+                }
+                df_template = pd.DataFrame(data)
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    pd.DataFrame(["GUÍA DE FORMATO OBLIGATORIO - LEA ANTES DE LLENAR - LOS DATOS COMIENZAN EN LA FILA 4"]).to_excel(writer, startrow=0, startcol=0, index=False, header=False)
+                    pd.DataFrame(["RUT: Con puntos y guion (Ej: 11.222.333-K) | FECHAS: DD-MM-AAAA o AAAA-MM-DD | LUGAR: Use solo 'ASERRADERO', 'FAENA', 'OFICINA' | NO BORRAR ENCABEZADOS DE LA FILA 3"]).to_excel(writer, startrow=1, startcol=0, index=False, header=False)
+                    df_template.to_excel(writer, startrow=2, index=False, sheet_name='Plantilla')
+                return output.getvalue()
             plantilla_data = generar_plantilla_excel_detallada(); st.download_button(label="📥 Bajar Plantilla Instructiva", data=plantilla_data, file_name="plantilla_carga_nomina_v2.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         uploaded_file = st.file_uploader("📂 Actualizar Nómina (Subir Excel Completo)", type=['xlsx', 'csv'])
         if uploaded_file:
@@ -558,7 +578,9 @@ elif menu == "🎓 Gestión Capacitación":
             
             st.multiselect("Seleccione Asistentes para Enviar a App Móvil:", trabajadores['nombre'], key="selector_asistentes")
             st.button("Enviar a App Móvil", on_click=enviar_asistentes_callback, args=(id_cap_sel, trabajadores))
-            if st.session_state.get("exito_msg_envio"): st.success("Asistentes generados exitosamente"); st.session_state.exito_msg_envio = False
+            
+            if st.session_state.get("exito_msg_envio"):
+                st.success("Asistentes generados exitosamente"); st.session_state.exito_msg_envio = False
         else: st.warning("No hay capacitaciones pendientes.")
     with tab_hist:
         historial = pd.read_sql("SELECT * FROM capacitaciones WHERE estado='PROGRAMADA' OR estado='EJECUTADA'", conn)
