@@ -27,10 +27,10 @@ from streamlit_drawable_canvas import st_canvas
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL) - V43 (Nomina Plus)
+# 1. CAPA DE DATOS (SQL RELACIONAL) - V44 (Fix Carga Masiva)
 # ==============================================================================
 def init_erp_db():
-    conn = sqlite3.connect('sgsst_v43_nomina_plus.db') 
+    conn = sqlite3.connect('sgsst_v44_final_fix_upload.db') 
     c = conn.cursor()
     
     # --- USUARIOS ---
@@ -108,15 +108,12 @@ def init_erp_db():
                     fecha_entrega DATE,
                     firma_trabajador_b64 TEXT)''')
 
-    # --- CARGA MASIVA DE TRABAJADORES (Si la base esta vacia) ---
+    # --- CARGA MASIVA DE TRABAJADORES (Default) ---
     c.execute("SELECT count(*) FROM personal")
     if c.fetchone()[0] < 5: 
-        # Carga inicial básica si no hay datos
         staff_completo = [
             ("16.781.002-0", "ALAN FABIAN GARCIA VIDAL", "PREVENCIONISTA DE RIESGOS", "OFICINA", "2025-10-21", "ACTIVO"),
-            ("10.518.096-9", "OSCAR EDUARDO TRIVIÑO SALAZAR", "OPERADOR DE MAQUINARIA", "FAENA", "2024-01-01", "ACTIVO"),
-            ("12.128.228-2", "LEONEL MOISES MUÑOZ HERNANDEZ", "OPERADOR DE MAQUINARIA", "FAENA", "2023-01-01", "ACTIVO"),
-            ("13.376.126-8", "VICTOR DANIEL ROMERO MUÑOZ", "OPERADOR DE MAQUINARIA", "FAENA", "2023-01-01", "ACTIVO")
+            ("10.518.096-9", "OSCAR EDUARDO TRIVIÑO SALAZAR", "OPERADOR DE MAQUINARIA", "FAENA", "2024-01-01", "ACTIVO")
         ]
         c.executemany("INSERT OR IGNORE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", staff_completo)
 
@@ -124,9 +121,7 @@ def init_erp_db():
     c.execute("SELECT count(*) FROM matriz_iper")
     if c.fetchone()[0] == 0:
         iper_data = [
-            ("OPERADOR DE MAQUINARIA", "Cosecha Mecanizada", "Pendiente Abrupta", "Volcamiento de Maquinaria", "Muerte, Amputación, Fracturas", "Cabina Certificada ROPS/FOPS, Cinturón", "Realizar Check List pre-operacional. Operar solo en pendientes autorizadas.", "CRITICO"),
-            ("OPERADOR DE ASERRADERO", "Corte Principal", "Sierra en movimiento", "Corte/Amputación", "Lesión Grave", "Guardas Fijas y Móviles", "No intervenir equipos en movimiento.", "ALTO"),
-            ("MECANICO LIDER", "Mantención", "Fluidos a presión", "Proyección", "Quemadura/Inyección", "Despresurización previa", "Uso de EPP específico y bloqueo de energías.", "MEDIO")
+            ("OPERADOR DE MAQUINARIA", "Cosecha Mecanizada", "Pendiente Abrupta", "Volcamiento de Maquinaria", "Muerte, Amputación, Fracturas", "Cabina Certificada ROPS/FOPS, Cinturón", "Realizar Check List pre-operacional. Operar solo en pendientes autorizadas.", "CRITICO")
         ]
         c.executemany("INSERT INTO matriz_iper (cargo_asociado, proceso, peligro, riesgo, consecuencia, medida_control, metodo_correcto, criticidad) VALUES (?,?,?,?,?,?,?,?)", iper_data)
 
@@ -164,9 +159,7 @@ def hash_pass(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def login_user(username, password):
-    conn = sqlite3.connect('sgsst_v35_final_stable.db') # Usamos la V35 de base, redirigida a V43 en init
-    # Fix redireccion para usar siempre la misma DB activa
-    conn = sqlite3.connect('sgsst_v43_nomina_plus.db')
+    conn = sqlite3.connect('sgsst_v44_final_fix_upload.db')
     c = conn.cursor()
     c.execute("SELECT rol FROM usuarios WHERE username=? AND password=?", (username, hash_pass(password)))
     result = c.fetchone()
@@ -247,28 +240,16 @@ def generar_insight_automatico(row_mes, ta_acum, metas):
 
 # --- HELPER FORMATO RUT CHILE ---
 def formatear_rut_chile(rut_raw):
-    """
-    Toma un string, limpia caracteres no válidos, calcula o verifica DV y formatea
-    como XX.XXX.XXX-X
-    """
     if not rut_raw: return ""
-    
-    # 1. Limpieza
     rut_clean = str(rut_raw).upper().replace(".", "").replace("-", "").strip()
-    
-    # 2. Validación básica
-    if len(rut_clean) < 2: return rut_raw # Muy corto para ser RUT
-    
-    # 3. Separar cuerpo y DV
+    if len(rut_clean) < 2: return rut_raw
     cuerpo = rut_clean[:-1]
     dv = rut_clean[-1]
-    
-    # 4. Formatear con puntos
     try:
         cuerpo_fmt = "{:,}".format(int(cuerpo)).replace(",", ".")
         return f"{cuerpo_fmt}-{dv}"
     except:
-        return rut_raw # Si no es numérico el cuerpo, devolver original
+        return rut_raw 
 
 class PDF_SST(FPDF):
     def header(self):
@@ -372,7 +353,7 @@ def get_scaled_logo(path, max_w, max_h):
     except: return None
 
 def generar_pdf_asistencia_rggd02(id_cap):
-    conn = sqlite3.connect('sgsst_v43_nomina_plus.db')
+    conn = sqlite3.connect('sgsst_v44_final_fix_upload.db')
     try:
         cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
         if cap is None: return None
@@ -444,7 +425,7 @@ def generar_pdf_asistencia_rggd02(id_cap):
     finally: conn.close()
 
 def generar_pdf_epp_grupo(grupo_id):
-    conn = sqlite3.connect('sgsst_v43_nomina_plus.db')
+    conn = sqlite3.connect('sgsst_v44_final_fix_upload.db')
     try:
         regs = conn.execute("SELECT * FROM registro_epp WHERE grupo_id=?", (grupo_id,)).fetchall()
         if not regs: return None
@@ -474,7 +455,7 @@ def generar_pdf_epp_grupo(grupo_id):
     finally: conn.close()
 
 def generar_pdf_riohs(id_reg):
-    conn = sqlite3.connect('sgsst_v43_nomina_plus.db')
+    conn = sqlite3.connect('sgsst_v44_final_fix_upload.db')
     try:
         reg = conn.execute("SELECT * FROM entrega_riohs WHERE id=?", (id_reg,)).fetchone()
         if not reg: return None
@@ -500,7 +481,7 @@ def generar_pdf_riohs(id_reg):
     finally: conn.close()
 
 def generar_pdf_irl(rut_trabajador):
-    conn = sqlite3.connect('sgsst_v43_nomina_plus.db')
+    conn = sqlite3.connect('sgsst_v44_final_fix_upload.db')
     try:
         trab = conn.execute("SELECT * FROM personal WHERE rut=?", (rut_trabajador,)).fetchone()
         if not trab: return None
@@ -620,112 +601,81 @@ if menu == "📊 Dashboard BI":
 # --- 2. GESTIÓN NÓMINA ---
 elif menu == "👥 Nómina & Personal":
     st.title("Base de Datos Maestra de Personal")
-    tab_lista, tab_agregar, tab_editar, tab_excel = st.tabs(["📋 Lista Completa", "➕ Ingresar Nuevo", "✏️ Modificar / Editar", "📂 Carga Masiva"])
-    conn = sqlite3.connect('sgsst_v43_nomina_plus.db')
-    
+    tab_lista, tab_agregar, tab_excel = st.tabs(["📋 Lista Completa", "➕ Gestión Manual", "📂 Carga Masiva"])
+    conn = sqlite3.connect('sgsst_v44_final_fix_upload.db')
     with tab_lista:
-        df = pd.read_sql("SELECT nombre, rut, cargo, centro_costo as 'Lugar', estado FROM personal", conn)
-        st.dataframe(df, use_container_width=True, hide_index=True)
-        st.markdown("---")
-        st.subheader("🗑️ Dar de Baja / Eliminar")
-        col_del, col_btn = st.columns([3, 1])
-        if not df.empty:
-            rut_a_borrar = col_del.selectbox("Seleccione Trabajador a Eliminar:", df['rut'] + " - " + df['nombre'])
-            if col_btn.button("Eliminar Trabajador"):
-                rut_clean = rut_a_borrar.split(" - ")[0]
-                c = conn.cursor()
-                c.execute("DELETE FROM personal WHERE rut=?", (rut_clean,))
-                conn.commit()
-                st.success(f"Trabajador {rut_clean} eliminado.")
-                st.rerun()
-
+        df = pd.read_sql("SELECT nombre, rut, cargo, centro_costo as 'Lugar', estado FROM personal", conn); st.dataframe(df, use_container_width=True, hide_index=True); st.markdown("---"); st.subheader("🗑️ Dar de Baja / Eliminar"); col_del, col_btn = st.columns([3, 1]); rut_a_borrar = col_del.selectbox("Seleccione Trabajador a Eliminar:", df['rut'] + " - " + df['nombre'])
+        if col_btn.button("Eliminar Trabajador"): rut_clean = rut_a_borrar.split(" - ")[0]; c = conn.cursor(); c.execute("DELETE FROM personal WHERE rut=?", (rut_clean,)); conn.commit(); st.success(f"Trabajador {rut_clean} eliminado."); st.rerun()
     with tab_agregar:
         st.subheader("Ingresar Nuevo Trabajador")
         with st.form("add_worker_manual"):
-            c1, c2 = st.columns(2)
-            n_rut_raw = c1.text_input("RUT (Ej: 12345678-9)")
-            n_nom = c2.text_input("Nombre Completo")
-            n_cargo = c1.selectbox("Cargo", LISTA_CARGOS)
-            n_lugar = c2.selectbox("Lugar", ["ASERRADERO", "FAENA", "OFICINA", "TALLER"])
-            
+            c1, c2 = st.columns(2); n_rut = c1.text_input("RUT (Ej: 12.345.678-9)"); n_nom = c2.text_input("Nombre Completo"); n_cargo = c1.selectbox("Cargo", ["OPERADOR", "AYUDANTE", "CHOFER", "ADMINISTRATIVO", "MECANICO"]); n_lugar = c2.selectbox("Lugar", ["ASERRADERO", "FAENA", "OFICINA", "TALLER"])
             if st.form_submit_button("Guardar en Base de Datos"):
-                if n_rut_raw and n_nom:
-                    n_rut_fmt = formatear_rut_chile(n_rut_raw) # AUTO-FORMATO
-                    c = conn.cursor()
-                    try:
-                        c.execute("INSERT INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (n_rut_fmt, n_nom, n_cargo, n_lugar, date.today(), "ACTIVO"))
-                        conn.commit()
-                        st.success(f"Trabajador guardado: {n_rut_fmt} - {n_nom}")
-                        st.rerun()
-                    except sqlite3.IntegrityError:
-                        st.error("Error: El RUT ya existe en el sistema.")
-                else:
-                    st.warning("Complete RUT y Nombre.")
-
-    with tab_editar:
-        st.subheader("Modificar Trabajador Existente")
-        df_edit = pd.read_sql("SELECT rut, nombre, cargo, centro_costo FROM personal", conn)
-        if not df_edit.empty:
-            sel_trab_edit = st.selectbox("Buscar Trabajador:", df_edit['rut'] + " - " + df_edit['nombre'])
-            rut_target = sel_trab_edit.split(" - ")[0]
-            
-            # Cargar datos actuales
-            curr_data = df_edit[df_edit['rut'] == rut_target].iloc[0]
-            
-            # Formulario de Edición (Sin st.form para permitir reactividad si se quisiera, pero usaremos inputs directos + boton)
-            new_nom_edit = st.text_input("Nombre:", value=curr_data['nombre'])
-            
-            # Encontrar indice del cargo actual en la lista
-            idx_cargo = 0
-            if curr_data['cargo'] in LISTA_CARGOS:
-                idx_cargo = LISTA_CARGOS.index(curr_data['cargo'])
-            new_cargo_edit = st.selectbox("Cargo:", LISTA_CARGOS, index=idx_cargo, key="edit_cargo")
-            
-            idx_lugar = ["ASERRADERO", "FAENA", "OFICINA", "TALLER"].index(curr_data['centro_costo']) if curr_data['centro_costo'] in ["ASERRADERO", "FAENA", "OFICINA", "TALLER"] else 0
-            new_lugar_edit = st.selectbox("Lugar:", ["ASERRADERO", "FAENA", "OFICINA", "TALLER"], index=idx_lugar, key="edit_lugar")
-            
-            if st.button("💾 Actualizar Datos"):
-                c = conn.cursor()
-                c.execute("UPDATE personal SET nombre=?, cargo=?, centro_costo=? WHERE rut=?", (new_nom_edit, new_cargo_edit, new_lugar_edit, rut_target))
-                conn.commit()
-                st.success("Datos actualizados correctamente.")
-                st.rerun()
-        else:
-            st.info("No hay trabajadores para editar.")
-
+                if n_rut and n_nom:
+                    c = conn.cursor(); 
+                    try: c.execute("INSERT INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (n_rut, n_nom, n_cargo, n_lugar, date.today(), "ACTIVO")); conn.commit(); st.success("Trabajador guardado exitosamente."); st.rerun()
+                    except: st.error("Error: El RUT ya existe.")
+                else: st.warning("Complete RUT y Nombre.")
     with tab_excel:
         col_plantilla, col_upload = st.columns([1, 2])
         with col_plantilla:
             st.info("¿Necesitas el formato?")
             def generar_plantilla_excel_detallada():
-                output = io.BytesIO(); data = {'NOMBRE': ['JUAN PEREZ'], 'RUT': ['12345678-9'], 'CARGO': ['OPERADOR ASERRADERO'], 'LUGAR DE TRABAJO': ['ASERRADERO'], 'F. CONTRATO': ['2025-01-01']}; df_template = pd.DataFrame(data)
-                with pd.ExcelWriter(output, engine='openpyxl') as writer: pd.DataFrame(["FILA 3 HEADER"]).to_excel(writer, startrow=0, startcol=0, index=False, header=False); df_template.to_excel(writer, startrow=2, index=False, sheet_name='Plantilla')
+                output = io.BytesIO(); data = {'NOMBRE': ['JUAN PEREZ (EJEMPLO)', 'MARIA SOTO (EJEMPLO)'], 'RUT': ['11.222.333-K', '12.345.678-9'], 'CARGO': ['OPERADOR ASERRADERO', 'AYUDANTE'], 'FECHA DE CONTRATO': ['2025-01-01', '2024-03-01']}; df_template = pd.DataFrame(data)
+                # Plantilla Simple: Header en fila 1
+                with pd.ExcelWriter(output, engine='openpyxl') as writer: df_template.to_excel(writer, index=False, sheet_name='Plantilla')
                 return output.getvalue()
-            plantilla_data = generar_plantilla_excel_detallada(); st.download_button(label="📥 Bajar Plantilla", data=plantilla_data, file_name="plantilla_carga.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            plantilla_data = generar_plantilla_excel_detallada(); st.download_button(label="📥 Bajar Plantilla Simple", data=plantilla_data, file_name="plantilla_carga_simple.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         uploaded_file = st.file_uploader("📂 Carga Masiva (Excel)", type=['xlsx', 'csv'])
         if uploaded_file:
             try:
-                if uploaded_file.name.endswith('.csv'): df_new = pd.read_csv(uploaded_file, header=2)
-                else: df_new = pd.read_excel(uploaded_file, header=2)
+                # Carga flexible: detecta header automticamente o usa fila 0
+                if uploaded_file.name.endswith('.csv'): df_new = pd.read_csv(uploaded_file)
+                else: df_new = pd.read_excel(uploaded_file) # Header default fila 0
+                
+                # Normalizar columnas a mayusculas y strip
                 df_new.columns = df_new.columns.str.strip().str.upper()
-                c = conn.cursor(); count = 0
-                for index, row in df_new.iterrows():
-                    rut_raw = str(row.get('RUT', '')).strip()
-                    rut_fmt = formatear_rut_chile(rut_raw) # AUTO-FORMATO MASIVO
-                    nombre = str(row.get('NOMBRE', '')).strip()
-                    cargo = str(row.get('CARGO', 'SIN CARGO')).strip()
-                    lugar = str(row.get('LUGAR DE TRABAJO', 'FAENA')).strip()
-                    if len(rut_fmt) > 5 and nombre: 
-                        c.execute("INSERT OR REPLACE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (rut_fmt, nombre, cargo, lugar, date.today(), "ACTIVO"))
-                        count += 1
-                conn.commit(); st.success(f"✅ {count} trabajadores procesados."); st.rerun()
-            except Exception as e: st.error(f"Error: {e}")
+                
+                # Mapeo inteligente de columnas
+                col_map = {}
+                for col in df_new.columns:
+                    if "RUT" in col: col_map['RUT'] = col
+                    elif "NOMBRE" in col: col_map['NOMBRE'] = col
+                    elif "CARGO" in col: col_map['CARGO'] = col
+                    elif "FECHA" in col: col_map['FECHA'] = col
+
+                if 'RUT' in col_map and 'NOMBRE' in col_map:
+                    c = conn.cursor(); count = 0
+                    for index, row in df_new.iterrows():
+                        # Extraer datos usando el mapa
+                        rut_raw = str(row[col_map['RUT']]).strip()
+                        if not rut_raw or rut_raw.lower() == 'nan': continue
+                        
+                        rut_fmt = formatear_rut_chile(rut_raw) # Formato XX.XXX.XXX-X
+                        nombre = str(row[col_map['NOMBRE']]).strip()
+                        cargo = str(row.get(col_map.get('CARGO'), 'SIN CARGO')).strip()
+                        
+                        # Fecha contrato default hoy si falla
+                        try: f_cont = pd.to_datetime(row.get(col_map.get('FECHA'), date.today())).date()
+                        except: f_cont = date.today()
+                        
+                        # Lugar default Faena
+                        lugar = "FAENA" 
+
+                        if len(rut_fmt) > 5 and nombre.lower() != "nan": 
+                            try:
+                                c.execute("INSERT OR REPLACE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (rut_fmt, nombre, cargo, lugar, f_cont, "ACTIVO"))
+                                count += 1
+                            except: pass
+                    conn.commit(); st.success(f"✅ Éxito: {count} trabajadores procesados."); st.rerun()
+                else: st.error("Error: El archivo debe tener columnas NOMBRE y RUT.")
+            except Exception as e: st.error(f"Error técnico al leer archivo: {e}")
     conn.close()
 
 elif menu == "📱 App Móvil":
     st.title("Conexión App Móvil (Operarios)")
     st.markdown("### 📲 Panel de Registro en Terreno")
-    conn = sqlite3.connect('sgsst_v43_nomina_plus.db')
+    conn = sqlite3.connect('sgsst_v44_final_fix_upload.db')
     tab_asist, tab_insp = st.tabs(["✍️ Firmar Asistencia", "🚨 Reportar Hallazgo"])
     with tab_asist:
         st.subheader("Firma Rápida")
@@ -764,7 +714,7 @@ elif menu == "📱 App Móvil":
     conn.close()
 
 elif menu == "🎓 Gestión Capacitación":
-    st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_v43_nomina_plus.db')
+    st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_v44_final_fix_upload.db')
     with tab_prog:
         st.subheader("Nueva Capacitación")
         # FORMULARIO V39: TIEMPO + CAMARA
@@ -833,7 +783,7 @@ elif menu == "🎓 Gestión Capacitación":
             opciones = [f"ID {r['id']} - {r['tema']} ({r['tipo_charla']})" for i, r in caps_activas.iterrows()]; sel_cap = st.selectbox("Seleccione Actividad:", opciones); id_cap_sel = int(sel_cap.split(" - ")[0].replace("ID ", "")); trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
             
             def enviar_asistentes_callback(id_cap, df_trab):
-                c_cb = sqlite3.connect('sgsst_v43_nomina_plus.db'); cursor_cb = c_cb.cursor(); selection = st.session_state.selector_asistentes
+                c_cb = sqlite3.connect('sgsst_v44_final_fix_upload.db'); cursor_cb = c_cb.cursor(); selection = st.session_state.selector_asistentes
                 if selection:
                     for nombre in selection:
                         rut_t = df_trab[df_trab['nombre'] == nombre]['rut'].values[0]
@@ -855,7 +805,7 @@ elif menu == "🎓 Gestión Capacitación":
             st.dataframe(historial, use_container_width=True); opciones_hist = [f"ID {r['id']} - {r['tema']}" for i, r in historial.iterrows()]; sel_pdf = st.selectbox("Gestionar Capacitación (Firmar/PDF):", opciones_hist); id_pdf = int(sel_pdf.split(" - ")[0].replace("ID ", "")); st.markdown("#### ✍️ Firma del Difusor (Instructor)")
             
             # --- CONSULTA INSTANTANEA V40 ---
-            conn_sig = sqlite3.connect('sgsst_v43_nomina_plus.db')
+            conn_sig = sqlite3.connect('sgsst_v44_final_fix_upload.db')
             firmado_db = pd.read_sql("SELECT firma_instructor_b64 FROM capacitaciones WHERE id=?", conn_sig, params=(id_pdf,))
             conn_sig.close()
             
@@ -896,7 +846,7 @@ elif menu == "🦺 Registro EPP":
     if 'epp_cart' not in st.session_state:
         st.session_state.epp_cart = []
         
-    conn = sqlite3.connect('sgsst_v43_nomina_plus.db')
+    conn = sqlite3.connect('sgsst_v44_final_fix_upload.db')
     trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
     opciones_trab = [f"{r['rut']} - {r['nombre']}" for i, r in trabajadores.iterrows()]
     
@@ -985,7 +935,7 @@ elif menu == "🦺 Registro EPP":
 
 elif menu == "📘 Entrega RIOHS":
     st.title("Entrega Reglamento Interno (RIOHS)")
-    conn = sqlite3.connect('sgsst_v43_nomina_plus.db')
+    conn = sqlite3.connect('sgsst_v44_final_fix_upload.db')
     trabajadores = pd.read_sql("SELECT rut, nombre FROM personal", conn)
     opciones_trab = [f"{r['rut']} - {r['nombre']}" for i, r in trabajadores.iterrows()]
     
@@ -1046,13 +996,13 @@ elif menu == "📘 Entrega RIOHS":
     conn.close()
 
 elif menu == "📄 Generador IRL":
-    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_v43_nomina_plus.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn); sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
+    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_v44_final_fix_upload.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn); sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
 
 elif menu == "⚠️ Matriz IPER":
-    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_v43_nomina_plus.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
+    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_v44_final_fix_upload.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
 
 elif menu == "🔐 Gestión Usuarios" and st.session_state['user_role'] == "ADMINISTRADOR":
-    st.title("Administración de Usuarios del Sistema"); conn = sqlite3.connect('sgsst_v43_nomina_plus.db')
+    st.title("Administración de Usuarios del Sistema"); conn = sqlite3.connect('sgsst_v44_final_fix_upload.db')
     with st.form("new_sys_user"):
         st.subheader("Nuevo Usuario"); new_u = st.text_input("Nombre Usuario"); new_p = st.text_input("Contraseña", type="password"); new_r = st.selectbox("Rol", ["ADMINISTRADOR", "SUPERVISOR", "ASISTENTE"])
         if st.form_submit_button("Crear Usuario"):
