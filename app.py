@@ -28,10 +28,10 @@ from streamlit_drawable_canvas import st_canvas
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL) - V61 (DS44 Fixes)
+# 1. CAPA DE DATOS (SQL RELACIONAL) - V62 (IRL Content Update)
 # ==============================================================================
 def init_erp_db():
-    conn = sqlite3.connect('sgsst_v61_ds44_final.db') 
+    conn = sqlite3.connect('sgsst_v62_irl_master_content.db') 
     c = conn.cursor()
     
     # --- USUARIOS ---
@@ -124,7 +124,7 @@ def init_erp_db():
         ]
         c.executemany("INSERT OR IGNORE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", staff_completo)
 
-    # --- MATRIZ IPER BASE ---
+    # --- MATRIZ IPER BASE (Ejemplo) ---
     c.execute("SELECT count(*) FROM matriz_iper")
     if c.fetchone()[0] == 0:
         iper_data = [
@@ -136,7 +136,7 @@ def init_erp_db():
     conn.close()
 
 # ==============================================================================
-# 2. FUNCIONES DE SOPORTE & BASE DE CONOCIMIENTO IRL
+# 2. FUNCIONES DE SOPORTE & BASE DE CONOCIMIENTO IRL (CONTENIDO REAL)
 # ==============================================================================
 CSV_FILE = "base_datos_galvez_v26.csv"
 LOGO_FILE = os.path.abspath("logo_empresa.png")
@@ -161,87 +161,95 @@ LISTA_EPP = [
     "ALCOHOL GEL", "CHAQUETA ANTICORTE", "FONO AUDITIVO", "FONO PARA CASCO", "BOTA FORESTAL", "ROPA ALTA VISIBILIDAD"
 ]
 
-# --- BASE DE CONOCIMIENTO PARA GENERADOR IRL (TEXTOS ESPECIFICOS POR CARGO) ---
+# --- BASE DE CONOCIMIENTO IRL (DATOS DE TUS PDFS) ---
 IRL_DATA_DB = {
     "OPERADOR DE MAQUINARIA": {
-        "lugar": "Zonas de faena forestal, pendientes, terrenos irregulares. Áreas extensas.",
-        "maquinas": "Cosechadora (Harvester), Skidder, Forwarder, Excavadora forestal.",
+        "lugar": "Zonas de faena forestal, pendientes, terrenos irregulares. Áreas extensas delimitadas por corte y acopio. Acceso restringido.",
+        "condiciones": "Ruido elevado (motor), Polvo/Polen en suspensión. Clima extremo (frío/calor).",
+        "maquinas": "Cosechadora (Harvester), Skidder, Forwarder, Excavadora forestal. Herramientas: Llaves, Extintor, Radio.",
         "riesgos": [
-            ("Volcamiento y Atropello", "Muerte, Fracturas", "Cabina ROPS/FOPS, Cinturón, Check List.", "Operar solo en pendientes autorizadas."),
-            ("Golpes y Atrapamientos", "Amputaciones", "Distancia seguridad, Bloqueo de energía.", "No intervenir máquina en movimiento."),
-            ("Incendios", "Quemaduras", "Extintor PQS, Limpieza de motor.", "Vigilar acumulación de ramas.")
+            ("Volcamiento y Atropello", "Muerte, Fracturas", "Cabina ROPS/FOPS, Cinturón, Check List. No transitar bajo línea de caída.", "Operar solo en pendientes autorizadas. Respetar señalización."),
+            ("Golpes y Atrapamientos", "Amputaciones", "Distancia seguridad, Bloqueo de energía (LOTO).", "No intervenir máquina en movimiento."),
+            ("Incendio Forestal/Máquina", "Quemaduras, Muerte", "Extintor PQS, Limpieza de motor y rodados.", "Vigilar acumulación de ramas. Plan de Emergencia."),
+            ("Caída Distinto Nivel", "Esguinces, Fracturas", "3 Puntos de apoyo al subir/bajar cabina.", "Mantener escalas limpias y despejadas.")
         ],
         "sustancia": "DIESEL"
     },
     "MOTOSIERRISTA": {
-        "lugar": "Bosque denso, terreno irregular con ramas y tocones.",
-        "maquinas": "Motosierra, Cuñas, Hacha, Radio.",
+        "lugar": "Bosque con alta densidad, tocones y residuos. Terreno irregular y resbaladizo.",
+        "condiciones": "Ruido y Vibración elevados. Exposición a gases de escape y clima extremo.",
+        "maquinas": "Motosierra, Cuñas, Hacha, Radio, Botiquín personal.",
         "riesgos": [
-            ("Cortes por Motosierra", "Amputaciones, Hemorragias", "EPP Anticorte, Freno de cadena.", "No caminar con cadena en movimiento."),
-            ("Golpe por Rama/Árbol", "Muerte, Aplastamiento", "Vía de escape, Planificación caída.", "Distancia seguridad 2 veces altura árbol."),
-            ("Vibración y Ruido", "Raynaud, Hipoacusia", "Pausas, Guantes antivibración, Fonos.", "Rotación de tareas.")
+            ("Cortes por Motosierra", "Amputaciones, Hemorragias", "EPP Anticorte (Pantalón, botín). Freno cadena.", "No caminar con cadena en movimiento. Sujeción firme."),
+            ("Golpe por Rama/Árbol", "Muerte, Aplastamiento", "Vía de escape (45°), Planificación caída.", "Distancia seguridad 2 veces altura árbol."),
+            ("Vibración y Ruido", "Raynaud, Hipoacusia", "Pausas, Guantes antivibración, Fonos, Casco.", "Rotación de tareas. Protocolo PREXOR/TMERT.")
         ],
         "sustancia": "MEZCLA Y DIESEL"
     },
     "ESTROBERO": {
-        "lugar": "Canchas de madereo, pendientes, suelo resbaladizo.",
-        "maquinas": "Estrobos, Ganchos, Radio.",
+        "lugar": "Canchas de madereo, pendientes, suelo natural con ramas y lodo. Interacción con maquinaria.",
+        "condiciones": "Polvo, Ruido de maquinaria, Clima variable.",
+        "maquinas": "Estrobos de acero, Ganchos, Radio comunicación.",
         "riesgos": [
-            ("Atropello", "Muerte", "Chaleco Reflectante, Contacto visual.", "Nunca ubicarse en puntos ciegos."),
-            ("Golpes por Cables", "Amputaciones", "Nunca exponerse a línea de tensión.", "Esperar cable sin tensión."),
-            ("Caídas", "Esguinces", "Calzado caña alta agarre.", "Tránsito precario.")
+            ("Atropello/Volcamiento", "Muerte, Fracturas", "Chaleco Reflectante, Contacto visual operador.", "Nunca ubicarse en puntos ciegos. Distancia seguridad."),
+            ("Golpes por Cables/Estrobos", "Amputaciones, Muerte", "Nunca exponerse a línea de tensión (Latigazo).", "Esperar cable sin tensión para manipular."),
+            ("Caídas Mismo Nivel", "Esguinces, Contusiones", "Calzado caña alta agarre. Vías despejadas.", "Tránsito atento a obstáculos (ramas/barro).")
         ],
         "sustancia": "N/A"
     },
     "JEFE DE PATIO": {
-        "lugar": "Patio aserradero, zonas acopio, alto tránsito maquinaria.",
-        "maquinas": "Manitou, Camionetas, Radio.",
+        "lugar": "Patio aserradero, zonas acopio, alto tránsito maquinaria y camiones.",
+        "condiciones": "Ruido constante, Polvo madera, Tránsito mixto.",
+        "maquinas": "Manitou (Cargador), Camioneta, Radio, Computador.",
         "riesgos": [
-            ("Atropello Maquinaria", "Muerte", "Chaleco Alta Visibilidad, Vías peatonales.", "Contacto visual permanente."),
-            ("Caída Altura (Manitou)", "Fracturas", "No subir a horquillas, uso arnés si aplica.", "3 puntos de apoyo."),
+            ("Atropello Maquinaria", "Muerte", "Chaleco Alta Visibilidad, Vías peatonales.", "Contacto visual permanente. No usar celular al caminar."),
+            ("Caída Altura (Manitou)", "Fracturas", "No subir a horquillas, uso arnés si aplica.", "3 puntos de apoyo en máquina."),
             ("Golpes por carga", "Contusiones", "Distancia seguridad pilas madera.", "No transitar bajo carga suspendida.")
         ],
         "sustancia": "DIESEL (Supervisión)"
     },
-    "PREVENCIONISTA DE RIESGOS": {
-        "lugar": "Oficina y Terreno (Faena/Aserradero).",
-        "maquinas": "Computador, Camioneta, Medidores.",
+    "AYUDANTE DE ASERRADERO": {
+        "lugar": "Planta industrial fija (Galpón). Pisos con aserrín/viruta.",
+        "condiciones": "Ruido elevado constante. Polvo en suspensión. Iluminación artificial.",
+        "maquinas": "Sierras, Cintas, Cepilladoras, Herramientas manuales.",
         "riesgos": [
-            ("Caídas mismo nivel", "Esguinces", "Vías despejadas, No uso celular al caminar.", "Atención al entorno."),
-            ("Atropello en Faena", "Muerte", "Chaleco, Zapatos seguridad, Alerta.", "Respetar señalización maquinaria."),
-            ("Radiación UV", "Quemaduras", "Bloqueador, Gorro legionario.", "Aplicación cada 2 horas.")
+            ("Cortes/Amputación", "Lesión Grave", "No intervenir equipos en movimiento. Guardas.", "Uso de empujadores para madera pequeña."),
+            ("Ruido", "Hipoacusia", "Uso permanente de fonos/tapones.", "Protección auditiva certificada."),
+            ("Proyección partículas", "Lesión ocular", "Lentes herméticos. Biombos.", "No exponerse a línea de corte."),
+            ("Incendio (Polvo)", "Quemaduras", "Aseo constante, No fumar, Extintores.", "Evitar acumulación de aserrín en motores.")
         ],
         "sustancia": "N/A"
     },
-    "DEFAULT": {
-        "lugar": "Instalaciones de la empresa (Faena o Planta).",
-        "maquinas": "Herramientas manuales y equipos según cargo.",
+    "PREVENCIONISTA DE RIESGOS": {
+        "lugar": "Oficina y Terreno (Faena/Aserradero).",
+        "condiciones": "Oficina (Ergonomía) / Terreno (Clima, Ruido, Polvo).",
+        "maquinas": "Computador, Camioneta, Medidores ambientales.",
         "riesgos": [
-            ("Caídas mismo/distinto nivel", "Contusiones", "Orden y aseo, transito seguro.", "No correr."),
-            ("Golpes por objetos", "Hematomas", "Uso de EPP básico.", "Atención a la tarea.")
+            ("Caídas mismo nivel", "Esguinces", "Vías despejadas, No uso celular al caminar.", "Atención al entorno y desniveles."),
+            ("Atropello en Faena", "Muerte", "Chaleco, Zapatos seguridad, Alerta.", "Respetar señalización y zonas de maquinaria."),
+            ("Radiación UV", "Quemaduras", "Bloqueador, Gorro legionario, Lentes UV.", "Aplicación bloqueador cada 2-3 horas.")
         ],
         "sustancia": "N/A"
     }
 }
-# Asignar resto de cargos
-for c in LISTA_CARGOS:
-    if c not in IRL_DATA_DB:
-        if "OPERADOR" in c or "MAQUINARIA" in c: IRL_DATA_DB[c] = IRL_DATA_DB["OPERADOR DE MAQUINARIA"]
-        elif "ASERRADERO" in c: IRL_DATA_DB[c] = IRL_DATA_DB.get("AYUDANTE DE ASERRADERO", IRL_DATA_DB["DEFAULT"])
-        else: IRL_DATA_DB[c] = IRL_DATA_DB["DEFAULT"]
 
-IRL_DATA_DB["AYUDANTE DE ASERRADERO"] = {
-    "lugar": "Planta industrial fija, ruido, polvo en suspensión.",
-    "maquinas": "Sierras, Cintas, Herramientas manuales.",
-    "riesgos": [
-        ("Cortes", "Amputaciones", "No intervenir equipos en movimiento.", "Uso de empujadores."),
-        ("Ruido", "Hipoacusia", "Uso permanente de fonos.", "Protección auditiva certificada."),
-        ("Proyección partículas", "Lesión ocular", "Lentes herméticos.", "Uso de biombos.")
-    ],
-    "sustancia": "N/A"
-}
+# Mapping de cargos faltantes
 IRL_DATA_DB["OPERADOR DE ASERRADERO"] = IRL_DATA_DB["AYUDANTE DE ASERRADERO"]
 IRL_DATA_DB["ASISTENTE DE ASERRADERO"] = IRL_DATA_DB["AYUDANTE DE ASERRADERO"]
+IRL_DATA_DB["ADMINISTRATIVO"] = IRL_DATA_DB["PREVENCIONISTA DE RIESGOS"] # Riesgos similares oficina/visita
+IRL_DATA_DB["MECANICO LIDER"] = {
+    "lugar": "Taller mecánico y terreno. Presencia de aceites/grasas.",
+    "condiciones": "Ruido, vapores, posturas forzadas.",
+    "maquinas": "Herramientas manuales/eléctricas, Gatas, Esmeril.",
+    "riesgos": [
+        ("Atrapamiento", "Amputación", "Bloqueo energía (LOTO).", "No usar ropa holgada ni joyas."),
+        ("Proyección partículas", "Daño ocular", "Careta facial/Lentes.", "Uso biombo en esmerilado."),
+        ("Contacto sustancias", "Dermatitis", "Guantes Nitrilo, Crema barrera.", "Aseo personal.")
+    ],
+    "sustancia": "ACEITES / GRASAS"
+}
+IRL_DATA_DB["AYUDANTE MECANICO"] = IRL_DATA_DB["MECANICO LIDER"]
+
 
 def hash_pass(password): return hashlib.sha256(password.encode()).hexdigest()
 
@@ -443,7 +451,6 @@ def get_scaled_logo_obj(path, max_w, max_h):
     except:
         return Paragraph("<b>MADERAS G&D</b>", ParagraphStyle(name='NoLogo', fontSize=14, fontName='Helvetica-Bold', alignment=TA_CENTER))
 
-# FECHA ESTATICA UNIFICADA
 FECHA_DOCUMENTOS = "05/01/2026"
 G_CORP = HexColor('#5A2F1B'); G_WHITE = colors.white
 
@@ -459,7 +466,7 @@ def get_header_table(title_doc, codigo):
     t_control = Table(control_data, colWidths=[120])
     t_control.setStyle(TableStyle([
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-        ('BACKGROUND', (0,0), (-1,-1), colors.white), # FIX: WHITE BACKGROUND
+        ('BACKGROUND', (0,0), (-1,-1), colors.white), # FIX V61: WHITE BG
         ('TEXTCOLOR', (0,0), (-1,-1), colors.black),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE')
     ]))
@@ -480,7 +487,6 @@ def generar_pdf_asistencia_rggd02(id_cap):
         style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10)
         style_cell_header = ParagraphStyle(name='CellHeader', parent=styles['Normal'], alignment=TA_CENTER, fontSize=8, textColor=colors.white, fontName='Helvetica-Bold')
 
-        # HEADERS V61
         elements.append(get_header_table("REGISTRO DE CAPACITACIÓN", "RG-GD-02"))
         elements.append(Spacer(1, 10))
         
@@ -512,7 +518,7 @@ def generar_pdf_asistencia_rggd02(id_cap):
             if firma_b64 and len(str(firma_b64)) > 100:
                 try: 
                     img_bytes = base64.b64decode(firma_b64); img_stream = io.BytesIO(img_bytes)
-                    img_rl = Image(img_stream, width=90, height=30); row.append(img_rl); img_inserted = True # ENLARGED
+                    img_rl = Image(img_stream, width=100, height=35); row.append(img_rl); img_inserted = True # ENLARGED V61
                 except: pass
             if not img_inserted: row.append(Paragraph("Firma Digital", style_center))
             data_asis.append(row)
@@ -522,8 +528,9 @@ def generar_pdf_asistencia_rggd02(id_cap):
             elements.append(t_asis); elements.append(Spacer(1, 20))
         img_instructor = Paragraph("", style_center); firma_inst_data = cap[11]; 
         if firma_inst_data and len(str(firma_inst_data)) > 100:
-             try: img_bytes_inst = base64.b64decode(firma_inst_data); img_stream_inst = io.BytesIO(img_bytes_inst); img_instructor = Image(img_stream_inst, width=190, height=70) # ENLARGED
+             try: img_bytes_inst = base64.b64decode(firma_inst_data); img_stream_inst = io.BytesIO(img_bytes_inst); img_instructor = Image(img_stream_inst, width=200, height=80) # ENLARGED V61
              except: pass
+        
         img_evidencia = Paragraph("(Sin Foto)", style_center); foto_b64 = cap[12]; 
         if foto_b64 and len(str(foto_b64)) > 100:
             try:
@@ -548,7 +555,6 @@ def generar_pdf_epp_grupo(grupo_id):
         buffer = io.BytesIO(); doc = SimpleDocTemplate(buffer, pagesize=legal, topMargin=20, bottomMargin=20, leftMargin=30, rightMargin=30); elements = []; styles = getSampleStyleSheet()
         style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10); style_head = ParagraphStyle(name='Head', parent=styles['Normal'], textColor=colors.white, fontName='Helvetica-Bold', alignment=TA_CENTER, fontSize=9); style_cell = ParagraphStyle(name='Cell', parent=styles['Normal'], alignment=TA_CENTER, fontSize=9) 
         
-        # HEADERS V61
         elements.append(get_header_table("REGISTRO DE EPP", "RG-GD-01"))
         elements.append(Spacer(1, 20))
 
@@ -556,7 +562,7 @@ def generar_pdf_epp_grupo(grupo_id):
         h_prod = Paragraph("ELEMENTO DE PROTECCIÓN (EPP)", style_head); h_cant = Paragraph("CANT.", style_head); h_talla = Paragraph("TALLA", style_head); h_mot = Paragraph("MOTIVO ENTREGA", style_head); data_epp = [[h_prod, h_cant, h_talla, h_mot]]
         for r in regs: data_epp.append([Paragraph(clean(r[5]), style_cell), Paragraph(str(r[6]), style_cell), Paragraph(clean(r[7]), style_cell), Paragraph(clean(r[8]), style_cell)])
         t_epp = Table(data_epp, colWidths=[240, 60, 60, 180]); t_epp.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), G_CORP), ('GRID', (0,0), (-1,-1), 1, colors.black),('ALIGN', (0,0), (-1,-1), 'CENTER'),('VALIGN', (0,0), (-1,-1), 'MIDDLE')])); elements.append(t_epp); elements.append(Spacer(1, 30))
-        legal_text = """<b>DECLARACIÓN DE RECEPCIÓN Y RESPONSABILIDAD:</b><br/><br/>Declaro haber recibido los Elementos de Protección Personal (EPP) detallados anteriormente, de forma gratuita y en buen estado de conservación. Me comprometo a utilizarlos correctamente durante mi jornada laboral, a cuidarlos y a solicitar su reposición inmediata en caso de deterioro o pérdida, dando estricto cumplimiento a lo establecido en el Art. 53 del D.S. 594 y el Reglamento Interno de Orden, Higiene y Seguridad de la empresa. Entiendo que el uso de estos elementos es obligatorio para proteger mi integridad física y salud."""
+        legal_text = """<b>DECLARACIÓN DE RECEPCIÓN Y RESPONSABILIDAD:</b><br/><br/>Declaro haber recibido los Elementos de Protección Personal (EPP) detallados anteriormente, de forma gratuita y en buen estado de conservación. Me comprometo a utilizarlos correctamente durante mi jornada laboral, a cuidarlos y a solicitar su reposición inmediata en caso de deterioro o pérdida, dando estricto cumplimiento a lo establecido en el Art. 53 del D.S. 594 y el Decreto Supremo N° 44 (Art. 15). Entiendo que el uso de estos elementos es obligatorio."""
         style_legal = ParagraphStyle('Legal', parent=styles['Normal'], fontSize=10, alignment=TA_JUSTIFY, leading=12, leftIndent=20, rightIndent=20); elements.append(Paragraph(legal_text, style_legal)); elements.append(Spacer(1, 50))
         img_firma = Paragraph("Sin Firma Digital", style_center)
         if firma_b64 and len(str(firma_b64)) > 100:
@@ -575,7 +581,6 @@ def generar_pdf_riohs(id_reg):
         rut_t = clean(reg[1]); nom_t = clean(reg[2]); tipo = clean(reg[3]); correo = clean(reg[4]); fecha = clean(reg[5]); firma_b64 = reg[6]
         buffer = io.BytesIO(); doc = SimpleDocTemplate(buffer, pagesize=legal, topMargin=20, bottomMargin=20, leftMargin=30, rightMargin=30); elements = []; styles = getSampleStyleSheet(); style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10); 
         
-        # HEADERS V61
         elements.append(get_header_table("ENTREGA RIOHS", "RG-GD-03"))
         elements.append(Spacer(1, 40))
         
@@ -593,7 +598,7 @@ def generar_pdf_riohs(id_reg):
     except Exception as e: st.error(f"Error PDF RIOHS: {e}"); return None
     finally: conn.close()
 
-# === GENERADOR PDF IRL (V61: DS 44 TOTAL) ===
+# === GENERADOR PDF IRL V61 (DS44 STRICT) ===
 def generar_pdf_irl(rut_trabajador, area, h_ini, h_fin, estatus):
     conn = sqlite3.connect('sgsst_v61_ds44_final.db')
     try:
@@ -607,11 +612,10 @@ def generar_pdf_irl(rut_trabajador, area, h_ini, h_fin, estatus):
         s_th = ParagraphStyle(name='TH', parent=styles['Normal'], fontSize=7, textColor=colors.white, fontName='Helvetica-Bold', alignment=TA_CENTER)
         s_tc = ParagraphStyle(name='TC', parent=styles['Normal'], fontSize=7, alignment=TA_LEFT)
 
-        # 1. ENCABEZADO V61
         elements.append(get_header_table("INFORMACIÓN DE RIESGOS LABORALES (IRL) - DS 44", "RG-GD-04"))
         elements.append(Spacer(1, 10))
         
-        # 2. IDENTIFICACION
+        # 1. IDENTIFICACION
         elements.append(Paragraph("<b>1. IDENTIFICACIÓN (EMPRESA Y TRABAJADOR)</b>", s_title))
         data_id = [
             ["EMPRESA:", "SOCIEDAD MADERERA GALVEZ Y DI GÉNOVA LTDA", "RUT:", "77.110.060-0"],
@@ -624,10 +628,10 @@ def generar_pdf_irl(rut_trabajador, area, h_ini, h_fin, estatus):
         t_id = Table(data_id, colWidths=[50, 250, 40, 150]); t_id.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('FONTSIZE', (0,0), (-1,-1), 7), ('BACKGROUND', (0,0), (1,-1), colors.whitesmoke)]))
         elements.append(t_id); elements.append(Spacer(1, 15))
 
-        # 3. RIESGOS ESPECIFICOS
+        # 2. RIESGOS ESPECIFICOS
         elements.append(Paragraph("<b>2. RIESGOS ESPECÍFICOS Y MEDIDAS DE CONTROL</b>", s_title)); elements.append(Spacer(1, 5))
         if riesgos:
-            header = [Paragraph("RIESGO", s_th), Paragraph("CONSECUENCIA", s_th), Paragraph("MEDIDAS PREVENTIVAS (EPP/PROTOCOLOS)", s_th), Paragraph("PROCEDIMIENTOS DE TRABAJO SEGURO", s_th)]
+            header = [Paragraph("RIESGO", s_th), Paragraph("CONSECUENCIA", s_th), Paragraph("MEDIDAS PREVENTIVAS", s_th), Paragraph("PROCEDIMIENTOS DE TRABAJO", s_th)]
             data_r = [header]
             for r in riesgos:
                 data_r.append([Paragraph(f"<b>{r[0]}</b>", s_tc), Paragraph(r[1], s_tc), Paragraph(r[2], s_tc), Paragraph(r[3], s_tc)])
@@ -635,13 +639,13 @@ def generar_pdf_irl(rut_trabajador, area, h_ini, h_fin, estatus):
             t_r.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), G_CORP), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'TOP')]))
             elements.append(t_r); elements.append(Spacer(1, 15))
 
-        # 4. CARACTERISTICAS LUGAR
+        # 3. CARACTERISTICAS LUGAR
         elements.append(Paragraph("<b>3. CARACTERÍSTICAS DEL LUGAR DE TRABAJO</b>", s_title))
         data_cargo = IRL_DATA_DB.get(cargo, IRL_DATA_DB["DEFAULT"])
-        desc_lugar = f"""<b>Entorno:</b> {data_cargo['lugar']}<br/><b>Condiciones:</b> Iluminación natural/artificial, Ruido variable según operación, Ventilación natural.<br/><b>Orden y Aseo:</b> Mantener vías despejadas, almacenamiento correcto de herramientas."""
+        desc_lugar = f"""<b>Entorno:</b> {data_cargo['lugar']}<br/><b>Condiciones:</b> Iluminación natural/artificial, Ruido variable según operación, Ventilación natural.<br/><b>Orden y Aseo:</b> Mantener vías despejadas, almacenamiento correcto de herramientas.<br/><b>Equipos:</b> {data_cargo['maquinas']}"""
         elements.append(Paragraph(desc_lugar, s_normal)); elements.append(Spacer(1, 15))
 
-        # 5. PRODUCTOS Y SUSTANCIAS
+        # 4. PRODUCTOS Y SUSTANCIAS
         elements.append(Paragraph("<b>4. PRODUCTOS Y SUSTANCIAS PELIGROSAS</b>", s_title))
         if data_cargo['sustancia'] != "N/A":
             data_quim = [["Producto:", "DIESEL / ACEITES", "Riesgo:", "Inflamable, Dermatitis"], ["Medidas:", "Uso de guantes, No fumar, Kit derrames.", "Almacenamiento:", "Lugar ventilado y señalizado."]]
@@ -651,12 +655,12 @@ def generar_pdf_irl(rut_trabajador, area, h_ini, h_fin, estatus):
         else: elements.append(Paragraph("No aplica manipulación directa habitual.", s_normal))
         elements.append(Spacer(1, 15))
 
-        # 6. PLAN DE EMERGENCIA
+        # 5. PLAN DE EMERGENCIA
         elements.append(Paragraph("<b>5. PLAN DE EMERGENCIA (ANTES - DURANTE - DESPUÉS)</b>", s_title))
         emergencia_txt = """<b>ANTES:</b> Conocer vías de evacuación, ubicación de extintores y zonas de seguridad.<br/><b>DURANTE:</b> Mantener la calma, detener equipos, evacuar hacia zona de seguridad sin correr.<br/><b>DESPUÉS:</b> Esperar instrucciones del encargado o brigada. No reingresar hasta autorización."""
         elements.append(Paragraph(emergencia_txt, s_normal)); elements.append(Spacer(1, 15))
 
-        # 7. CIERRE LEGAL
+        # 6. CIERRE LEGAL
         elements.append(Paragraph("<b>DECLARACIÓN DE TOMA DE CONOCIMIENTO (DS 44 / LEY 16.744)</b>", s_title))
         legal_close = "Declaro haber recibido, leído y comprendido la información sobre los riesgos inherentes de mis labores, las medidas preventivas, el uso correcto de EPP y los métodos de trabajo seguro, dando cumplimiento a la obligación de informar establecida en el Artículo 15 del Decreto Supremo N° 44."
         elements.append(Paragraph(legal_close, s_normal)); elements.append(Spacer(1, 30))
@@ -694,7 +698,7 @@ with st.sidebar:
     st.markdown("### ⚙️ Configuración")
     uploaded_logo = st.file_uploader("Cargar Logo Empresa (PDF)", type=['png', 'jpg'], key="logo_uploader")
     if uploaded_logo:
-        # GUARDADO FORZOSO DEL LOGO EN DISCO (Solución Definitiva)
+        # GUARDADO FORZOSO DEL LOGO EN DISCO
         with open("logo_empresa.png", "wb") as f:
             f.write(uploaded_logo.getbuffer())
         st.success("Logo cargado y guardado correctamente.")
@@ -1202,7 +1206,7 @@ elif menu == "📄 Generador IRL":
         if st.button("📄 Generar ODI/IRL Digital"):
             pdf_irl = generar_pdf_irl(rut_t, area_input, str(h_ini), str(h_fin), estatus_input)
             if pdf_irl:
-                st.download_button("📥 Descargar ODI/IRL", pdf_irl, f"ODI_{rut_t}.pdf", "application/pdf")
+                st.download_button("📥 Descargar ODI/IRL", pdf_irl, f"IRL_{rut_t}.pdf", "application/pdf")
             else:
                 st.error("No se pudo generar el documento. Revise los datos del cargo.")
                 
