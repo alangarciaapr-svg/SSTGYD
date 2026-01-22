@@ -27,11 +27,10 @@ from streamlit_drawable_canvas import st_canvas
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL) - V46 (Persistencia + Camara Toggle)
+# 1. CAPA DE DATOS (SQL RELACIONAL) - V47 (Auto Time + PDF Photo Fix)
 # ==============================================================================
 def init_erp_db():
-    # CAMBIO: Nombre de DB actualizado a V46
-    conn = sqlite3.connect('sgsst_v46_persistent.db') 
+    conn = sqlite3.connect('sgsst_v47_final_pro.db') 
     c = conn.cursor()
     
     # --- USUARIOS ---
@@ -115,8 +114,7 @@ def init_erp_db():
                     fecha_entrega DATE,
                     firma_trabajador_b64 TEXT)''')
 
-    # --- CARGA MASIVA DE TRABAJADORES (FIX PERSISTENCIA) ---
-    # CAMBIO: Solo inserta si count es 0 absoluto. Si el usuario borra todo, queda vacío intencionalmente.
+    # --- CARGA MASIVA DE TRABAJADORES (Default) ---
     c.execute("SELECT count(*) FROM personal")
     if c.fetchone()[0] == 0: 
         staff_completo = [
@@ -167,7 +165,7 @@ def hash_pass(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def login_user(username, password):
-    conn = sqlite3.connect('sgsst_v46_persistent.db')
+    conn = sqlite3.connect('sgsst_v47_final_pro.db')
     c = conn.cursor()
     c.execute("SELECT rol FROM usuarios WHERE username=? AND password=?", (username, hash_pass(password)))
     result = c.fetchone()
@@ -357,13 +355,11 @@ def get_scaled_logo(path, max_w, max_h):
         pil_img = PILImage.open(path)
         orig_w, orig_h = pil_img.size
         ratio = min(max_w/orig_w, max_h/orig_h)
-        new_w = orig_w * ratio
-        new_h = orig_h * ratio
         return Image(path, width=new_w, height=new_h, hAlign='CENTER')
     except: return None
 
 def generar_pdf_asistencia_rggd02(id_cap):
-    conn = sqlite3.connect('sgsst_v46_persistent.db')
+    conn = sqlite3.connect('sgsst_v47_final_pro.db')
     try:
         cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
         if cap is None: return None
@@ -425,7 +421,13 @@ def generar_pdf_asistencia_rggd02(id_cap):
              except: pass
         img_evidencia = Paragraph("(Sin Foto)", style_center); foto_b64 = cap[12]; 
         if foto_b64 and len(str(foto_b64)) > 100:
-            try: img_bytes_ev = base64.b64decode(foto_b64); img_stream_ev = io.BytesIO(img_bytes_ev); img_evidencia = Image(img_stream_ev, width=250, height=140)
+            try:
+                # FIX: Save to temp file for reliability
+                img_bytes_ev = base64.b64decode(foto_b64)
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tf:
+                    tf.write(img_bytes_ev)
+                    tf_path = tf.name
+                img_evidencia = Image(tf_path, width=250, height=140)
             except: pass
         t_footer_data = [[Paragraph("EVIDENCIA FOTOGRÁFICA", style_center), "", Paragraph("VALIDACIÓN INSTRUCTOR", style_center)], [img_evidencia, "", img_instructor], ["", "", Paragraph(f"<b>{c_resp}</b><br/>Relator/Instructor", style_center)]]
         t_footer = Table(t_footer_data, colWidths=[270, 30, 210]); t_footer.setStyle(TableStyle([('GRID', (0,0), (0,1), 1, colors.black), ('GRID', (2,0), (2,1), 1, colors.black), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')])); elements.append(t_footer)
@@ -435,7 +437,7 @@ def generar_pdf_asistencia_rggd02(id_cap):
     finally: conn.close()
 
 def generar_pdf_epp_grupo(grupo_id):
-    conn = sqlite3.connect('sgsst_v46_persistent.db')
+    conn = sqlite3.connect('sgsst_v47_final_pro.db')
     try:
         regs = conn.execute("SELECT * FROM registro_epp WHERE grupo_id=?", (grupo_id,)).fetchall()
         if not regs: return None
@@ -465,7 +467,7 @@ def generar_pdf_epp_grupo(grupo_id):
     finally: conn.close()
 
 def generar_pdf_riohs(id_reg):
-    conn = sqlite3.connect('sgsst_v46_persistent.db')
+    conn = sqlite3.connect('sgsst_v47_final_pro.db')
     try:
         reg = conn.execute("SELECT * FROM entrega_riohs WHERE id=?", (id_reg,)).fetchone()
         if not reg: return None
@@ -491,7 +493,7 @@ def generar_pdf_riohs(id_reg):
     finally: conn.close()
 
 def generar_pdf_irl(rut_trabajador):
-    conn = sqlite3.connect('sgsst_v46_persistent.db')
+    conn = sqlite3.connect('sgsst_v47_final_pro.db')
     try:
         trab = conn.execute("SELECT * FROM personal WHERE rut=?", (rut_trabajador,)).fetchone()
         if not trab: return None
@@ -612,7 +614,7 @@ if menu == "📊 Dashboard BI":
 elif menu == "👥 Nómina & Personal":
     st.title("Base de Datos Maestra de Personal")
     tab_lista, tab_agregar, tab_editar, tab_excel = st.tabs(["📋 Lista Completa", "➕ Ingresar Nuevo", "✏️ Modificar / Editar", "📂 Carga Masiva"])
-    conn = sqlite3.connect('sgsst_v46_persistent.db')
+    conn = sqlite3.connect('sgsst_v47_final_pro.db')
     with tab_lista:
         df = pd.read_sql("SELECT nombre, rut, cargo, centro_costo as 'Lugar', estado FROM personal", conn); st.dataframe(df, use_container_width=True, hide_index=True); st.markdown("---"); st.subheader("🗑️ Dar de Baja / Eliminar"); col_del, col_btn = st.columns([3, 1]); rut_a_borrar = col_del.selectbox("Seleccione Trabajador a Eliminar:", df['rut'] + " - " + df['nombre'])
         if col_btn.button("Eliminar Trabajador"): rut_clean = rut_a_borrar.split(" - ")[0]; c = conn.cursor(); c.execute("DELETE FROM personal WHERE rut=?", (rut_clean,)); conn.commit(); st.success(f"Trabajador {rut_clean} eliminado."); st.rerun()
@@ -657,9 +659,7 @@ elif menu == "👥 Nómina & Personal":
                 return output.getvalue()
             plantilla_data = generar_plantilla_excel_detallada(); st.download_button(label="📥 Bajar Plantilla Simple", data=plantilla_data, file_name="plantilla_carga_simple.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         uploaded_file = st.file_uploader("📂 Carga Masiva (Excel)", type=['xlsx', 'csv'])
-        # ADDED INSTRUCTIONS V46
         st.warning("⚠️ **INSTRUCCIONES IMPORTANTES DE CARGA:**\n1. Respete el orden de las columnas: **NOMBRE, RUT, CARGO, FECHA**.\n2. **NO deje celdas en blanco**; si falta un dato, rellene con un '0' o guion para evitar errores de lectura.\n3. El sistema omitirá filas vacías automáticamente, pero datos parciales pueden causar fallos.")
-        
         if uploaded_file:
             try:
                 if uploaded_file.name.endswith('.csv'): df_new = pd.read_csv(uploaded_file)
@@ -693,7 +693,7 @@ elif menu == "👥 Nómina & Personal":
 elif menu == "📱 App Móvil":
     st.title("Conexión App Móvil (Operarios)")
     st.markdown("### 📲 Panel de Registro en Terreno")
-    conn = sqlite3.connect('sgsst_v46_persistent.db')
+    conn = sqlite3.connect('sgsst_v47_final_pro.db')
     tab_asist, tab_insp = st.tabs(["✍️ Firmar Asistencia", "🚨 Reportar Hallazgo"])
     with tab_asist:
         st.subheader("Firma Rápida")
@@ -732,17 +732,20 @@ elif menu == "📱 App Móvil":
     conn.close()
 
 elif menu == "🎓 Gestión Capacitación":
-    st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_v46_persistent.db')
+    st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_v47_final_pro.db')
     with tab_prog:
         st.subheader("Nueva Capacitación")
-        # FORMULARIO V39: TIEMPO + CAMARA
+        # FORMULARIO V47: AUTO-TIME + CAMARA
         with st.form("new_cap"):
+            now = datetime.now()
             c1, c2 = st.columns(2)
             fecha = c1.date_input("Fecha Ejecución")
-            h_inicio = c2.time_input("Hora Inicio")
+            # Hora actual por defecto
+            h_inicio = c2.time_input("Hora Inicio", value=now.time())
             
             c3, c4 = st.columns(2)
-            h_termino = c3.time_input("Hora Término")
+            # Hora termino + 1h por defecto
+            h_termino = c3.time_input("Hora Término", value=(now + timedelta(hours=1)).time())
             lugar = c4.text_input("Lugar", "Sala de Capacitación Faena")
             
             c5, c6 = st.columns(2)
@@ -753,7 +756,7 @@ elif menu == "🎓 Gestión Capacitación":
             tipo_charla = st.selectbox("Tipo de Actividad (RG-GD-02)", tipos)
             tema = st.text_area("Tema a Tratar")
             
-            # CAMARA EVIDENCIA (TOGGLE V46)
+            # CAMARA EVIDENCIA (TOGGLE)
             use_camera = st.checkbox("📸 Activar Cámara para Evidencia")
             foto_evidencia = None
             if use_camera:
@@ -803,7 +806,7 @@ elif menu == "🎓 Gestión Capacitación":
             opciones = [f"ID {r['id']} - {r['tema']} ({r['tipo_charla']})" for i, r in caps_activas.iterrows()]; sel_cap = st.selectbox("Seleccione Actividad:", opciones); id_cap_sel = int(sel_cap.split(" - ")[0].replace("ID ", "")); trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
             
             def enviar_asistentes_callback(id_cap, df_trab):
-                c_cb = sqlite3.connect('sgsst_v46_persistent.db'); cursor_cb = c_cb.cursor(); selection = st.session_state.selector_asistentes
+                c_cb = sqlite3.connect('sgsst_v47_final_pro.db'); cursor_cb = c_cb.cursor(); selection = st.session_state.selector_asistentes
                 if selection:
                     for nombre in selection:
                         rut_t = df_trab[df_trab['nombre'] == nombre]['rut'].values[0]
@@ -825,7 +828,7 @@ elif menu == "🎓 Gestión Capacitación":
             st.dataframe(historial, use_container_width=True); opciones_hist = [f"ID {r['id']} - {r['tema']}" for i, r in historial.iterrows()]; sel_pdf = st.selectbox("Gestionar Capacitación (Firmar/PDF):", opciones_hist); id_pdf = int(sel_pdf.split(" - ")[0].replace("ID ", "")); st.markdown("#### ✍️ Firma del Difusor (Instructor)")
             
             # --- CONSULTA INSTANTANEA V40 ---
-            conn_sig = sqlite3.connect('sgsst_v46_persistent.db')
+            conn_sig = sqlite3.connect('sgsst_v47_final_pro.db')
             firmado_db = pd.read_sql("SELECT firma_instructor_b64 FROM capacitaciones WHERE id=?", conn_sig, params=(id_pdf,))
             conn_sig.close()
             
@@ -866,7 +869,7 @@ elif menu == "🦺 Registro EPP":
     if 'epp_cart' not in st.session_state:
         st.session_state.epp_cart = []
         
-    conn = sqlite3.connect('sgsst_v46_persistent.db')
+    conn = sqlite3.connect('sgsst_v47_final_pro.db')
     trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
     opciones_trab = [f"{r['rut']} - {r['nombre']}" for i, r in trabajadores.iterrows()]
     
@@ -955,7 +958,7 @@ elif menu == "🦺 Registro EPP":
 
 elif menu == "📘 Entrega RIOHS":
     st.title("Entrega Reglamento Interno (RIOHS)")
-    conn = sqlite3.connect('sgsst_v46_persistent.db')
+    conn = sqlite3.connect('sgsst_v47_final_pro.db')
     trabajadores = pd.read_sql("SELECT rut, nombre FROM personal", conn)
     opciones_trab = [f"{r['rut']} - {r['nombre']}" for i, r in trabajadores.iterrows()]
     
@@ -1016,13 +1019,13 @@ elif menu == "📘 Entrega RIOHS":
     conn.close()
 
 elif menu == "📄 Generador IRL":
-    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_v46_persistent.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn); sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
+    st.title("Generador de IRL Automático"); conn = sqlite3.connect('sgsst_v47_final_pro.db'); users = pd.read_sql("SELECT nombre, cargo FROM personal", conn); sel = st.selectbox("Trabajador:", users['nombre']); st.write(f"Generando documento para cargo: **{users[users['nombre']==sel]['cargo'].values[0]}**"); st.button("Generar IRL (Simulación)"); conn.close()
 
 elif menu == "⚠️ Matriz IPER":
-    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_v46_persistent.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
+    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_v47_final_pro.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
 
 elif menu == "🔐 Gestión Usuarios" and st.session_state['user_role'] == "ADMINISTRADOR":
-    st.title("Administración de Usuarios del Sistema"); conn = sqlite3.connect('sgsst_v46_persistent.db')
+    st.title("Administración de Usuarios del Sistema"); conn = sqlite3.connect('sgsst_v47_final_pro.db')
     with st.form("new_sys_user"):
         st.subheader("Nuevo Usuario"); new_u = st.text_input("Nombre Usuario"); new_p = st.text_input("Contraseña", type="password"); new_r = st.selectbox("Rol", ["ADMINISTRADOR", "SUPERVISOR", "ASISTENTE"])
         if st.form_submit_button("Crear Usuario"):
