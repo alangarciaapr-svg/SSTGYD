@@ -28,10 +28,10 @@ from streamlit_drawable_canvas import st_canvas
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL) - V50 (Final Color Fix)
+# 1. CAPA DE DATOS (SQL RELACIONAL) - V51 (Final Camera Flow)
 # ==============================================================================
 def init_erp_db():
-    conn = sqlite3.connect('sgsst_v50_final_color.db') 
+    conn = sqlite3.connect('sgsst_v51_final_camera.db') 
     c = conn.cursor()
     
     # --- USUARIOS ---
@@ -166,7 +166,7 @@ def hash_pass(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def login_user(username, password):
-    conn = sqlite3.connect('sgsst_v50_final_color.db')
+    conn = sqlite3.connect('sgsst_v51_final_camera.db')
     c = conn.cursor()
     c.execute("SELECT rol FROM usuarios WHERE username=? AND password=?", (username, hash_pass(password)))
     result = c.fetchone()
@@ -362,7 +362,7 @@ def get_scaled_logo(path, max_w, max_h):
     except: return None
 
 def generar_pdf_asistencia_rggd02(id_cap):
-    conn = sqlite3.connect('sgsst_v50_final_color.db')
+    conn = sqlite3.connect('sgsst_v51_final_camera.db')
     try:
         cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
         if cap is None: return None
@@ -375,6 +375,7 @@ def generar_pdf_asistencia_rggd02(id_cap):
         style_title = ParagraphStyle(name='Title', parent=styles['Normal'], alignment=TA_CENTER, fontSize=12, fontName='Helvetica-Bold')
         style_small = ParagraphStyle(name='Small', parent=styles['Normal'], fontSize=8)
         style_cell_header = ParagraphStyle(name='CellHeader', parent=styles['Normal'], alignment=TA_CENTER, fontSize=8, textColor=colors.white, fontName='Helvetica-Bold')
+        
         # COLOR CORPORATIVO #5A2F1B
         G_CORP = HexColor('#5A2F1B'); G_WHITE = colors.white
         
@@ -424,6 +425,8 @@ def generar_pdf_asistencia_rggd02(id_cap):
         if firma_inst_data and len(str(firma_inst_data)) > 100:
              try: img_bytes_inst = base64.b64decode(firma_inst_data); img_stream_inst = io.BytesIO(img_bytes_inst); img_instructor = Image(img_stream_inst, width=150, height=60)
              except: pass
+        
+        # --- FIX EVIDENCIA FOTOGRAFICA PARA PDF V51 ---
         img_evidencia = Paragraph("(Sin Foto)", style_center); foto_b64 = cap[12]; 
         if foto_b64 and len(str(foto_b64)) > 100:
             try:
@@ -441,13 +444,14 @@ def generar_pdf_asistencia_rggd02(id_cap):
     finally: conn.close()
 
 def generar_pdf_epp_grupo(grupo_id):
-    conn = sqlite3.connect('sgsst_v50_final_color.db')
+    conn = sqlite3.connect('sgsst_v51_final_camera.db')
     try:
         regs = conn.execute("SELECT * FROM registro_epp WHERE grupo_id=?", (grupo_id,)).fetchall()
         if not regs: return None
         rut_t = clean(regs[0][2]); nom_t = clean(regs[0][3]); cargo_t = clean(regs[0][4]); fecha_t = clean(regs[0][9]); firma_b64 = regs[0][10]
         buffer = io.BytesIO(); doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=20, bottomMargin=20, leftMargin=20, rightMargin=20); elements = []; styles = getSampleStyleSheet()
-        style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10); style_head = ParagraphStyle(name='Head', parent=styles['Normal'], textColor=colors.white, fontName='Helvetica-Bold', alignment=TA_CENTER, fontSize=9); style_cell = ParagraphStyle(name='Cell', parent=styles['Normal'], alignment=TA_CENTER, fontSize=9); style_title_log = ParagraphStyle(name='TitleLog', fontSize=14, fontName='Helvetica-Bold', alignment=TA_CENTER); G_CORP = HexColor('#5A2F1B'); G_WHITE = colors.white
+        style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10); style_head = ParagraphStyle(name='Head', parent=styles['Normal'], textColor=colors.white, fontName='Helvetica-Bold', alignment=TA_CENTER, fontSize=9); style_cell = ParagraphStyle(name='Cell', parent=styles['Normal'], alignment=TA_CENTER, fontSize=9); style_title_log = ParagraphStyle(name='TitleLog', fontSize=14, fontName='Helvetica-Bold', alignment=TA_CENTER); 
+        G_CORP = HexColor('#5A2F1B'); G_WHITE = colors.white
         logo_obj = Paragraph("<b>MADERAS G&D</b>", style_title_log)
         if os.path.exists(LOGO_FILE):
              try: logo_obj = Image(LOGO_FILE, width=80, height=45, hAlign='CENTER', preserveAspectRatio=True)
@@ -471,12 +475,13 @@ def generar_pdf_epp_grupo(grupo_id):
     finally: conn.close()
 
 def generar_pdf_riohs(id_reg):
-    conn = sqlite3.connect('sgsst_v50_final_color.db')
+    conn = sqlite3.connect('sgsst_v51_final_camera.db')
     try:
         reg = conn.execute("SELECT * FROM entrega_riohs WHERE id=?", (id_reg,)).fetchone()
         if not reg: return None
         rut_t = clean(reg[1]); nom_t = clean(reg[2]); tipo = clean(reg[3]); correo = clean(reg[4]); fecha = clean(reg[5]); firma_b64 = reg[6]
-        buffer = io.BytesIO(); doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=20, bottomMargin=20); elements = []; styles = getSampleStyleSheet(); style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10); style_title_log = ParagraphStyle(name='TitleLog', fontSize=14, fontName='Helvetica-Bold', alignment=TA_CENTER); G_CORP = HexColor('#5A2F1B'); G_WHITE = colors.white
+        buffer = io.BytesIO(); doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=20, bottomMargin=20); elements = []; styles = getSampleStyleSheet(); style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10); style_title_log = ParagraphStyle(name='TitleLog', fontSize=14, fontName='Helvetica-Bold', alignment=TA_CENTER); 
+        G_CORP = HexColor('#5A2F1B'); G_WHITE = colors.white
         logo_obj = Paragraph("<b>MADERAS G&D</b>", style_title_log)
         if os.path.exists(LOGO_FILE):
              try: logo_obj = Image(LOGO_FILE, width=80, height=45, hAlign='CENTER', preserveAspectRatio=True)
@@ -497,7 +502,7 @@ def generar_pdf_riohs(id_reg):
     finally: conn.close()
 
 def generar_pdf_irl(rut_trabajador):
-    conn = sqlite3.connect('sgsst_v50_final_color.db')
+    conn = sqlite3.connect('sgsst_v51_final_camera.db')
     try:
         trab = conn.execute("SELECT * FROM personal WHERE rut=?", (rut_trabajador,)).fetchone()
         if not trab: return None
@@ -741,13 +746,16 @@ elif menu == "🎓 Gestión Capacitación":
         st.subheader("Nueva Capacitación")
         # FORMULARIO V39: TIEMPO + CAMARA
         with st.form("new_cap"):
-            now = datetime.now().replace(microsecond=0) # FIX MICROSECONDS
+            # CHILE TIME FIX V49
+            utc_now = datetime.utcnow()
+            chile_time = utc_now - timedelta(hours=3)
+
             c1, c2 = st.columns(2)
             fecha = c1.date_input("Fecha Ejecución")
-            h_inicio = c2.time_input("Hora Inicio", value=now.time())
+            h_inicio = c2.time_input("Hora Inicio", value=chile_time.time())
             
             c3, c4 = st.columns(2)
-            h_termino = c3.time_input("Hora Término", value=(now + timedelta(hours=1)).time())
+            h_termino = c3.time_input("Hora Término", value=(chile_time + timedelta(hours=1)).time())
             lugar = c4.text_input("Lugar", "Sala de Capacitación Faena")
             
             c5, c6 = st.columns(2)
@@ -830,7 +838,7 @@ elif menu == "🎓 Gestión Capacitación":
         if not historial.empty:
             st.dataframe(historial, use_container_width=True); opciones_hist = [f"ID {r['id']} - {r['tema']}" for i, r in historial.iterrows()]; sel_pdf = st.selectbox("Gestionar Capacitación (Firmar/PDF):", opciones_hist); id_pdf = int(sel_pdf.split(" - ")[0].replace("ID ", "")); st.markdown("#### ✍️ Firma del Difusor (Instructor)")
             
-            # --- FIRMA INSTRUCTOR VISIBLE (V50 FIX) ---
+            # --- FIRMA INSTRUCTOR VISIBLE V50 ---
             conn_sig = sqlite3.connect('sgsst_v50_final_color.db')
             firmado_db = pd.read_sql("SELECT firma_instructor_b64 FROM capacitaciones WHERE id=?", conn_sig, params=(id_pdf,))
             conn_sig.close()
@@ -846,16 +854,16 @@ elif menu == "🎓 Gestión Capacitación":
                 if st.button("🗑️ Borrar Firma y Volver a Firmar"):
                     c = conn.cursor(); c.execute("UPDATE capacitaciones SET firma_instructor_b64=NULL WHERE id=?", (id_pdf,)); conn.commit(); st.rerun()
             else:
-                # CANVAS SIEMPRE VISIBLE SI NO ESTA FIRMADO
-                st.info("Por favor, firme en el recuadro para validar la capacitación:")
+                # FORCE RENDER IF NOT SIGNED
+                st.info("Firme en el cuadro grande abajo:")
                 key_canv = f"canvas_inst_{id_pdf}" 
-                canvas_inst = st_canvas(stroke_width=3, stroke_color="#00008B", background_color="#ffffff", height=200, width=600, drawing_mode="freedraw", key=key_canv)
+                canvas_inst = st_canvas(stroke_width=3, stroke_color="#00008B", background_color="#ffffff", height=300, width=600, drawing_mode="freedraw", key=key_canv)
                 
                 if st.button("Guardar Firma Difusor"):
                     if canvas_inst.image_data is not None:
                         img = PILImage.fromarray(canvas_inst.image_data.astype('uint8'), 'RGBA'); buffered = io.BytesIO(); img.save(buffered, format="PNG"); img_str = base64.b64encode(buffered.getvalue()).decode()
                         c = conn.cursor(); c.execute("UPDATE capacitaciones SET firma_instructor_b64=? WHERE id=?", (img_str, id_pdf)); conn.commit(); 
-                        st.success("Firma Guardada."); st.rerun()
+                        st.rerun() 
             
             st.markdown("---")
             if st.button("📥 Generar PDF (Solo Firmados)"):
