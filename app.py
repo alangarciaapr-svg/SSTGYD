@@ -30,7 +30,8 @@ matplotlib.use('Agg')
 # ==============================================================================
 # 0. CONFIGURACIÓN GLOBAL
 # ==============================================================================
-DB_NAME = 'sgsst_v71_final_fixed.db'
+# CAMBIAMOS EL NOMBRE DE LA DB PARA ELIMINAR EL ARCHIVO CORRUPTO/BLOQUEADO
+DB_NAME = 'sgsst_v72_clean.db'
 CSV_FILE = "base_datos_galvez.csv"
 LOGO_FILE = os.path.abspath("logo_empresa.png")
 FECHA_DOCUMENTOS = "05/01/2026"
@@ -66,37 +67,57 @@ def init_erp_db():
     conn = sqlite3.connect(DB_NAME) 
     c = conn.cursor()
     
-    # Tablas
-    c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
+    # --- CREACIÓN DE TABLAS ---
+    c.execute('''CREATE TABLE IF NOT EXISTS usuarios (
+                    username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
     
-    # FIX: Usar INSERT OR IGNORE para evitar OperationalError por duplicados o bloqueos
-    c.execute("INSERT OR IGNORE INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
+    # Solución robusta para usuario admin
+    try:
+        c.execute("INSERT OR IGNORE INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
+    except:
+        pass # Si falla, ya existe o hay bloqueo, continuamos
 
-    c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, responsable TEXT, cargo_responsable TEXT, lugar TEXT, hora_inicio TEXT, hora_termino TEXT, duracion TEXT, tipo_charla TEXT, tema TEXT, estado TEXT, firma_instructor_b64 TEXT, evidencia_foto_b64 TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (id INTEGER PRIMARY KEY AUTOINCREMENT, id_capacitacion INTEGER, rut_trabajador TEXT, hora_firma DATETIME, firma_digital_hash TEXT, firma_imagen_b64 TEXT, estado TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS personal (
+                    rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, 
+                    centro_costo TEXT, fecha_contrato DATE, estado TEXT)''')
     
-    # MATRIZ IPER
-    c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
+    c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, 
-                    cargo_asociado TEXT, 
-                    proceso TEXT, 
-                    peligro TEXT, 
-                    riesgo TEXT, 
-                    consecuencia TEXT, 
-                    medida_control TEXT, 
-                    metodo_correcto TEXT,
-                    criticidad TEXT)''')
+                    fecha DATE, responsable TEXT, cargo_responsable TEXT, lugar TEXT, 
+                    hora_inicio TEXT, hora_termino TEXT, duracion TEXT, tipo_charla TEXT, 
+                    tema TEXT, estado TEXT, firma_instructor_b64 TEXT, evidencia_foto_b64 TEXT)''')
     
-    if c.execute("SELECT count(*) FROM matriz_iper").fetchone()[0] == 0:
+    c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, id_capacitacion INTEGER, 
+                    rut_trabajador TEXT, hora_firma DATETIME, firma_digital_hash TEXT, 
+                    firma_imagen_b64 TEXT, estado TEXT)''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, cargo_asociado TEXT, proceso TEXT, 
+                    peligro TEXT, riesgo TEXT, consecuencia TEXT, medida_control TEXT, 
+                    metodo_correcto TEXT, criticidad TEXT)''')
+    
+    # Carga inicial de matriz si está vacía
+    c.execute("SELECT count(*) FROM matriz_iper")
+    if c.fetchone()[0] == 0:
         c.executemany("INSERT INTO matriz_iper (cargo_asociado, proceso, peligro, riesgo, consecuencia, medida_control, metodo_correcto, criticidad) VALUES (?,?,?,?,?,?,?,?,?)", INITIAL_MIPER_DATA)
 
-    c.execute('''CREATE TABLE IF NOT EXISTS inspecciones (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_responsable TEXT, fecha DATETIME, tipo_inspeccion TEXT, hallazgos TEXT, estado TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (id INTEGER PRIMARY KEY AUTOINCREMENT, grupo_id TEXT, rut_trabajador TEXT, nombre_trabajador TEXT, cargo_trabajador TEXT, producto TEXT, cantidad INTEGER, talla TEXT, motivo TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS entrega_riohs (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, nombre_trabajador TEXT, tipo_entrega TEXT, correo_trabajador TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS inspecciones (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, rut_responsable TEXT, fecha DATETIME, 
+                    tipo_inspeccion TEXT, hallazgos TEXT, estado TEXT)''')
 
-    # Personal Default
-    if c.execute("SELECT count(*) FROM personal").fetchone()[0] == 0:
+    c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, grupo_id TEXT, rut_trabajador TEXT, 
+                    nombre_trabajador TEXT, cargo_trabajador TEXT, producto TEXT, cantidad INTEGER, 
+                    talla TEXT, motivo TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS entrega_riohs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, nombre_trabajador TEXT, 
+                    tipo_entrega TEXT, correo_trabajador TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
+
+    # Personal Default si está vacío
+    c.execute("SELECT count(*) FROM personal")
+    if c.fetchone()[0] == 0:
         c.executemany("INSERT OR IGNORE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", [
             ("16.781.002-0", "ALAN FABIAN GARCIA VIDAL", "PREVENCIONISTA DE RIESGOS", "OFICINA", "2025-10-21", "ACTIVO"),
             ("10.518.096-9", "OSCAR EDUARDO TRIVIÑO SALAZAR", "OPERADOR DE MAQUINARIA", "FAENA", "2024-01-01", "ACTIVO")
@@ -223,7 +244,7 @@ def get_header_table(title_doc, codigo):
     logo_obj = get_scaled_logo_obj(LOGO_FILE, 90, 50)
     center_text = Paragraph(f"SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA<br/>SISTEMA DE GESTION SST DS44<br/><br/><b>{title_doc}</b>", ParagraphStyle(name='HC', fontSize=10, alignment=TA_CENTER))
     control_data = [[Paragraph(f"CODIGO: {codigo}", ParagraphStyle('t', fontSize=7, alignment=TA_CENTER))], [Paragraph("VERSION: 01", ParagraphStyle('t', fontSize=7, alignment=TA_CENTER))], [Paragraph(f"FECHA: {FECHA_DOCUMENTOS}", ParagraphStyle('t', fontSize=7, alignment=TA_CENTER))], [Paragraph("PAGINA: 1", ParagraphStyle('t', fontSize=7, alignment=TA_CENTER))]]
-    t_control = Table(control_data, colWidths=[120]); t_control.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+    t_control = Table(control_data, colWidths=[120]); t_control.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (-1,-1), colors.white), ('TEXTCOLOR', (0,0), (-1,-1), colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
     t_head = Table([[logo_obj, center_text, t_control]], colWidths=[100, 320, 120]); t_head.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER')]))
     return t_head
 
@@ -285,18 +306,11 @@ def generar_pdf_asistencia_rggd02(id_cap):
         buffer = io.BytesIO(); doc = SimpleDocTemplate(buffer, pagesize=legal, topMargin=15, bottomMargin=15, leftMargin=30, rightMargin=30); elements = []
         styles = getSampleStyleSheet(); style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10); style_cell_header = ParagraphStyle(name='CellHeader', parent=styles['Normal'], alignment=TA_CENTER, fontSize=8, textColor=colors.white, fontName='Helvetica-Bold')
         elements.append(get_header_table("REGISTRO DE CAPACITACIÓN", "RG-GD-02")); elements.append(Spacer(1, 10))
-        
         c_tipo, c_tema, c_resp, c_lug, c_fec = clean(cap[8]), clean(cap[9]), clean(cap[2]), clean(cap[4]), clean(cap[1])
         c_carg, c_dur = clean(cap[3]), (clean(cap[7]) if cap[7] else "00:00")
-        
-        t_row1 = Table([[Paragraph("ACTIVIDAD", style_cell_header), Paragraph("RELATOR", style_cell_header), Paragraph("LUGAR", style_cell_header), Paragraph("FECHA", style_cell_header)], [Paragraph(c_tipo, style_center), Paragraph(c_resp, style_center), Paragraph(c_lug, style_center), Paragraph(c_fec, style_center)]], colWidths=[190, 130, 120, 100])
-        t_row1.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), G_CORP), ('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')])); elements.append(t_row1)
-        
+        t_row1 = Table([[Paragraph("ACTIVIDAD", style_cell_header), Paragraph("RELATOR", style_cell_header), Paragraph("LUGAR", style_cell_header), Paragraph("FECHA", style_cell_header)], [Paragraph(c_tipo, style_center), Paragraph(c_resp, style_center), Paragraph(c_lug, style_center), Paragraph(c_fec, style_center)]], colWidths=[190, 130, 120, 100]); t_row1.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), G_CORP), ('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')])); elements.append(t_row1)
         t_row2 = Table([[f"CARGO: {c_carg}", f"DURACIÓN: {c_dur}"]], colWidths=[340, 200]); t_row2.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('FONTSIZE', (0,0), (-1,-1), 8), ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold')])); elements.append(t_row2); elements.append(Spacer(1, 5))
-        
-        t_tem = Table([[Paragraph("TEMARIO", style_cell_header)], [Paragraph(c_tema, ParagraphStyle('s', fontSize=8))]], colWidths=[540], rowHeights=[None, 60])
-        t_tem.setStyle(TableStyle([('BACKGROUND', (0,0), (0,0), G_CORP), ('GRID', (0,0), (-1,-1), 1, colors.black)])); elements.append(t_tem); elements.append(Spacer(1, 10))
-        
+        t_tem = Table([[Paragraph("TEMARIO", style_cell_header)], [Paragraph(c_tema, ParagraphStyle('s', fontSize=8))]], colWidths=[540], rowHeights=[None, 60]); t_tem.setStyle(TableStyle([('BACKGROUND', (0,0), (0,0), G_CORP), ('GRID', (0,0), (-1,-1), 1, colors.black)])); elements.append(t_tem); elements.append(Spacer(1, 10))
         header_asis = [Paragraph("NOMBRE", style_cell_header), Paragraph("RUT", style_cell_header), Paragraph("CARGO", style_cell_header), Paragraph("FIRMA", style_cell_header)]; data_asis = [header_asis]
         for idx, (nom, rut, car, fh, fb64) in enumerate(asistentes, 1):
             row = [Paragraph(clean(nom), style_center), Paragraph(clean(rut), style_center), Paragraph(clean(car), style_center)]; img_inserted = False
@@ -307,7 +321,6 @@ def generar_pdf_asistencia_rggd02(id_cap):
             data_asis.append(row)
         if len(data_asis) > 1:
             t_asis = Table(data_asis, colWidths=[200, 90, 130, 120]); t_asis.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), G_CORP), ('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER')])); elements.append(t_asis); elements.append(Spacer(1, 20))
-        
         img_instructor = Paragraph("", style_center)
         if cap[11]: 
             try: img_instructor = Image(io.BytesIO(base64.b64decode(cap[11])), width=200, height=80)
@@ -327,11 +340,11 @@ def generar_pdf_epp_grupo(grupo_id):
     try:
         regs = conn.execute("SELECT * FROM registro_epp WHERE grupo_id=?", (grupo_id,)).fetchall()
         if not regs: return None
-        rut_t, nom_t, car_t, fec_t = clean(regs[0][2]), clean(regs[0][3]), clean(regs[0][4]), clean(regs[0][9]); firma_b64 = regs[0][10]
+        rut_t = clean(regs[0][2]); nom_t = clean(regs[0][3]); cargo_t = clean(regs[0][4]); fecha_t = clean(regs[0][9]); firma_b64 = regs[0][10]
         buffer = io.BytesIO(); doc = SimpleDocTemplate(buffer, pagesize=legal, topMargin=20, bottomMargin=20, leftMargin=30, rightMargin=30); elements = []; styles = getSampleStyleSheet()
         style_c = ParagraphStyle('C', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10); style_h = ParagraphStyle('H', parent=styles['Normal'], textColor=colors.white, fontName='Helvetica-Bold', alignment=TA_CENTER, fontSize=9)
         elements.append(get_header_table("REGISTRO DE EPP", "RG-GD-01")); elements.append(Spacer(1, 20))
-        t_per = Table([[Paragraph(f"<b>NOMBRE:</b> {nom_t}", style_c), Paragraph(f"<b>RUT:</b> {rut_t}", style_c)], [Paragraph(f"<b>CARGO:</b> {car_t}", style_c), Paragraph(f"<b>FECHA:</b> {fec_t}", style_c)]], colWidths=[270, 270]); t_per.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('BACKGROUND', (0,0), (-1,-1), colors.whitesmoke)])); elements.append(t_per); elements.append(Spacer(1, 20))
+        t_per = Table([[Paragraph(f"<b>NOMBRE:</b> {nom_t}", style_c), Paragraph(f"<b>RUT:</b> {rut_t}", style_c)], [Paragraph(f"<b>CARGO:</b> {cargo_t}", style_c), Paragraph(f"<b>FECHA:</b> {fecha_t}", style_c)]], colWidths=[270, 270]); t_per.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('BACKGROUND', (0,0), (-1,-1), colors.whitesmoke)])); elements.append(t_per); elements.append(Spacer(1, 20))
         data_epp = [[Paragraph("ELEMENTO", style_h), Paragraph("CANT.", style_h), Paragraph("TALLA", style_h), Paragraph("MOTIVO", style_h)]]
         for r in regs: data_epp.append([Paragraph(clean(r[5]), style_c), Paragraph(str(r[6]), style_c), Paragraph(clean(r[7]), style_c), Paragraph(clean(r[8]), style_c)])
         t_epp = Table(data_epp, colWidths=[240, 60, 60, 180]); t_epp.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), G_CORP), ('GRID', (0,0), (-1,-1), 1, colors.black), ('ALIGN', (0,0), (-1,-1), 'CENTER')])); elements.append(t_epp); elements.append(Spacer(1, 30))
@@ -367,20 +380,21 @@ def generar_pdf_riohs(id_reg):
 def generar_pdf_irl(data):
     conn = sqlite3.connect(DB_NAME)
     try:
-        buffer = io.BytesIO(); doc = SimpleDocTemplate(buffer, pagesize=legal, topMargin=15, bottomMargin=15, leftMargin=20, rightMargin=20); elements = []; styles = getSampleStyleSheet()
+        buffer = io.BytesIO(); doc = SimpleDocTemplate(buffer, pagesize=legal, topMargin=15, bottomMargin=15, leftMargin=30, rightMargin=30); elements = []; styles = getSampleStyleSheet()
         s_title = ParagraphStyle(name='Title', parent=styles['Heading1'], alignment=TA_CENTER, fontSize=11, fontName='Helvetica-Bold')
         s_h = ParagraphStyle(name='H', parent=styles['Normal'], fontSize=8, textColor=colors.white, fontName='Helvetica-Bold', alignment=TA_CENTER)
         s_c = ParagraphStyle(name='C', parent=styles['Normal'], fontSize=7, alignment=TA_LEFT)
         
         elements.append(get_header_table("INFORMACIÓN DE RIESGOS LABORALES (IRL) - DS 44", "RG-GD-04")); elements.append(Spacer(1, 10))
         elements.append(Paragraph("<b>1. IDENTIFICACIÓN</b>", s_title))
-        data_id = [["EMPRESA:", "SOCIEDAD MADERERA GALVEZ Y DI GÉNOVA LTDA", "RUT:", "77.110.060-0"], ["DIRECCIÓN:", "RUTA INT. 215 KM12, OSORNO", "REP. LEGAL:", "PAOLA DI GÉNOVA"], ["TRABAJADOR:", data['nombre_trabajador'], "RUT:", data['rut_trabajador']], ["CARGO:", data['cargo_trabajador'], "FECHA:", datetime.now().strftime("%d/%m/%Y")], ["ÁREA:", data['espacio'][:50], "ESTATUS:", data['estatus']]]
+        data_id = [["EMPRESA:", "SOCIEDAD MADERERA GALVEZ Y DI GÉNOVA LTDA", "RUT:", "77.110.060-0"], ["DIRECCIÓN:", "RUTA INT. 215 KM12, OSORNO", "REP. LEGAL:", "PAOLA DI GÉNOVA"], ["TRABAJADOR:", data['nombre_trabajador'], "RUT:", data['rut_trabajador']], ["CARGO:", data['cargo_trabajador'], "FECHA:", datetime.now().strftime("%d/%m/%Y")], ["ÁREA:", data['espacio'][:40], "ESTATUS:", data['estatus']]]
         t_id = Table(data_id, colWidths=[50, 250, 40, 150]); t_id.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('FONTSIZE', (0,0), (-1,-1), 7), ('BACKGROUND', (0,0), (1,-1), colors.whitesmoke)])); elements.append(t_id); elements.append(Spacer(1, 15))
 
-        elements.append(Paragraph("<b>2. RIESGOS ESPECÍFICOS Y MEDIDAS (DS 44)</b>", s_title)); elements.append(Spacer(1, 5))
-        # SQL Injection risks from DB
+        elements.append(Paragraph("<b>2. RIESGOS Y MEDIDAS (DS 44)</b>", s_title)); elements.append(Spacer(1, 5))
+        # Buscar riesgos especificos en DB
         riesgos = conn.execute("SELECT peligro, riesgo, consecuencia, medida_control, metodo_correcto FROM matriz_iper WHERE cargo_asociado=?", (data['cargo_trabajador'],)).fetchall()
         if not riesgos: 
+             # Fallback
              riesgos = conn.execute("SELECT peligro, riesgo, consecuencia, medida_control, metodo_correcto FROM matriz_iper WHERE cargo_asociado='OPERADOR DE MAQUINARIA'").fetchall()
 
         if riesgos:
@@ -389,16 +403,14 @@ def generar_pdf_irl(data):
             for r in riesgos:
                 d_r.append([Paragraph(f"<b>{r[0]}</b><br/>{r[1]}", s_c), Paragraph(r[2], s_c), Paragraph(r[3], s_c), Paragraph(r[4], s_c)])
             t_r = Table(d_r, colWidths=[120, 90, 150, 180], repeatRows=1)
-            t_r.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), G_CORP), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'TOP')]))
+            t_r.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), G_CORP), ('TEXTCOLOR', (0,0), (-1,0), G_WHITE), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'TOP')]))
             elements.append(t_r)
         
         elements.append(Spacer(1, 15))
         elements.append(Paragraph("<b>3. CARACTERÍSTICAS DEL LUGAR</b>", s_title))
-        t_l = Table([[Paragraph(f"<b>Espacio:</b> {data['espacio']}<br/><b>Ambiente:</b> {data['ambiente']}<br/><b>Maquinaria:</b> {data['maquinas']}", s_c)]], colWidths=[540]); t_l.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black)])); elements.append(t_l); elements.append(Spacer(1, 15))
-
-        elements.append(Paragraph("<b>4. PLAN DE EMERGENCIA</b>", s_title))
-        elements.append(Paragraph("<b>ANTES:</b> Conocer vías evacuación. <b>DURANTE:</b> Mantener calma, evacuar a Zona Seguridad. <b>DESPUÉS:</b> Esperar instrucciones.", ParagraphStyle('N', fontSize=8))); elements.append(Spacer(1, 30))
-
+        elements.append(Paragraph(f"Espacio: {data['espacio']} | Ambiente: {data['ambiente']} | Maquinaria: {data['maquinas']}", s_c))
+        
+        elements.append(Spacer(1, 30))
         t_f = Table([["__________________________", "__________________________"], ["FIRMA RELATOR", "FIRMA TRABAJADOR"]], colWidths=[250, 250]); t_f.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER')])); elements.append(t_f)
         doc.build(elements); buffer.seek(0); conn.close(); return buffer
     except: return None
@@ -481,7 +493,7 @@ elif menu == "📄 Generador IRL":
     
     if sel:
         rut = sel.split(" - ")[0]; row = trab[trab['rut']==rut].iloc[0]
-        base = IRL_DESC_DB.get(row['cargo'], IRL_DESC_DB["DEFAULT"])
+        base = IRL_DATA_DB.get(row['cargo'], IRL_DATA_DB["DEFAULT"])
         
         with st.form("irl"):
             c1, c2 = st.columns(2); fi = c1.date_input("Inicio"); ft = c2.date_input("Fin"); dur = c1.text_input("Duración", "1h"); rel = c2.text_input("Relator"); mod = c1.selectbox("Modalidad", ["Presencial", "Online"])
