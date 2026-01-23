@@ -30,8 +30,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 # 0. CONFIGURACIÓN GLOBAL & DATOS INICIALES
 # ==============================================================================
-# IMPORTANTE: Nombre nuevo para garantizar un inicio limpio sin residuos de errores previos
-DB_NAME = 'sgsst_v82_audit_final.db'
+DB_NAME = 'sgsst_v84_stable.db' # DB LIMPIA PARA ELIMINAR ERRORES PREVIOS
 CSV_FILE = "base_datos_galvez.csv"
 LOGO_FILE = os.path.abspath("logo_empresa.png")
 FECHA_DOCUMENTOS = "05/01/2026"
@@ -56,7 +55,7 @@ LISTA_EPP = [
     "ALCOHOL GEL", "CHAQUETA ANTICORTE", "FONO AUDITIVO", "FONO PARA CASCO", "BOTA FORESTAL", "ROPA ALTA VISIBILIDAD"
 ]
 
-# RIESGOS INICIALES (Matriz IPER) - 8 DATOS POR FILA
+# RIESGOS INICIALES (8 DATOS POR FILA)
 INITIAL_MIPER_DATA = [
     ("GERENTE GENERAL", "Administración", "Desorden en oficina", "Caída mismo nivel", "Contusión, Esguince", "Orden y aseo, cables ordenados", "Transitar por vías despejadas", "MODERADO"),
     ("GERENTE GENERAL", "Terreno", "Tránsito en faena", "Atropello", "Muerte, Fracturas", "Chaleco reflectante, estar atento", "Contacto visual con operadores", "IMPORTANTE"),
@@ -78,7 +77,7 @@ INITIAL_MIPER_DATA = [
     ("AYUDANTE MECANICO", "Mantención", "Herramientas manuales", "Golpe/Corte", "Herida leve", "Herramientas en buen estado", "Uso correcto herramienta", "MODERADO")
 ]
 
-# Diccionario de Apoyo para IRL (Descripciones de lugar)
+# DESC LUGARES IRL
 IRL_DESC_DB = {
     "OPERADOR DE MAQUINARIA": {"espacio": "Faena forestal, pendientes.", "ambiente": "Ruido motor, polvo.", "orden": "Cabina limpia.", "maquinas": "Harvester, Skidder.", "sustancia": "DIESEL"},
     "MOTOSIERRISTA": {"espacio": "Bosque, terreno irregular.", "ambiente": "Ruido >85dB, Clima extremo.", "orden": "Vía escape despejada.", "maquinas": "Motosierra, Cuñas.", "sustancia": "MEZCLA"},
@@ -88,57 +87,35 @@ IRL_DESC_DB = {
 }
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL)
+# 1. CAPA DE DATOS (SQL) - CORREGIDA
 # ==============================================================================
 def init_erp_db():
     conn = sqlite3.connect(DB_NAME) 
     c = conn.cursor()
     
-    # 1. CREAR TABLAS
-    c.execute('''CREATE TABLE IF NOT EXISTS usuarios (
-                    username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
-    
+    # 1. USUARIOS
+    c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
     try:
         c.execute("INSERT OR IGNORE INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
     except: pass
 
-    c.execute('''CREATE TABLE IF NOT EXISTS personal (
-                    rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, 
-                    centro_costo TEXT, fecha_contrato DATE, estado TEXT)''')
+    # 2. TABLAS OPERATIVAS
+    c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, responsable TEXT, cargo_responsable TEXT, lugar TEXT, hora_inicio TEXT, hora_termino TEXT, duracion TEXT, tipo_charla TEXT, tema TEXT, estado TEXT, firma_instructor_b64 TEXT, evidencia_foto_b64 TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (id INTEGER PRIMARY KEY AUTOINCREMENT, id_capacitacion INTEGER, rut_trabajador TEXT, hora_firma DATETIME, firma_digital_hash TEXT, firma_imagen_b64 TEXT, estado TEXT)''')
     
-    c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, 
-                    fecha DATE, responsable TEXT, cargo_responsable TEXT, lugar TEXT, 
-                    hora_inicio TEXT, hora_termino TEXT, duracion TEXT, tipo_charla TEXT, 
-                    tema TEXT, estado TEXT, firma_instructor_b64 TEXT, evidencia_foto_b64 TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (id INTEGER PRIMARY KEY AUTOINCREMENT, cargo_asociado TEXT, proceso TEXT, peligro TEXT, riesgo TEXT, consecuencia TEXT, medida_control TEXT, metodo_correcto TEXT, criticidad TEXT)''')
     
-    c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, id_capacitacion INTEGER, 
-                    rut_trabajador TEXT, hora_firma DATETIME, firma_digital_hash TEXT, 
-                    firma_imagen_b64 TEXT, estado TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS inspecciones (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_responsable TEXT, fecha DATETIME, tipo_inspeccion TEXT, hallazgos TEXT, estado TEXT)''')
     
-    c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, cargo_asociado TEXT, proceso TEXT, 
-                    peligro TEXT, riesgo TEXT, consecuencia TEXT, medida_control TEXT, 
-                    metodo_correcto TEXT, criticidad TEXT)''')
+    # CORRECCION EN NOMBRE DE COLUMNA: cantidad (no quantity)
+    c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (id INTEGER PRIMARY KEY AUTOINCREMENT, grupo_id TEXT, rut_trabajador TEXT, nombre_trabajador TEXT, cargo_trabajador TEXT, producto TEXT, cantidad INTEGER, talla TEXT, motivo TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
     
-    c.execute('''CREATE TABLE IF NOT EXISTS inspecciones (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, rut_responsable TEXT, fecha DATETIME, 
-                    tipo_inspeccion TEXT, hallazgos TEXT, estado TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS entrega_riohs (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, nombre_trabajador TEXT, tipo_entrega TEXT, correo_trabajador TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
 
-    # CORRECCIÓN EN COLUMNA CANTIDAD PARA EPP
-    c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, grupo_id TEXT, rut_trabajador TEXT, 
-                    nombre_trabajador TEXT, cargo_trabajador TEXT, producto TEXT, cantidad INTEGER, 
-                    talla TEXT, motivo TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
-
-    c.execute('''CREATE TABLE IF NOT EXISTS entrega_riohs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, nombre_trabajador TEXT, 
-                    tipo_entrega TEXT, correo_trabajador TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
-
-    # 2. POBLAR DATOS INICIALES
+    # 3. POBLADO INICIAL
     if c.execute("SELECT count(*) FROM matriz_iper").fetchone()[0] == 0:
-        # CORRECCION FINAL: 8 SIGNOS DE INTERROGACION PARA 8 DATOS
+        # CORRECCION: 8 SIGNOS DE INTERROGACION
         c.executemany("INSERT INTO matriz_iper (cargo_asociado, proceso, peligro, riesgo, consecuencia, medida_control, metodo_correcto, criticidad) VALUES (?,?,?,?,?,?,?,?)", INITIAL_MIPER_DATA)
 
     if c.execute("SELECT count(*) FROM personal").fetchone()[0] == 0:
@@ -394,6 +371,9 @@ def generar_pdf_irl(data):
         elements.append(Spacer(1, 15))
         elements.append(Paragraph("<b>3. CARACTERÍSTICAS DEL LUGAR</b>", s_title))
         elements.append(Paragraph(f"Espacio: {data['espacio']} | Ambiente: {data['ambiente']} | Maquinaria: {data['maquinas']}", s_c))
+        elements.append(Spacer(1, 15))
+        elements.append(Paragraph("<b>4. SUSTANCIAS Y PLAN DE EMERGENCIA</b>", s_title))
+        elements.append(Paragraph(f"Sustancia: {data['sustancia']}. Emergencia: Seguir Plan de Emergencia y Vías de Evacuación. No reingresar sin autorización.", s_c))
         
         elements.append(Spacer(1, 30))
         t_f = Table([["__________________________", "__________________________"], ["FIRMA RELATOR", "FIRMA TRABAJADOR"]], colWidths=[250, 250]); t_f.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER')])); elements.append(t_f)
@@ -516,7 +496,8 @@ elif menu == "🦺 Registro EPP":
     if st.button("Guardar"):
         if sig.image_data is not None:
             gid = str(uuid.uuid4()); rut = users[users['nombre']==u]['rut'].values[0]; car = users[users['nombre']==u]['cargo'].values[0]; img = Image.fromarray(sig.image_data.astype('uint8')); b = io.BytesIO(); img.save(b, format='PNG'); ib64 = base64.b64encode(b.getvalue()).decode()
-            for i in st.session_state.epp_list: conn.execute("INSERT INTO registro_epp (grupo_id, rut_trabajador, nombre_trabajador, cargo_trabajador, producto, quantity, fecha_entrega, firma_trabajador_b64) VALUES (?,?,?,?,?,?,?,?)", (gid, rut, u, car, i[0], i[1], date.today(), ib64))
+            # CORRECCION: Usar 'cantidad' no 'quantity'
+            for i in st.session_state.epp_list: conn.execute("INSERT INTO registro_epp (grupo_id, rut_trabajador, nombre_trabajador, cargo_trabajador, producto, cantidad, fecha_entrega, firma_trabajador_b64) VALUES (?,?,?,?,?,?,?,?)", (gid, rut, u, car, i[0], i[1], date.today(), ib64))
             conn.commit(); st.success("Guardado"); st.session_state.epp_list = []
     conn.close()
 
