@@ -28,10 +28,12 @@ from streamlit_drawable_canvas import st_canvas
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL) - V62 (IRL Content Update)
+# 1. CAPA DE DATOS (SQL RELACIONAL) - V63 (DB Connection Fix)
 # ==============================================================================
+DB_NAME = 'sgsst_v63_final_db.db' # Variable global para evitar errores futuros
+
 def init_erp_db():
-    conn = sqlite3.connect('sgsst_v62_irl_master_content.db') 
+    conn = sqlite3.connect(DB_NAME) 
     c = conn.cursor()
     
     # --- USUARIOS ---
@@ -136,7 +138,7 @@ def init_erp_db():
     conn.close()
 
 # ==============================================================================
-# 2. FUNCIONES DE SOPORTE & BASE DE CONOCIMIENTO IRL (CONTENIDO REAL)
+# 2. FUNCIONES DE SOPORTE & BASE DE CONOCIMIENTO IRL
 # ==============================================================================
 CSV_FILE = "base_datos_galvez_v26.csv"
 LOGO_FILE = os.path.abspath("logo_empresa.png")
@@ -176,7 +178,7 @@ IRL_DATA_DB = {
         "sustancia": "DIESEL"
     },
     "MOTOSIERRISTA": {
-        "lugar": "Bosque con alta densidad, tocones y residuos. Terreno irregular y resbaladizo.",
+        "lugar": "Bosque denso, terreno irregular con ramas y tocones.",
         "condiciones": "Ruido y Vibración elevados. Exposición a gases de escape y clima extremo.",
         "maquinas": "Motosierra, Cuñas, Hacha, Radio, Botiquín personal.",
         "riesgos": [
@@ -254,7 +256,7 @@ IRL_DATA_DB["AYUDANTE MECANICO"] = IRL_DATA_DB["MECANICO LIDER"]
 def hash_pass(password): return hashlib.sha256(password.encode()).hexdigest()
 
 def login_user(username, password):
-    conn = sqlite3.connect('sgsst_v61_ds44_final.db')
+    conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute("SELECT rol FROM usuarios WHERE username=? AND password=?", (username, hash_pass(password)))
     result = c.fetchone()
@@ -466,7 +468,7 @@ def get_header_table(title_doc, codigo):
     t_control = Table(control_data, colWidths=[120])
     t_control.setStyle(TableStyle([
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-        ('BACKGROUND', (0,0), (-1,-1), colors.white), # FIX V61: WHITE BG
+        ('BACKGROUND', (0,0), (-1,-1), colors.white), 
         ('TEXTCOLOR', (0,0), (-1,-1), colors.black),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE')
     ]))
@@ -475,7 +477,7 @@ def get_header_table(title_doc, codigo):
     return t_head
 
 def generar_pdf_asistencia_rggd02(id_cap):
-    conn = sqlite3.connect('sgsst_v61_ds44_final.db')
+    conn = sqlite3.connect(DB_NAME)
     try:
         cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
         if cap is None: return None
@@ -518,7 +520,7 @@ def generar_pdf_asistencia_rggd02(id_cap):
             if firma_b64 and len(str(firma_b64)) > 100:
                 try: 
                     img_bytes = base64.b64decode(firma_b64); img_stream = io.BytesIO(img_bytes)
-                    img_rl = Image(img_stream, width=100, height=35); row.append(img_rl); img_inserted = True # ENLARGED V61
+                    img_rl = Image(img_stream, width=100, height=35); row.append(img_rl); img_inserted = True 
                 except: pass
             if not img_inserted: row.append(Paragraph("Firma Digital", style_center))
             data_asis.append(row)
@@ -528,7 +530,7 @@ def generar_pdf_asistencia_rggd02(id_cap):
             elements.append(t_asis); elements.append(Spacer(1, 20))
         img_instructor = Paragraph("", style_center); firma_inst_data = cap[11]; 
         if firma_inst_data and len(str(firma_inst_data)) > 100:
-             try: img_bytes_inst = base64.b64decode(firma_inst_data); img_stream_inst = io.BytesIO(img_bytes_inst); img_instructor = Image(img_stream_inst, width=200, height=80) # ENLARGED V61
+             try: img_bytes_inst = base64.b64decode(firma_inst_data); img_stream_inst = io.BytesIO(img_bytes_inst); img_instructor = Image(img_stream_inst, width=200, height=80) 
              except: pass
         
         img_evidencia = Paragraph("(Sin Foto)", style_center); foto_b64 = cap[12]; 
@@ -547,7 +549,7 @@ def generar_pdf_asistencia_rggd02(id_cap):
     finally: conn.close()
 
 def generar_pdf_epp_grupo(grupo_id):
-    conn = sqlite3.connect('sgsst_v61_ds44_final.db')
+    conn = sqlite3.connect(DB_NAME)
     try:
         regs = conn.execute("SELECT * FROM registro_epp WHERE grupo_id=?", (grupo_id,)).fetchall()
         if not regs: return None
@@ -574,7 +576,7 @@ def generar_pdf_epp_grupo(grupo_id):
     finally: conn.close()
 
 def generar_pdf_riohs(id_reg):
-    conn = sqlite3.connect('sgsst_v61_ds44_final.db')
+    conn = sqlite3.connect(DB_NAME)
     try:
         reg = conn.execute("SELECT * FROM entrega_riohs WHERE id=?", (id_reg,)).fetchone()
         if not reg: return None
@@ -600,7 +602,7 @@ def generar_pdf_riohs(id_reg):
 
 # === GENERADOR PDF IRL V61 (DS44 STRICT) ===
 def generar_pdf_irl(rut_trabajador, area, h_ini, h_fin, estatus):
-    conn = sqlite3.connect('sgsst_v61_ds44_final.db')
+    conn = sqlite3.connect(DB_NAME)
     try:
         trab = conn.execute("SELECT * FROM personal WHERE rut=?", (rut_trabajador,)).fetchone()
         if not trab: return None
@@ -631,7 +633,7 @@ def generar_pdf_irl(rut_trabajador, area, h_ini, h_fin, estatus):
         # 2. RIESGOS ESPECIFICOS
         elements.append(Paragraph("<b>2. RIESGOS ESPECÍFICOS Y MEDIDAS DE CONTROL</b>", s_title)); elements.append(Spacer(1, 5))
         if riesgos:
-            header = [Paragraph("RIESGO", s_th), Paragraph("CONSECUENCIA", s_th), Paragraph("MEDIDAS PREVENTIVAS", s_th), Paragraph("PROCEDIMIENTOS DE TRABAJO", s_th)]
+            header = [Paragraph("RIESGO", s_th), Paragraph("CONSECUENCIA", s_th), Paragraph("MEDIDAS PREVENTIVAS (EPP/PROTOCOLOS)", s_th), Paragraph("PROCEDIMIENTOS DE TRABAJO SEGURO", s_th)]
             data_r = [header]
             for r in riesgos:
                 data_r.append([Paragraph(f"<b>{r[0]}</b>", s_tc), Paragraph(r[1], s_tc), Paragraph(r[2], s_tc), Paragraph(r[3], s_tc)])
@@ -698,7 +700,7 @@ with st.sidebar:
     st.markdown("### ⚙️ Configuración")
     uploaded_logo = st.file_uploader("Cargar Logo Empresa (PDF)", type=['png', 'jpg'], key="logo_uploader")
     if uploaded_logo:
-        # GUARDADO FORZOSO DEL LOGO EN DISCO
+        # GUARDADO FORZOSO DEL LOGO EN DISCO (Solución Definitiva)
         with open("logo_empresa.png", "wb") as f:
             f.write(uploaded_logo.getbuffer())
         st.success("Logo cargado y guardado correctamente.")
@@ -1206,7 +1208,7 @@ elif menu == "📄 Generador IRL":
         if st.button("📄 Generar ODI/IRL Digital"):
             pdf_irl = generar_pdf_irl(rut_t, area_input, str(h_ini), str(h_fin), estatus_input)
             if pdf_irl:
-                st.download_button("📥 Descargar ODI/IRL", pdf_irl, f"IRL_{rut_t}.pdf", "application/pdf")
+                st.download_button("📥 Descargar ODI/IRL", pdf_irl, f"ODI_{rut_t}.pdf", "application/pdf")
             else:
                 st.error("No se pudo generar el documento. Revise los datos del cargo.")
                 
