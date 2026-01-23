@@ -28,10 +28,10 @@ from streamlit_drawable_canvas import st_canvas
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 0. CONFIGURACIÓN GLOBAL (RESTAURACIÓN V64)
+# 0. CONFIGURACIÓN GLOBAL
 # ==============================================================================
-# CAMBIAMOS EL NOMBRE PARA FORZAR UN INICIO LIMPIO SIN ERRORES PREVIOS
-DB_NAME = 'sgsst_v64_factory_reset.db'
+# CAMBIO DE NOMBRE DE DB PARA LIMPIEZA TOTAL
+DB_NAME = 'sgsst_v87_rescue.db'
 CSV_FILE = "base_datos_galvez.csv"
 LOGO_FILE = os.path.abspath("logo_empresa.png")
 FECHA_DOCUMENTOS = "05/01/2026"
@@ -56,7 +56,7 @@ LISTA_EPP = [
     "ALCOHOL GEL", "CHAQUETA ANTICORTE", "FONO AUDITIVO", "FONO PARA CASCO", "BOTA FORESTAL", "ROPA ALTA VISIBILIDAD"
 ]
 
-# BASE DE DATOS INTERNA PARA IRL (MÉTODO ESTABLE)
+# BASE DE DATOS INTERNA PARA IRL (DICCIONARIO ESTÁTICO - SIN ERRORES SQL)
 IRL_DATA_DB = {
     "OPERADOR DE MAQUINARIA": {
         "lugar": "Zonas de faena forestal, pendientes, terrenos irregulares.",
@@ -64,7 +64,8 @@ IRL_DATA_DB = {
         "maquinas": "Cosechadora (Harvester), Skidder, Forwarder. Herramientas: Llaves, Extintor.",
         "riesgos": [
             ("Volcamiento", "Muerte, Fracturas", "Cabina ROPS/FOPS, Cinturón.", "Operar solo en pendientes autorizadas."),
-            ("Atropello", "Muerte", "Alerta visual y sonora.", "Respetar zonas de tránsito.")
+            ("Atropello", "Muerte", "Alerta visual y sonora.", "Respetar zonas de tránsito."),
+            ("Incendio", "Quemaduras", "Extintor PQS.", "Limpieza de motor y rodados.")
         ],
         "sustancia": "DIESEL"
     },
@@ -109,12 +110,12 @@ IRL_DATA_DB = {
         "sustancia": "N/A"
     }
 }
-# Asignar resto de cargos para evitar errores
+# Asignar resto
 for c in LISTA_CARGOS:
     if c not in IRL_DATA_DB: IRL_DATA_DB[c] = IRL_DATA_DB["DEFAULT"]
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL)
+# 1. CAPA DE DATOS (SQL) - SIN MATRIZ
 # ==============================================================================
 def init_erp_db():
     conn = sqlite3.connect(DB_NAME) 
@@ -122,22 +123,35 @@ def init_erp_db():
     
     # Usuarios
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
-    c.execute("SELECT count(*) FROM usuarios")
-    if c.fetchone()[0] == 0:
-        c.execute("INSERT INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
-        conn.commit()
+    try: c.execute("INSERT OR IGNORE INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
+    except: pass
 
-    # Tablas
+    # Tablas SOLO ESENCIALES (NO MATRIZ)
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, responsable TEXT, cargo_responsable TEXT, lugar TEXT, hora_inicio TEXT, hora_termino TEXT, duracion TEXT, tipo_charla TEXT, tema TEXT, estado TEXT, firma_instructor_b64 TEXT, evidencia_foto_b64 TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (id INTEGER PRIMARY KEY AUTOINCREMENT, id_capacitacion INTEGER, rut_trabajador TEXT, hora_firma DATETIME, firma_digital_hash TEXT, firma_imagen_b64 TEXT, estado TEXT)''')
     
-    # Matriz (Versión Simple V64 - Sin carga masiva conflictiva)
-    c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (id INTEGER PRIMARY KEY AUTOINCREMENT, cargo_asociado TEXT, proceso TEXT, peligro TEXT, riesgo TEXT, consecuencia TEXT, medida_control TEXT, metodo_correcto TEXT, criticidad TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                    fecha DATE, responsable TEXT, cargo_responsable TEXT, lugar TEXT, 
+                    hora_inicio TEXT, hora_termino TEXT, duracion TEXT, tipo_charla TEXT, 
+                    tema TEXT, estado TEXT, firma_instructor_b64 TEXT, evidencia_foto_b64 TEXT)''')
     
+    c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, id_capacitacion INTEGER, 
+                    rut_trabajador TEXT, hora_firma DATETIME, firma_digital_hash TEXT,
+                    firma_imagen_b64 TEXT, estado TEXT)''')
+
     c.execute('''CREATE TABLE IF NOT EXISTS inspecciones (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_responsable TEXT, fecha DATETIME, tipo_inspeccion TEXT, hallazgos TEXT, estado TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (id INTEGER PRIMARY KEY AUTOINCREMENT, grupo_id TEXT, rut_trabajador TEXT, nombre_trabajador TEXT, cargo_trabajador TEXT, producto TEXT, cantidad INTEGER, talla TEXT, motivo TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS entrega_riohs (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, nombre_trabajador TEXT, tipo_entrega TEXT, correo_trabajador TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, grupo_id TEXT, rut_trabajador TEXT,
+                    nombre_trabajador TEXT, cargo_trabajador TEXT, producto TEXT,
+                    cantidad INTEGER, talla TEXT, motivo TEXT, fecha_entrega DATE,
+                    firma_trabajador_b64 TEXT)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS entrega_riohs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT,
+                    nombre_trabajador TEXT, tipo_entrega TEXT, correo_trabajador TEXT,
+                    fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
 
     # Personal Default
     c.execute("SELECT count(*) FROM personal")
@@ -148,12 +162,9 @@ def init_erp_db():
         ]
         c.executemany("INSERT OR IGNORE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", staff_completo)
 
-    conn.commit()
+    # *** NOTA: NO HAY CODIGO DE MATRIZ_IPER AQUI *** conn.commit()
     conn.close()
 
-# ==============================================================================
-# 2. FUNCIONES DE SOPORTE
-# ==============================================================================
 def hash_pass(password): return hashlib.sha256(password.encode()).hexdigest()
 def login_user(username, password):
     conn = sqlite3.connect(DB_NAME); c = conn.cursor()
@@ -310,12 +321,16 @@ def generar_pdf_riohs(id_reg):
     except: return None
     finally: conn.close()
 
-def generar_pdf_irl(rut_trabajador, area, h_ini, h_fin, estatus):
+def generar_pdf_irl(rut_trabajador):
     conn = sqlite3.connect(DB_NAME)
     try:
         trab = conn.execute("SELECT * FROM personal WHERE rut=?", (rut_trabajador,)).fetchone()
         if not trab: return None
-        nombre, cargo = trab[1], trab[2]
+        nombre = trab[1]; cargo = trab[2]
+        
+        # BUSCAR RIESGOS EN DICCIONARIO INTERNO (SIN SQL FALLIDO)
+        data_cargo = IRL_DATA_DB.get(cargo, IRL_DATA_DB["DEFAULT"])
+        
         buffer = io.BytesIO(); doc = SimpleDocTemplate(buffer, pagesize=legal, topMargin=15, bottomMargin=15, leftMargin=30, rightMargin=30); elements = []; styles = getSampleStyleSheet()
         s_title = ParagraphStyle(name='Title', parent=styles['Heading1'], alignment=TA_CENTER, fontSize=11, fontName='Helvetica-Bold')
         s_h = ParagraphStyle(name='H', parent=styles['Normal'], fontSize=8, textColor=colors.white, fontName='Helvetica-Bold', alignment=TA_CENTER)
@@ -323,26 +338,26 @@ def generar_pdf_irl(rut_trabajador, area, h_ini, h_fin, estatus):
         
         elements.append(get_header_table("INFORMACIÓN DE RIESGOS LABORALES (IRL) - DS 44", "RG-GD-04")); elements.append(Spacer(1, 10))
         elements.append(Paragraph("<b>1. IDENTIFICACIÓN</b>", s_title))
-        t_id = Table([["EMPRESA:", "SOCIEDAD MADERERA GALVEZ Y DI GÉNOVA LTDA", "RUT:", "77.110.060-0"], ["TRABAJADOR:", nombre, "RUT:", rut_trabajador], ["CARGO:", cargo, "FECHA:", datetime.now().strftime("%d/%m/%Y")], ["ÁREA:", area, "ESTATUS:", estatus]], colWidths=[50, 250, 40, 150]); t_id.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('FONTSIZE', (0,0), (-1,-1), 7), ('BACKGROUND', (0,0), (1,-1), colors.whitesmoke)])); elements.append(t_id); elements.append(Spacer(1, 15))
-        
-        elements.append(Paragraph("<b>2. RIESGOS ESPECÍFICOS Y MEDIDAS (V64 ESTABLE)</b>", s_title)); elements.append(Spacer(1, 5))
-        # USO DE DICCIONARIO INTERNO (ESTABLE)
-        data_cargo = IRL_DATA_DB.get(cargo, IRL_DATA_DB["DEFAULT"])
+        data_id = [["EMPRESA:", "SOCIEDAD MADERERA GALVEZ Y DI GÉNOVA LTDA", "RUT:", "77.110.060-0"], ["DIRECCIÓN:", "RUTA INT. 215 KM12, OSORNO", "REP. LEGAL:", "PAOLA DI GÉNOVA"], ["TRABAJADOR:", nombre, "RUT:", rut_trabajador], ["CARGO:", cargo, "FECHA:", datetime.now().strftime("%d/%m/%Y")]]
+        t_id = Table(data_id, colWidths=[50, 250, 40, 150]); t_id.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('FONTSIZE', (0,0), (-1,-1), 7), ('BACKGROUND', (0,0), (1,-1), colors.whitesmoke)])); elements.append(t_id); elements.append(Spacer(1, 15))
+
+        elements.append(Paragraph("<b>2. RIESGOS Y MEDIDAS (DS 44)</b>", s_title)); elements.append(Spacer(1, 5))
         if data_cargo.get('riesgos'):
-            h = [Paragraph("RIESGO", s_h), Paragraph("CONSECUENCIA", s_h), Paragraph("MEDIDAS", s_h), Paragraph("MÉTODO", s_h)]
-            d = [h]
+            h_r = [Paragraph("RIESGO", s_h), Paragraph("CONSECUENCIA", s_h), Paragraph("MEDIDA", s_h), Paragraph("MÉTODO", s_h)]
+            d_r = [h_r]
             for r in data_cargo['riesgos']:
-                d.append([Paragraph(r[0], s_c), Paragraph(r[1], s_c), Paragraph(r[2], s_c), Paragraph(r[3], s_c)])
-            t_r = Table(d, colWidths=[120, 90, 150, 180], repeatRows=1); t_r.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), G_CORP), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'TOP')])); elements.append(t_r)
+                d_r.append([Paragraph(r[0], s_c), Paragraph(r[1], s_c), Paragraph(r[2], s_c), Paragraph(r[3], s_c)])
+            t_r = Table(d_r, colWidths=[120, 90, 150, 180], repeatRows=1)
+            t_r.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), G_CORP), ('TEXTCOLOR', (0,0), (-1,0), G_WHITE), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'TOP')]))
+            elements.append(t_r)
         
         elements.append(Spacer(1, 15))
-        elements.append(Paragraph("<b>3. CARACTERÍSTICAS DEL LUGAR</b>", s_title))
-        elements.append(Paragraph(f"<b>Entorno:</b> {data_cargo['lugar']}<br/><b>Condiciones:</b> {data_cargo['condiciones']}<br/><b>Maquinas:</b> {data_cargo['maquinas']}", ParagraphStyle('N', fontSize=8))); elements.append(Spacer(1, 15))
+        elements.append(Paragraph("<b>3. NORMAS GENERALES Y EMERGENCIAS</b>", s_title))
+        elements.append(Paragraph(f"<b>Lugar:</b> {data_cargo['lugar']}<br/><b>Emergencias:</b> Conocer vías de evacuación y zonas de seguridad.<br/><b>Sustancias:</b> {data_cargo['sustancia']}", ParagraphStyle('N', fontSize=8)))
         
-        elements.append(Paragraph("<b>4. CIERRE LEGAL</b>", s_title))
-        elements.append(Paragraph("Declaro haber recibido, leído y comprendido la información sobre los riesgos inherentes (Art 15 DS 44).", ParagraphStyle('N', fontSize=8))); elements.append(Spacer(1, 30))
+        elements.append(Spacer(1, 30))
         t_f = Table([["__________________________", "__________________________"], ["FIRMA RELATOR", "FIRMA TRABAJADOR"]], colWidths=[250, 250]); t_f.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER')])); elements.append(t_f)
-        doc.build(elements); buffer.seek(0); return buffer
+        doc.build(elements); buffer.seek(0); conn.close(); return buffer
     except: return None
     finally: conn.close()
 
@@ -416,21 +431,20 @@ elif menu == "🎓 Gestión Capacitación":
     conn.close()
 
 elif menu == "📄 Generador IRL":
-    st.title("Generador IRL (DS 44 - V64 Estable)")
+    st.title("Generador IRL (DS 44)")
     conn = sqlite3.connect(DB_NAME); trab = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
     sel = st.selectbox("Trabajador", trab['rut'] + " - " + trab['nombre'])
     if sel:
-        rut = sel.split(" - ")[0]; row = trab[trab['rut']==rut].iloc[0]
-        st.write(f"Cargo: {row['cargo']}")
-        c1, c2 = st.columns(2); ar = c1.text_input("Area", "Faena"); stt = c2.selectbox("Estatus", ["Nuevo", "Reinduccion"])
+        rut = sel.split(" - ")[0]
         if st.button("Generar IRL"):
-            pdf = generar_pdf_irl(rut, ar, "08:00", "18:00", stt)
+            pdf = generar_pdf_irl(rut)
             if pdf: st.download_button("Descargar IRL", pdf, f"IRL_{rut}.pdf", "application/pdf")
     conn.close()
 
 elif menu == "⚠️ Matriz IPER":
-    st.title("Matriz de Riesgos (Lectura)"); conn = sqlite3.connect(DB_NAME)
-    st.dataframe(pd.read_sql("SELECT * FROM matriz_iper", conn))
+    st.title("Matriz de Riesgos"); conn = sqlite3.connect(DB_NAME)
+    df = pd.read_sql("SELECT * FROM matriz_iper", conn)
+    st.dataframe(df)
     conn.close()
 
 elif menu == "🦺 Registro EPP":
