@@ -30,7 +30,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 # 0. CONFIGURACIÓN GLOBAL BASE DE DATOS
 # ==============================================================================
-DB_NAME = 'sgsst_v66_restore.db'
+DB_NAME = 'sgsst_v66_restore.db' # Mantenemos la DB V66 para estabilidad
 CSV_FILE = "base_datos_galvez.csv"
 LOGO_FILE = os.path.abspath("logo_empresa.png")
 FECHA_DOCUMENTOS = "05/01/2026"
@@ -165,7 +165,7 @@ LISTA_EPP = [
     "ALCOHOL GEL", "CHAQUETA ANTICORTE", "FONO AUDITIVO", "FONO PARA CASCO", "BOTA FORESTAL", "ROPA ALTA VISIBILIDAD"
 ]
 
-# --- BASE DE CONOCIMIENTO IRL (LÓGICA NUEVA V66) ---
+# --- BASE DE CONOCIMIENTO IRL ---
 IRL_DATA_DB = {
     "OPERADOR DE MAQUINARIA": {
         "espacio": "Ubicación: Faena forestal. Dimensiones: Extensas. Acceso: Restringido/Irregular. Pisos: Natural, irregular, riesgo volcamiento.",
@@ -441,7 +441,7 @@ def generar_pdf_riohs(id_reg):
         reg = conn.execute("SELECT * FROM entrega_riohs WHERE id=?", (id_reg,)).fetchone()
         if not reg: return None
         rut_t = clean(reg[1]); nom_t = clean(reg[2]); tipo = clean(reg[3]); correo = clean(reg[4]); fecha = clean(reg[5]); firma_b64 = reg[6]
-        buffer = io.BytesIO(); doc = SimpleDocTemplate(buffer, pagesize=legal, topMargin=20, bottomMargin=20, leftMargin=30, rightMargin=30); elements = []; styles = getSampleStyleSheet(); style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10)
+        buffer = io.BytesIO(); doc = SimpleDocTemplate(buffer, pagesize=legal, topMargin=20, bottomMargin=20, leftMargin=30, rightMargin=30); elements = []; styles = getSampleStyleSheet(); style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10); 
         elements.append(get_header_table("ENTREGA RIOHS", "RG-GD-03")); elements.append(Spacer(1, 40))
         preamble = """En cumplimiento a lo dispuesto en el Artículo 156, inciso 2° del Código del Trabajo, la Ley N° 16.744 y el Decreto Supremo N° 44 (Gestión de Seguridad y Salud en el Trabajo), la empresa <b>SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA</b> cumple con la obligación legal de entregar gratuitamente el Reglamento Interno de Orden, Higiene y Seguridad."""; style_just = ParagraphStyle('Just', parent=styles['Normal'], alignment=TA_JUSTIFY, fontSize=11, leading=14); elements.append(Paragraph(preamble, style_just)); elements.append(Spacer(1, 20))
         txt = f"""Por el presente acto, yo <b>{nom_t}</b>, cédula de identidad N° <b>{rut_t}</b>, certifico haber recibido una copia del citado Reglamento Interno.<br/><br/>Asimismo, me comprometo a leerlo, estudiarlo y dar fiel cumplimiento a las normas, obligaciones y prohibiciones en él contenidas, entendiendo que estas regulaciones buscan proteger mi vida, salud e integridad física dentro de la organización."""; elements.append(Paragraph(txt, style_just)); elements.append(Spacer(1, 40))
@@ -457,7 +457,7 @@ def generar_pdf_riohs(id_reg):
     except Exception as e: return None
     finally: conn.close()
 
-# === GENERADOR PDF IRL (V66: INSERTED LOGIC FROM V65) ===
+# === GENERADOR PDF IRL (V66: INSERTED LOGIC FROM V65 + FIX st.download_button) ===
 def generar_pdf_irl(data):
     conn = sqlite3.connect(DB_NAME)
     try:
@@ -575,9 +575,10 @@ with st.sidebar:
     st.markdown("### ⚙️ Configuración")
     uploaded_logo = st.file_uploader("Cargar Logo Empresa (PDF)", type=['png', 'jpg'], key="logo_uploader")
     if uploaded_logo:
+        # GUARDADO FORZOSO DEL LOGO EN DISCO
         with open("logo_empresa.png", "wb") as f:
             f.write(uploaded_logo.getbuffer())
-        st.success("Logo cargado.")
+        st.success("Logo cargado y guardado correctamente.")
     
     opciones_menu = ["📊 Dashboard BI", "👥 Nómina & Personal", "📱 App Móvil", "🎓 Gestión Capacitación", "🦺 Registro EPP", "📘 Entrega RIOHS", "📄 Generador IRL", "⚠️ Matriz IPER"]; 
     if st.session_state['user_role'] == "ADMINISTRADOR": opciones_menu.append("🔐 Gestión Usuarios")
@@ -1107,27 +1108,28 @@ elif menu == "📄 Generador IRL":
                 txt_mat_nom = st.text_input("Nombre del Material", "Reglamento Interno / PTS")
 
             submitted = st.form_submit_button("📄 GENERAR PDF IRL")
+        
+        # LOGICA MOVIDA FUERA DEL FORMULARIO (SOLUCION STREAMLIT API EXCEPTION)
+        if submitted:
+            # Preparar diccionario de datos
+            data_pdf = {
+                'rut_trabajador': rut_t,
+                'nombre_trabajador': datos_t['nombre'],
+                'cargo_trabajador': cargo_t,
+                'fecha_inicio': f_ini, 'fecha_termino': f_fin, 'duracion': h_dur,
+                'relator': relator, 'cargo_relator': c_relator, 'modalidad': modalidad,
+                'espacio': txt_espacio, 'ambiente': txt_ambiente, 'orden': txt_orden, 'maquinas': txt_maquinas,
+                'riesgos_text': txt_riesgos, 'medidas_text': txt_medidas, 'metodos_text': txt_metodos,
+                'estatus': estatus,
+                'material': chk_mat, 'material_nombre': txt_mat_nom
+            }
             
-            if submitted:
-                # Preparar diccionario de datos
-                data_pdf = {
-                    'rut_trabajador': rut_t,
-                    'nombre_trabajador': datos_t['nombre'],
-                    'cargo_trabajador': cargo_t,
-                    'fecha_inicio': f_ini, 'fecha_termino': f_fin, 'duracion': h_dur,
-                    'relator': relator, 'cargo_relator': c_relator, 'modalidad': modalidad,
-                    'espacio': txt_espacio, 'ambiente': txt_ambiente, 'orden': txt_orden, 'maquinas': txt_maquinas,
-                    'riesgos_text': txt_riesgos, 'medidas_text': txt_medidas, 'metodos_text': txt_metodos,
-                    'estatus': estatus,
-                    'material': chk_mat, 'material_nombre': txt_mat_nom
-                }
-                
-                pdf_bytes = generar_pdf_irl(data_pdf)
-                if pdf_bytes:
-                    st.success("Documento generado con éxito.")
-                    st.download_button("📥 Descargar PDF IRL", pdf_bytes, f"IRL_{rut_t}.pdf", "application/pdf")
-                else:
-                    st.error("Error al generar el PDF.")
+            pdf_bytes = generar_pdf_irl(data_pdf)
+            if pdf_bytes:
+                st.success("Documento generado con éxito.")
+                st.download_button("📥 Descargar PDF IRL", pdf_bytes, f"IRL_{rut_t}.pdf", "application/pdf")
+            else:
+                st.error("Error al generar el PDF.")
 
     conn.close()
 
