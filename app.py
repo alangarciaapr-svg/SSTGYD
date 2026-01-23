@@ -28,9 +28,9 @@ from streamlit_drawable_canvas import st_canvas
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 0. CONFIGURACIÓN GLOBAL
+# 0. CONFIGURACIÓN GLOBAL & DATOS INICIALES
 # ==============================================================================
-DB_NAME = 'sgsst_v77_repair.db' # Nombre nuevo para forzar limpieza
+DB_NAME = 'sgsst_v76_final_ok.db' # NOMBRE NUEVO Y LIMPIO
 CSV_FILE = "base_datos_galvez.csv"
 LOGO_FILE = os.path.abspath("logo_empresa.png")
 FECHA_DOCUMENTOS = "05/01/2026"
@@ -40,11 +40,22 @@ MESES_ORDEN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto'
 COLOR_PRIMARY = (183, 28, 28)
 COLOR_SECONDARY = (50, 50, 50)
 
-# ==============================================================================
-# 1. CAPA DE DATOS E INICIALIZACIÓN
-# ==============================================================================
+# LISTAS
+LISTA_CARGOS = [
+    "GERENTE GENERAL", "GERENTE FINANZAS", "PREVENCIONISTA DE RIESGOS", "ADMINISTRATIVO", "JEFE DE PATIO", 
+    "OPERADOR DE ASERRADERO", "ASISTENTE DE ASERRADERO", "MECANICO LIDER", "AYUDANTE MECANICO", 
+    "OPERADOR DE MAQUINARIA", "MOTOSIERRISTA", "ESTROBERO", "CALIBRADOR", "PAÑOLERO", 
+    "OPERADOR FORWARDER", "OPERADOR SKIDDER"
+]
 
-# DATOS INICIALES (Para poblar la BD nueva)
+LISTA_EPP = [
+    "ZAPATOS DE SEGURIDAD", "GUANTES MULTIFLEX", "PROTECTOR SOLAR", "OVEROL", "LENTES DE SEGURIDAD", 
+    "GORRO LEGIONARIO", "CASCO", "TRAJE DE AGUA", "GUANTE CABRITILLA", "ARNES", "CABO DE VIDA", 
+    "PROTECTOR FACIAL", "CHALECO REFLECTANTE", "PANTALON ANTICORTE", "MASCARILLAS DESECHABLES", 
+    "ALCOHOL GEL", "CHAQUETA ANTICORTE", "FONO AUDITIVO", "FONO PARA CASCO", "BOTA FORESTAL", "ROPA ALTA VISIBILIDAD"
+]
+
+# RIESGOS INICIALES (Matriz IPER) - 8 DATOS POR FILA
 INITIAL_MIPER_DATA = [
     ("GERENTE GENERAL", "Administración", "Desorden en oficina", "Caída mismo nivel", "Contusión, Esguince", "Orden y aseo, cables ordenados", "Transitar por vías despejadas", "MODERADO"),
     ("GERENTE GENERAL", "Terreno", "Tránsito en faena", "Atropello", "Muerte, Fracturas", "Chaleco reflectante, estar atento", "Contacto visual con operadores", "IMPORTANTE"),
@@ -66,6 +77,7 @@ INITIAL_MIPER_DATA = [
     ("AYUDANTE MECANICO", "Mantención", "Herramientas manuales", "Golpe/Corte", "Herida leve", "Herramientas en buen estado", "Uso correcto herramienta", "MODERADO")
 ]
 
+# DESCRIPCIONES DE LUGAR (Apoyo IRL)
 IRL_DESC_DB = {
     "OPERADOR DE MAQUINARIA": {"espacio": "Faena forestal, pendientes.", "ambiente": "Ruido motor, polvo.", "orden": "Cabina limpia.", "maquinas": "Harvester, Skidder.", "sustancia": "DIESEL"},
     "MOTOSIERRISTA": {"espacio": "Bosque, terreno irregular.", "ambiente": "Ruido >85dB, Clima extremo.", "orden": "Vía escape despejada.", "maquinas": "Motosierra, Cuñas.", "sustancia": "MEZCLA"},
@@ -74,43 +86,35 @@ IRL_DESC_DB = {
     "DEFAULT": {"espacio": "Instalaciones de la empresa.", "ambiente": "Iluminación natural/artificial.", "orden": "Zonas despejadas.", "maquinas": "Herramientas manuales.", "sustancia": "N/A"}
 }
 
-LISTA_CARGOS = [
-    "GERENTE GENERAL", "GERENTE FINANZAS", "PREVENCIONISTA DE RIESGOS", "ADMINISTRATIVO", "JEFE DE PATIO", 
-    "OPERADOR DE ASERRADERO", "ASISTENTE DE ASERRADERO", "MECANICO LIDER", "AYUDANTE MECANICO", 
-    "OPERADOR DE MAQUINARIA", "MOTOSIERRISTA", "ESTROBERO", "CALIBRADOR", "PAÑOLERO", 
-    "OPERADOR FORWARDER", "OPERADOR SKIDDER"
-]
-
-LISTA_EPP = [
-    "ZAPATOS DE SEGURIDAD", "GUANTES MULTIFLEX", "PROTECTOR SOLAR", "OVEROL", "LENTES DE SEGURIDAD", 
-    "GORRO LEGIONARIO", "CASCO", "TRAJE DE AGUA", "GUANTE CABRITILLA", "ARNES", "CABO DE VIDA", 
-    "PROTECTOR FACIAL", "CHALECO REFLECTANTE", "PANTALON ANTICORTE", "MASCARILLAS DESECHABLES", 
-    "ALCOHOL GEL", "CHAQUETA ANTICORTE", "FONO AUDITIVO", "FONO PARA CASCO", "BOTA FORESTAL", "ROPA ALTA VISIBILIDAD"
-]
-
+# ==============================================================================
+# 1. CAPA DE DATOS (SQL)
+# ==============================================================================
 def init_erp_db():
     conn = sqlite3.connect(DB_NAME) 
     c = conn.cursor()
     
-    # 1. CREAR TABLAS PRIMERO
+    # Usuarios
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
+    try: c.execute("INSERT OR IGNORE INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
+    except: pass
+
+    # Tablas Principales
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, responsable TEXT, cargo_responsable TEXT, lugar TEXT, hora_inicio TEXT, hora_termino TEXT, duracion TEXT, tipo_charla TEXT, tema TEXT, estado TEXT, firma_instructor_b64 TEXT, evidencia_foto_b64 TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (id INTEGER PRIMARY KEY AUTOINCREMENT, id_capacitacion INTEGER, rut_trabajador TEXT, hora_firma DATETIME, firma_digital_hash TEXT, firma_imagen_b64 TEXT, estado TEXT)''')
+    
+    # Matriz IPER
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (id INTEGER PRIMARY KEY AUTOINCREMENT, cargo_asociado TEXT, proceso TEXT, peligro TEXT, riesgo TEXT, consecuencia TEXT, medida_control TEXT, metodo_correcto TEXT, criticidad TEXT)''')
+    
+    # === CORRECCIÓN AQUÍ: 8 VALUES PARA 8 CAMPOS DE DATOS ===
+    if c.execute("SELECT count(*) FROM matriz_iper").fetchone()[0] == 0:
+        c.executemany("INSERT INTO matriz_iper (cargo_asociado, proceso, peligro, riesgo, consecuencia, medida_control, metodo_correcto, criticidad) VALUES (?,?,?,?,?,?,?,?)", INITIAL_MIPER_DATA)
+
     c.execute('''CREATE TABLE IF NOT EXISTS inspecciones (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_responsable TEXT, fecha DATETIME, tipo_inspeccion TEXT, hallazgos TEXT, estado TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (id INTEGER PRIMARY KEY AUTOINCREMENT, grupo_id TEXT, rut_trabajador TEXT, nombre_trabajador TEXT, cargo_trabajador TEXT, producto TEXT, cantidad INTEGER, talla TEXT, motivo TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS entrega_riohs (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, nombre_trabajador TEXT, tipo_entrega TEXT, correo_trabajador TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
 
-    # 2. INSERTAR ADMIN SI NO EXISTE
-    try:
-        c.execute("INSERT OR IGNORE INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
-    except: pass
-
-    # 3. POBLAR DATOS INICIALES SI ESTÁN VACÍOS
-    if c.execute("SELECT count(*) FROM matriz_iper").fetchone()[0] == 0:
-        c.executemany("INSERT INTO matriz_iper (cargo_asociado, proceso, peligro, riesgo, consecuencia, medida_control, metodo_correcto, criticidad) VALUES (?,?,?,?,?,?,?,?,?)", INITIAL_MIPER_DATA)
-
+    # Personal Default
     if c.execute("SELECT count(*) FROM personal").fetchone()[0] == 0:
         c.executemany("INSERT OR IGNORE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", [
             ("16.781.002-0", "ALAN FABIAN GARCIA VIDAL", "PREVENCIONISTA DE RIESGOS", "OFICINA", "2025-10-21", "ACTIVO"),
@@ -124,23 +128,12 @@ def init_erp_db():
 # 2. FUNCIONES DE SOPORTE
 # ==============================================================================
 def hash_pass(password): return hashlib.sha256(password.encode()).hexdigest()
-
 def login_user(username, password):
-    # Se conecta a la misma DB que init_erp_db
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    # Usar try-except por seguridad extra si la tabla no existiera (aunque init lo garantiza)
-    try:
-        c.execute("SELECT rol FROM usuarios WHERE username=? AND password=?", (username, hash_pass(password)))
-        result = c.fetchone()
-    except sqlite3.OperationalError:
-        return None
-    finally:
-        conn.close()
+    conn = sqlite3.connect(DB_NAME); c = conn.cursor()
+    c.execute("SELECT rol FROM usuarios WHERE username=? AND password=?", (username, hash_pass(password)))
+    result = c.fetchone(); conn.close()
     return result[0] if result else None
-
 def clean(val): return str(val).strip() if val is not None else " "
-
 def get_scaled_logo_obj(path, max_w, max_h):
     if not os.path.exists(path): return Paragraph("<b>MADERAS G&D</b>", ParagraphStyle(name='NoLogo', fontSize=14, fontName='Helvetica-Bold', alignment=TA_CENTER))
     try:
@@ -156,7 +149,7 @@ def get_header_table(title_doc, codigo):
     t_head = Table([[logo_obj, center_text, t_control]], colWidths=[100, 320, 120]); t_head.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER')]))
     return t_head
 
-# Funciones BI
+# Funciones de BI y Datos
 def procesar_datos(df, factor_base=210):
     for col in df.columns:
         if col not in ['Año', 'Mes', 'Observaciones']: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
@@ -199,58 +192,8 @@ def get_structure_for_year(year):
         })
     return pd.DataFrame(data)
 
-class PDF_SST(FPDF):
-    def header(self):
-        self.set_fill_color(245, 245, 245); self.rect(0, 0, 210, 40, 'F')
-        if os.path.exists(LOGO_FILE): self.image(LOGO_FILE, 10, 8, 35)
-        self.set_xy(50, 10); self.set_font('Arial', 'B', 16); self.set_text_color(*COLOR_PRIMARY)
-        self.cell(0, 8, 'SOCIEDAD MADERERA GALVEZ Y DI GENOVA LTDA', 0, 1, 'L')
-        self.set_xy(50, 18); self.set_font('Arial', 'B', 11); self.set_text_color(*COLOR_SECONDARY)
-        self.cell(0, 6, 'INFORME EJECUTIVO DE GESTIÓN SST (DS 44)', 0, 1, 'L')
-        self.set_draw_color(*COLOR_PRIMARY); self.set_line_width(1); self.line(10, 38, 200, 38); self.ln(30)
-    def footer(self):
-        self.set_y(-15); self.set_font('Arial', 'I', 8); self.set_text_color(150)
-        self.cell(0, 10, f'Documento Oficial SGSST - Pagina {self.page_no()}', 0, 0, 'C')
-    def section_title(self, title):
-        self.set_font('Arial', 'B', 12); self.set_fill_color(*COLOR_SECONDARY); self.set_text_color(255, 255, 255)
-        self.cell(0, 8, f"  {title}", 0, 1, 'L', 1); self.set_text_color(0, 0, 0); self.ln(4)
-    def draw_donut_chart_image(self, val_pct, color_hex, x, y, size=30):
-        try:
-            val_plot = min(val_pct, 100); val_plot = max(val_plot, 0); fig, ax = plt.subplots(figsize=(2, 2))
-            ax.pie([val_plot, 100-val_plot], colors=[color_hex, '#eeeeee'], startangle=90, counterclock=False, wedgeprops=dict(width=0.4, edgecolor='white'))
-            ax.text(0, 0, f"{val_pct:.0f}%", ha='center', va='center', fontsize=12, fontweight='bold', color='#333333')
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp: plt.savefig(tmp.name, format='png', transparent=True, dpi=100, bbox_inches='tight'); tmp_name = tmp.name
-            plt.close(fig); self.image(tmp_name, x=x, y=y, w=size, h=size); os.unlink(tmp_name)
-        except: pass
-    def draw_kpi_circle_pair(self, title, val_m, val_a, max_scale, meta, unit, x, y):
-        try:
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(4, 2)); color_m = '#4CAF50' if val_m <= meta else '#F44336'
-            if "Gest" in title: color_m = '#4CAF50' if val_m >= meta else '#F44336'
-            val_m_plot = min(val_m, max_scale); rem_m = max_scale - val_m_plot
-            ax1.pie([val_m_plot, rem_m], colors=[color_m, '#EEEEEE'], startangle=90, counterclock=False, wedgeprops=dict(width=0.3, edgecolor='white'))
-            ax1.text(0, 0, f"{val_m:.1f}\n{unit}", ha='center', va='center', fontsize=10, fontweight='bold'); ax1.set_title("MENSUAL", fontsize=8, color='#555555')
-            color_a = '#4CAF50' if val_a <= meta else '#F44336'
-            if "Gest" in title: color_a = '#4CAF50' if val_a >= meta else '#F44336'
-            val_a_plot = min(val_a, max_scale); rem_a = max_scale - val_a_plot
-            ax2.pie([val_a_plot, rem_a], colors=[color_a, '#EEEEEE'], startangle=90, counterclock=False, wedgeprops=dict(width=0.3, edgecolor='white'))
-            ax2.text(0, 0, f"{val_a:.1f}\n{unit}", ha='center', va='center', fontsize=10, fontweight='bold'); ax2.set_title("ACUMULADO", fontsize=8, color='#555555')
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp: plt.savefig(tmp.name, format='png', bbox_inches='tight', dpi=100); tmp_name = tmp.name
-            plt.close(fig); self.set_xy(x, y); self.set_font('Arial', 'B', 9); self.cell(90, 8, title, 0, 1, 'C'); self.image(tmp_name, x=x+5, y=y+8, w=80, h=40); os.unlink(tmp_name)
-        except: pass
-    def clean_text(self, text):
-        replacements = {'\u2013': '-', '\u2014': '-', '\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"', '\u2022': '*', '€': 'EUR'}
-        for k, v in replacements.items(): text = text.replace(k, v)
-        return text.encode('latin-1', 'replace').decode('latin-1')
-    def footer_signatures(self):
-        y_pos = self.get_y() + 10
-        if y_pos > 250: self.add_page(); y_pos = self.get_y() + 20
-        self.set_y(y_pos); self.line(20, y_pos, 90, y_pos); self.set_xy(20, y_pos + 2); self.set_font('Arial', 'B', 9); self.set_text_color(0,0,0); self.cell(70, 5, "RODRIGO GALVEZ REBOLLEDO", 0, 1, 'C'); self.set_xy(20, y_pos + 7); self.set_font('Arial', '', 8); self.cell(70, 5, "Gerente General / Rep. Legal", 0, 1, 'C'); self.line(120, y_pos, 190, y_pos); self.set_xy(120, y_pos + 2); self.set_font('Arial', 'B', 9); self.cell(70, 5, "ALAN GARCIA VIDAL", 0, 1, 'C'); self.set_xy(120, y_pos + 7); self.set_font('Arial', '', 8); self.cell(70, 5, "Ingeniero en Prevención de Riesgos", 0, 1, 'C'); self.ln(15); self.set_font('Arial', 'I', 7); self.set_text_color(128); self.multi_cell(0, 4, "Este documento es parte integrante del SGSST. Confidencial.", 0, 'C')
-    def draw_detailed_stats_table(self, data_list):
-        self.set_font('Arial', 'B', 9); self.set_fill_color(230, 230, 230); self.set_text_color(0, 0, 0); self.cell(100, 8, "INDICADOR (DS 67 / DS 40)", 1, 0, 'L', 1); self.cell(45, 8, "MES ACTUAL", 1, 0, 'C', 1); self.cell(45, 8, "ACUMULADO ANUAL", 1, 1, 'C', 1); self.set_font('Arial', '', 9)
-        for label, val_m, val_a, is_bold in data_list:
-            if is_bold: self.set_font('Arial', 'B', 9)
-            else: self.set_font('Arial', '', 9)
-            self.ln(); self.cell(100, 7, f" {label}", 1, 0, 'L'); self.cell(45, 7, str(val_m), 1, 0, 'C'); self.cell(45, 7, str(val_a), 1, 1, 'C')
+def generar_insight_automatico(row_mes, ta_acum, metas):
+    return "Análisis Automático Disponible"
 
 # ==============================================================================
 # 3. GENERADORES PDF
@@ -347,7 +290,7 @@ def generar_pdf_irl(data):
         data_id = [["EMPRESA:", "SOCIEDAD MADERERA GALVEZ Y DI GÉNOVA LTDA", "RUT:", "77.110.060-0"], ["DIRECCIÓN:", "RUTA INT. 215 KM12, OSORNO", "REP. LEGAL:", "PAOLA DI GÉNOVA"], ["TRABAJADOR:", data['nombre_trabajador'], "RUT:", data['rut_trabajador']], ["CARGO:", data['cargo_trabajador'], "FECHA:", datetime.now().strftime("%d/%m/%Y")], ["ÁREA:", data['espacio'][:40], "ESTATUS:", data['estatus']]]
         t_id = Table(data_id, colWidths=[50, 250, 40, 150]); t_id.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('FONTSIZE', (0,0), (-1,-1), 7), ('BACKGROUND', (0,0), (1,-1), colors.whitesmoke)])); elements.append(t_id); elements.append(Spacer(1, 15))
 
-        elements.append(Paragraph("<b>2. RIESGOS Y MEDIDAS (DS 44)</b>", s_title)); elements.append(Spacer(1, 5))
+        elements.append(Paragraph("<b>2. RIESGOS ESPECÍFICOS Y MEDIDAS (DS 44)</b>", s_title)); elements.append(Spacer(1, 5))
         # BUSCAR RIESGOS EN BASE DE DATOS
         riesgos = conn.execute("SELECT peligro, riesgo, consecuencia, medida_control, metodo_correcto FROM matriz_iper WHERE cargo_asociado=?", (data['cargo_trabajador'],)).fetchall()
         if not riesgos:
@@ -365,15 +308,13 @@ def generar_pdf_irl(data):
         elements.append(Spacer(1, 15))
         elements.append(Paragraph("<b>3. CARACTERÍSTICAS DEL LUGAR</b>", s_title))
         elements.append(Paragraph(f"Espacio: {data['espacio']} | Ambiente: {data['ambiente']} | Maquinaria: {data['maquinas']}", s_c))
-        elements.append(Spacer(1, 15))
-        elements.append(Paragraph("<b>4. SUSTANCIAS Y PLAN DE EMERGENCIA</b>", s_title))
-        elements.append(Paragraph(f"Sustancia: {data['sustancia']}. Emergencia: Seguir Plan de Emergencia y Vías de Evacuación. No reingresar sin autorización.", s_c))
         
         elements.append(Spacer(1, 30))
         t_f = Table([["__________________________", "__________________________"], ["FIRMA RELATOR", "FIRMA TRABAJADOR"]], colWidths=[250, 250]); t_f.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER')])); elements.append(t_f)
         doc.build(elements); buffer.seek(0); conn.close(); return buffer
     except: return None
     finally: conn.close()
+
 
 # ==============================================================================
 # 4. FRONTEND
