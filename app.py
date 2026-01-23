@@ -28,20 +28,35 @@ from streamlit_drawable_canvas import st_canvas
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 0. CONFIGURACIÓN GLOBAL
+# 0. CONFIGURACIÓN GLOBAL & DATOS INICIALES
 # ==============================================================================
-# IMPORTANTE: Nombre nuevo para forzar creación limpia de tablas sin errores previos
-DB_NAME = 'sgsst_v81_final_stable.db'
+# IMPORTANTE: Nombre nuevo para garantizar un inicio limpio sin residuos de errores previos
+DB_NAME = 'sgsst_v82_audit_final.db'
 CSV_FILE = "base_datos_galvez.csv"
 LOGO_FILE = os.path.abspath("logo_empresa.png")
 FECHA_DOCUMENTOS = "05/01/2026"
 G_CORP = HexColor('#5A2F1B')
 G_WHITE = colors.white
+MESES_ORDEN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+COLOR_PRIMARY = (183, 28, 28)
+COLOR_SECONDARY = (50, 50, 50)
 
-# ==============================================================================
-# 1. CAPA DE DATOS E INICIALIZACIÓN
-# ==============================================================================
-# Datos de Riesgos para Carga Inicial (8 COLUMNAS EXACTAS)
+# LISTAS
+LISTA_CARGOS = [
+    "GERENTE GENERAL", "GERENTE FINANZAS", "PREVENCIONISTA DE RIESGOS", "ADMINISTRATIVO", "JEFE DE PATIO", 
+    "OPERADOR DE ASERRADERO", "ASISTENTE DE ASERRADERO", "MECANICO LIDER", "AYUDANTE MECANICO", 
+    "OPERADOR DE MAQUINARIA", "MOTOSIERRISTA", "ESTROBERO", "CALIBRADOR", "PAÑOLERO", 
+    "OPERADOR FORWARDER", "OPERADOR SKIDDER"
+]
+
+LISTA_EPP = [
+    "ZAPATOS DE SEGURIDAD", "GUANTES MULTIFLEX", "PROTECTOR SOLAR", "OVEROL", "LENTES DE SEGURIDAD", 
+    "GORRO LEGIONARIO", "CASCO", "TRAJE DE AGUA", "GUANTE CABRITILLA", "ARNES", "CABO DE VIDA", 
+    "PROTECTOR FACIAL", "CHALECO REFLECTANTE", "PANTALON ANTICORTE", "MASCARILLAS DESECHABLES", 
+    "ALCOHOL GEL", "CHAQUETA ANTICORTE", "FONO AUDITIVO", "FONO PARA CASCO", "BOTA FORESTAL", "ROPA ALTA VISIBILIDAD"
+]
+
+# RIESGOS INICIALES (Matriz IPER) - 8 DATOS POR FILA
 INITIAL_MIPER_DATA = [
     ("GERENTE GENERAL", "Administración", "Desorden en oficina", "Caída mismo nivel", "Contusión, Esguince", "Orden y aseo, cables ordenados", "Transitar por vías despejadas", "MODERADO"),
     ("GERENTE GENERAL", "Terreno", "Tránsito en faena", "Atropello", "Muerte, Fracturas", "Chaleco reflectante, estar atento", "Contacto visual con operadores", "IMPORTANTE"),
@@ -72,51 +87,61 @@ IRL_DESC_DB = {
     "DEFAULT": {"espacio": "Instalaciones de la empresa.", "ambiente": "Iluminación natural/artificial.", "orden": "Zonas despejadas.", "maquinas": "Herramientas manuales.", "sustancia": "N/A"}
 }
 
-LISTA_CARGOS = [
-    "GERENTE GENERAL", "GERENTE FINANZAS", "PREVENCIONISTA DE RIESGOS", "ADMINISTRATIVO", "JEFE DE PATIO", 
-    "OPERADOR DE ASERRADERO", "ASISTENTE DE ASERRADERO", "MECANICO LIDER", "AYUDANTE MECANICO", 
-    "OPERADOR DE MAQUINARIA", "MOTOSIERRISTA", "ESTROBERO", "CALIBRADOR", "PAÑOLERO", 
-    "OPERADOR FORWARDER", "OPERADOR SKIDDER"
-]
-
-LISTA_EPP = [
-    "ZAPATOS DE SEGURIDAD", "GUANTES MULTIFLEX", "PROTECTOR SOLAR", "OVEROL", "LENTES DE SEGURIDAD", 
-    "GORRO LEGIONARIO", "CASCO", "TRAJE DE AGUA", "GUANTE CABRITILLA", "ARNES", "CABO DE VIDA", 
-    "PROTECTOR FACIAL", "CHALECO REFLECTANTE", "PANTALON ANTICORTE", "MASCARILLAS DESECHABLES", 
-    "ALCOHOL GEL", "CHAQUETA ANTICORTE", "FONO AUDITIVO", "FONO PARA CASCO", "BOTA FORESTAL", "ROPA ALTA VISIBILIDAD"
-]
-
+# ==============================================================================
+# 1. CAPA DE DATOS (SQL)
+# ==============================================================================
 def init_erp_db():
     conn = sqlite3.connect(DB_NAME) 
     c = conn.cursor()
     
     # 1. CREAR TABLAS
-    c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS usuarios (
+                    username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
+    
     try:
         c.execute("INSERT OR IGNORE INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
     except: pass
 
-    c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, responsable TEXT, cargo_responsable TEXT, lugar TEXT, hora_inicio TEXT, hora_termino TEXT, duracion TEXT, tipo_charla TEXT, tema TEXT, estado TEXT, firma_instructor_b64 TEXT, evidencia_foto_b64 TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (id INTEGER PRIMARY KEY AUTOINCREMENT, id_capacitacion INTEGER, rut_trabajador TEXT, hora_firma DATETIME, firma_digital_hash TEXT, firma_imagen_b64 TEXT, estado TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS personal (
+                    rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, 
+                    centro_costo TEXT, fecha_contrato DATE, estado TEXT)''')
     
-    # Matriz IPER
-    c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (id INTEGER PRIMARY KEY AUTOINCREMENT, cargo_asociado TEXT, proceso TEXT, peligro TEXT, riesgo TEXT, consecuencia TEXT, medida_control TEXT, metodo_correcto TEXT, criticidad TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                    fecha DATE, responsable TEXT, cargo_responsable TEXT, lugar TEXT, 
+                    hora_inicio TEXT, hora_termino TEXT, duracion TEXT, tipo_charla TEXT, 
+                    tema TEXT, estado TEXT, firma_instructor_b64 TEXT, evidencia_foto_b64 TEXT)''')
     
-    c.execute('''CREATE TABLE IF NOT EXISTS inspecciones (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_responsable TEXT, fecha DATETIME, tipo_inspeccion TEXT, hallazgos TEXT, estado TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (id INTEGER PRIMARY KEY AUTOINCREMENT, grupo_id TEXT, rut_trabajador TEXT, nombre_trabajador TEXT, cargo_trabajador TEXT, producto TEXT, cantidad INTEGER, talla TEXT, motivo TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS entrega_riohs (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, nombre_trabajador TEXT, tipo_entrega TEXT, correo_trabajador TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, id_capacitacion INTEGER, 
+                    rut_trabajador TEXT, hora_firma DATETIME, firma_digital_hash TEXT, 
+                    firma_imagen_b64 TEXT, estado TEXT)''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, cargo_asociado TEXT, proceso TEXT, 
+                    peligro TEXT, riesgo TEXT, consecuencia TEXT, medida_control TEXT, 
+                    metodo_correcto TEXT, criticidad TEXT)''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS inspecciones (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, rut_responsable TEXT, fecha DATETIME, 
+                    tipo_inspeccion TEXT, hallazgos TEXT, estado TEXT)''')
+
+    # CORRECCIÓN EN COLUMNA CANTIDAD PARA EPP
+    c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, grupo_id TEXT, rut_trabajador TEXT, 
+                    nombre_trabajador TEXT, cargo_trabajador TEXT, producto TEXT, cantidad INTEGER, 
+                    talla TEXT, motivo TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS entrega_riohs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, nombre_trabajador TEXT, 
+                    tipo_entrega TEXT, correo_trabajador TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
 
     # 2. POBLAR DATOS INICIALES
-    # Verifica si la matriz está vacía para insertar datos
-    c.execute("SELECT count(*) FROM matriz_iper")
-    if c.fetchone()[0] == 0:
-        # === CORRECCIÓN FINAL: 8 VALUES PARA 8 COLUMNAS DE DATOS ===
+    if c.execute("SELECT count(*) FROM matriz_iper").fetchone()[0] == 0:
+        # CORRECCION FINAL: 8 SIGNOS DE INTERROGACION PARA 8 DATOS
         c.executemany("INSERT INTO matriz_iper (cargo_asociado, proceso, peligro, riesgo, consecuencia, medida_control, metodo_correcto, criticidad) VALUES (?,?,?,?,?,?,?,?)", INITIAL_MIPER_DATA)
 
-    # Personal por defecto
-    c.execute("SELECT count(*) FROM personal")
-    if c.fetchone()[0] == 0:
+    if c.execute("SELECT count(*) FROM personal").fetchone()[0] == 0:
         c.executemany("INSERT OR IGNORE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", [
             ("16.781.002-0", "ALAN FABIAN GARCIA VIDAL", "PREVENCIONISTA DE RIESGOS", "OFICINA", "2025-10-21", "ACTIVO"),
             ("10.518.096-9", "OSCAR EDUARDO TRIVIÑO SALAZAR", "OPERADOR DE MAQUINARIA", "FAENA", "2024-01-01", "ACTIVO")
@@ -158,10 +183,6 @@ def get_header_table(title_doc, codigo):
     return t_head
 
 # Funciones BI
-MESES_ORDEN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
-COLOR_PRIMARY = (183, 28, 28)
-COLOR_SECONDARY = (50, 50, 50)
-
 def procesar_datos(df, factor_base=210):
     for col in df.columns:
         if col not in ['Año', 'Mes', 'Observaciones']: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
