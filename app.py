@@ -28,9 +28,10 @@ from streamlit_drawable_canvas import st_canvas
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL) - V63 (DB Connection Fix)
+# 1. CAPA DE DATOS (SQL RELACIONAL) - V63 (DB Consistency Fix)
 # ==============================================================================
-DB_NAME = 'sgsst_v63_final_db.db' # Variable global para evitar errores futuros
+# VARIABLE GLOBAL PARA ASEGURAR CONEXIÓN CORRECTA EN TODA LA APP
+DB_NAME = 'sgsst_v63_final_stable.db'
 
 def init_erp_db():
     conn = sqlite3.connect(DB_NAME) 
@@ -126,7 +127,7 @@ def init_erp_db():
         ]
         c.executemany("INSERT OR IGNORE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", staff_completo)
 
-    # --- MATRIZ IPER BASE (Ejemplo) ---
+    # --- MATRIZ IPER BASE ---
     c.execute("SELECT count(*) FROM matriz_iper")
     if c.fetchone()[0] == 0:
         iper_data = [
@@ -138,7 +139,7 @@ def init_erp_db():
     conn.close()
 
 # ==============================================================================
-# 2. FUNCIONES DE SOPORTE & BASE DE CONOCIMIENTO IRL
+# 2. FUNCIONES DE SOPORTE & BASE DE CONOCIMIENTO IRL (CONTENIDO REAL)
 # ==============================================================================
 CSV_FILE = "base_datos_galvez_v26.csv"
 LOGO_FILE = os.path.abspath("logo_empresa.png")
@@ -189,7 +190,7 @@ IRL_DATA_DB = {
         "sustancia": "MEZCLA Y DIESEL"
     },
     "ESTROBERO": {
-        "lugar": "Canchas de madereo, pendientes, suelo natural con ramas y lodo. Interacción con maquinaria.",
+        "lugar": "Canchas de madereo, pendientes, suelo resbaladizo.",
         "condiciones": "Polvo, Ruido de maquinaria, Clima variable.",
         "maquinas": "Estrobos de acero, Ganchos, Radio comunicación.",
         "riesgos": [
@@ -555,7 +556,8 @@ def generar_pdf_epp_grupo(grupo_id):
         if not regs: return None
         rut_t = clean(regs[0][2]); nom_t = clean(regs[0][3]); cargo_t = clean(regs[0][4]); fecha_t = clean(regs[0][9]); firma_b64 = regs[0][10]
         buffer = io.BytesIO(); doc = SimpleDocTemplate(buffer, pagesize=legal, topMargin=20, bottomMargin=20, leftMargin=30, rightMargin=30); elements = []; styles = getSampleStyleSheet()
-        style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10); style_head = ParagraphStyle(name='Head', parent=styles['Normal'], textColor=colors.white, fontName='Helvetica-Bold', alignment=TA_CENTER, fontSize=9); style_cell = ParagraphStyle(name='Cell', parent=styles['Normal'], alignment=TA_CENTER, fontSize=9) 
+        style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10); style_head = ParagraphStyle(name='Head', parent=styles['Normal'], textColor=colors.white, fontName='Helvetica-Bold', alignment=TA_CENTER, fontSize=9); style_cell = ParagraphStyle(name='Cell', parent=styles['Normal'], alignment=TA_CENTER, fontSize=9); style_title_log = ParagraphStyle(name='TitleLog', fontSize=14, fontName='Helvetica-Bold', alignment=TA_CENTER); 
+        G_CORP = HexColor('#5A2F1B'); G_WHITE = colors.white
         
         elements.append(get_header_table("REGISTRO DE EPP", "RG-GD-01"))
         elements.append(Spacer(1, 20))
@@ -700,7 +702,7 @@ with st.sidebar:
     st.markdown("### ⚙️ Configuración")
     uploaded_logo = st.file_uploader("Cargar Logo Empresa (PDF)", type=['png', 'jpg'], key="logo_uploader")
     if uploaded_logo:
-        # GUARDADO FORZOSO DEL LOGO EN DISCO (Solución Definitiva)
+        # GUARDADO FORZOSO DEL LOGO EN DISCO
         with open("logo_empresa.png", "wb") as f:
             f.write(uploaded_logo.getbuffer())
         st.success("Logo cargado y guardado correctamente.")
