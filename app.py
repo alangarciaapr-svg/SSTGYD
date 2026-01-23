@@ -28,11 +28,13 @@ from streamlit_drawable_canvas import st_canvas
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CAPA DE DATOS (SQL RELACIONAL) - V63 (DB Consistency Fix)
+# 0. CONFIGURACIÓN GLOBAL BASE DE DATOS (SOLUCIÓN ERRORES PANDAS)
 # ==============================================================================
-# VARIABLE GLOBAL PARA ASEGURAR CONEXIÓN CORRECTA EN TODA LA APP
-DB_NAME = 'sgsst_v63_final_stable.db'
+DB_NAME = 'sgsst_v64_final_stable.db'
 
+# ==============================================================================
+# 1. CAPA DE DATOS (SQL RELACIONAL)
+# ==============================================================================
 def init_erp_db():
     conn = sqlite3.connect(DB_NAME) 
     c = conn.cursor()
@@ -139,7 +141,7 @@ def init_erp_db():
     conn.close()
 
 # ==============================================================================
-# 2. FUNCIONES DE SOPORTE & BASE DE CONOCIMIENTO IRL (CONTENIDO REAL)
+# 2. FUNCIONES DE SOPORTE & BASE DE CONOCIMIENTO IRL
 # ==============================================================================
 CSV_FILE = "base_datos_galvez_v26.csv"
 LOGO_FILE = os.path.abspath("logo_empresa.png")
@@ -164,7 +166,7 @@ LISTA_EPP = [
     "ALCOHOL GEL", "CHAQUETA ANTICORTE", "FONO AUDITIVO", "FONO PARA CASCO", "BOTA FORESTAL", "ROPA ALTA VISIBILIDAD"
 ]
 
-# --- BASE DE CONOCIMIENTO IRL (DATOS DE TUS PDFS) ---
+# --- BASE DE CONOCIMIENTO PARA GENERADOR IRL ---
 IRL_DATA_DB = {
     "OPERADOR DE MAQUINARIA": {
         "lugar": "Zonas de faena forestal, pendientes, terrenos irregulares. Áreas extensas delimitadas por corte y acopio. Acceso restringido.",
@@ -192,66 +194,65 @@ IRL_DATA_DB = {
     "ESTROBERO": {
         "lugar": "Canchas de madereo, pendientes, suelo resbaladizo.",
         "condiciones": "Polvo, Ruido de maquinaria, Clima variable.",
-        "maquinas": "Estrobos de acero, Ganchos, Radio comunicación.",
+        "maquinas": "Estrobos, Ganchos, Radio.",
         "riesgos": [
-            ("Atropello/Volcamiento", "Muerte, Fracturas", "Chaleco Reflectante, Contacto visual operador.", "Nunca ubicarse en puntos ciegos. Distancia seguridad."),
-            ("Golpes por Cables/Estrobos", "Amputaciones, Muerte", "Nunca exponerse a línea de tensión (Latigazo).", "Esperar cable sin tensión para manipular."),
-            ("Caídas Mismo Nivel", "Esguinces, Contusiones", "Calzado caña alta agarre. Vías despejadas.", "Tránsito atento a obstáculos (ramas/barro).")
+            ("Atropello", "Muerte", "Chaleco Reflectante, Contacto visual.", "Nunca ubicarse en puntos ciegos."),
+            ("Golpes por Cables", "Amputaciones", "Nunca exponerse a línea de tensión.", "Esperar cable sin tensión."),
+            ("Caídas", "Esguinces", "Calzado caña alta agarre.", "Tránsito precario.")
         ],
         "sustancia": "N/A"
     },
     "JEFE DE PATIO": {
-        "lugar": "Patio aserradero, zonas acopio, alto tránsito maquinaria y camiones.",
+        "lugar": "Patio aserradero, zonas acopio, alto tránsito maquinaria.",
         "condiciones": "Ruido constante, Polvo madera, Tránsito mixto.",
-        "maquinas": "Manitou (Cargador), Camioneta, Radio, Computador.",
+        "maquinas": "Manitou, Camionetas, Radio.",
         "riesgos": [
-            ("Atropello Maquinaria", "Muerte", "Chaleco Alta Visibilidad, Vías peatonales.", "Contacto visual permanente. No usar celular al caminar."),
-            ("Caída Altura (Manitou)", "Fracturas", "No subir a horquillas, uso arnés si aplica.", "3 puntos de apoyo en máquina."),
+            ("Atropello Maquinaria", "Muerte", "Chaleco Alta Visibilidad, Vías peatonales.", "Contacto visual permanente."),
+            ("Caída Altura (Manitou)", "Fracturas", "No subir a horquillas, uso arnés si aplica.", "3 puntos de apoyo."),
             ("Golpes por carga", "Contusiones", "Distancia seguridad pilas madera.", "No transitar bajo carga suspendida.")
         ],
         "sustancia": "DIESEL (Supervisión)"
     },
-    "AYUDANTE DE ASERRADERO": {
-        "lugar": "Planta industrial fija (Galpón). Pisos con aserrín/viruta.",
-        "condiciones": "Ruido elevado constante. Polvo en suspensión. Iluminación artificial.",
-        "maquinas": "Sierras, Cintas, Cepilladoras, Herramientas manuales.",
-        "riesgos": [
-            ("Cortes/Amputación", "Lesión Grave", "No intervenir equipos en movimiento. Guardas.", "Uso de empujadores para madera pequeña."),
-            ("Ruido", "Hipoacusia", "Uso permanente de fonos/tapones.", "Protección auditiva certificada."),
-            ("Proyección partículas", "Lesión ocular", "Lentes herméticos. Biombos.", "No exponerse a línea de corte."),
-            ("Incendio (Polvo)", "Quemaduras", "Aseo constante, No fumar, Extintores.", "Evitar acumulación de aserrín en motores.")
-        ],
-        "sustancia": "N/A"
-    },
     "PREVENCIONISTA DE RIESGOS": {
         "lugar": "Oficina y Terreno (Faena/Aserradero).",
         "condiciones": "Oficina (Ergonomía) / Terreno (Clima, Ruido, Polvo).",
-        "maquinas": "Computador, Camioneta, Medidores ambientales.",
+        "maquinas": "Computador, Camioneta, Medidores.",
         "riesgos": [
-            ("Caídas mismo nivel", "Esguinces", "Vías despejadas, No uso celular al caminar.", "Atención al entorno y desniveles."),
-            ("Atropello en Faena", "Muerte", "Chaleco, Zapatos seguridad, Alerta.", "Respetar señalización y zonas de maquinaria."),
-            ("Radiación UV", "Quemaduras", "Bloqueador, Gorro legionario, Lentes UV.", "Aplicación bloqueador cada 2-3 horas.")
+            ("Caídas mismo nivel", "Esguinces", "Vías despejadas, No uso celular al caminar.", "Atención al entorno."),
+            ("Atropello en Faena", "Muerte", "Chaleco, Zapatos seguridad, Alerta.", "Respetar señalización maquinaria."),
+            ("Radiación UV", "Quemaduras", "Bloqueador, Gorro legionario.", "Aplicación cada 2 horas.")
+        ],
+        "sustancia": "N/A"
+    },
+    "DEFAULT": {
+        "lugar": "Instalaciones de la empresa (Faena o Planta).",
+        "maquinas": "Herramientas manuales y equipos según cargo.",
+        "riesgos": [
+            ("Caídas mismo/distinto nivel", "Contusiones", "Orden y aseo, transito seguro.", "No correr."),
+            ("Golpes por objetos", "Hematomas", "Uso de EPP básico.", "Atención a la tarea.")
         ],
         "sustancia": "N/A"
     }
 }
+# Asignar resto de cargos
+for c in LISTA_CARGOS:
+    if c not in IRL_DATA_DB:
+        if "OPERADOR" in c or "MAQUINARIA" in c: IRL_DATA_DB[c] = IRL_DATA_DB["OPERADOR DE MAQUINARIA"]
+        elif "ASERRADERO" in c: IRL_DATA_DB[c] = IRL_DATA_DB.get("AYUDANTE DE ASERRADERO", IRL_DATA_DB["DEFAULT"])
+        else: IRL_DATA_DB[c] = IRL_DATA_DB["DEFAULT"]
 
-# Mapping de cargos faltantes
+IRL_DATA_DB["AYUDANTE DE ASERRADERO"] = {
+    "lugar": "Planta industrial fija, ruido, polvo en suspensión.",
+    "maquinas": "Sierras, Cintas, Herramientas manuales.",
+    "riesgos": [
+        ("Cortes", "Amputaciones", "No intervenir equipos en movimiento.", "Uso de empujadores."),
+        ("Ruido", "Hipoacusia", "Uso permanente de fonos.", "Protección auditiva certificada."),
+        ("Proyección partículas", "Lesión ocular", "Lentes herméticos.", "Uso de biombos.")
+    ],
+    "sustancia": "N/A"
+}
 IRL_DATA_DB["OPERADOR DE ASERRADERO"] = IRL_DATA_DB["AYUDANTE DE ASERRADERO"]
 IRL_DATA_DB["ASISTENTE DE ASERRADERO"] = IRL_DATA_DB["AYUDANTE DE ASERRADERO"]
-IRL_DATA_DB["ADMINISTRATIVO"] = IRL_DATA_DB["PREVENCIONISTA DE RIESGOS"] # Riesgos similares oficina/visita
-IRL_DATA_DB["MECANICO LIDER"] = {
-    "lugar": "Taller mecánico y terreno. Presencia de aceites/grasas.",
-    "condiciones": "Ruido, vapores, posturas forzadas.",
-    "maquinas": "Herramientas manuales/eléctricas, Gatas, Esmeril.",
-    "riesgos": [
-        ("Atrapamiento", "Amputación", "Bloqueo energía (LOTO).", "No usar ropa holgada ni joyas."),
-        ("Proyección partículas", "Daño ocular", "Careta facial/Lentes.", "Uso biombo en esmerilado."),
-        ("Contacto sustancias", "Dermatitis", "Guantes Nitrilo, Crema barrera.", "Aseo personal.")
-    ],
-    "sustancia": "ACEITES / GRASAS"
-}
-IRL_DATA_DB["AYUDANTE MECANICO"] = IRL_DATA_DB["MECANICO LIDER"]
 
 
 def hash_pass(password): return hashlib.sha256(password.encode()).hexdigest()
@@ -556,8 +557,7 @@ def generar_pdf_epp_grupo(grupo_id):
         if not regs: return None
         rut_t = clean(regs[0][2]); nom_t = clean(regs[0][3]); cargo_t = clean(regs[0][4]); fecha_t = clean(regs[0][9]); firma_b64 = regs[0][10]
         buffer = io.BytesIO(); doc = SimpleDocTemplate(buffer, pagesize=legal, topMargin=20, bottomMargin=20, leftMargin=30, rightMargin=30); elements = []; styles = getSampleStyleSheet()
-        style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10); style_head = ParagraphStyle(name='Head', parent=styles['Normal'], textColor=colors.white, fontName='Helvetica-Bold', alignment=TA_CENTER, fontSize=9); style_cell = ParagraphStyle(name='Cell', parent=styles['Normal'], alignment=TA_CENTER, fontSize=9); style_title_log = ParagraphStyle(name='TitleLog', fontSize=14, fontName='Helvetica-Bold', alignment=TA_CENTER); 
-        G_CORP = HexColor('#5A2F1B'); G_WHITE = colors.white
+        style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10); style_head = ParagraphStyle(name='Head', parent=styles['Normal'], textColor=colors.white, fontName='Helvetica-Bold', alignment=TA_CENTER, fontSize=9); style_cell = ParagraphStyle(name='Cell', parent=styles['Normal'], alignment=TA_CENTER, fontSize=9) 
         
         elements.append(get_header_table("REGISTRO DE EPP", "RG-GD-01"))
         elements.append(Spacer(1, 20))
@@ -768,7 +768,7 @@ if menu == "📊 Dashboard BI":
 elif menu == "👥 Nómina & Personal":
     st.title("Base de Datos Maestra de Personal")
     tab_lista, tab_agregar, tab_editar, tab_excel = st.tabs(["📋 Lista Completa", "➕ Ingresar Nuevo", "✏️ Modificar / Editar", "📂 Carga Masiva"])
-    conn = sqlite3.connect('sgsst_v61_ds44_final.db')
+    conn = sqlite3.connect(DB_NAME)
     with tab_lista:
         df = pd.read_sql("SELECT nombre, rut, cargo, centro_costo as 'Lugar', estado FROM personal", conn); st.dataframe(df, use_container_width=True, hide_index=True); st.markdown("---"); st.subheader("🗑️ Dar de Baja / Eliminar"); col_del, col_btn = st.columns([3, 1]); rut_a_borrar = col_del.selectbox("Seleccione Trabajador a Eliminar:", df['rut'] + " - " + df['nombre'])
         if col_btn.button("Eliminar Trabajador"): rut_clean = rut_a_borrar.split(" - ")[0]; c = conn.cursor(); c.execute("DELETE FROM personal WHERE rut=?", (rut_clean,)); conn.commit(); st.success(f"Trabajador {rut_clean} eliminado."); st.rerun()
@@ -847,7 +847,7 @@ elif menu == "👥 Nómina & Personal":
 elif menu == "📱 App Móvil":
     st.title("Conexión App Móvil (Operarios)")
     st.markdown("### 📲 Panel de Registro en Terreno")
-    conn = sqlite3.connect('sgsst_v61_ds44_final.db')
+    conn = sqlite3.connect(DB_NAME)
     tab_asist, tab_insp = st.tabs(["✍️ Firmar Asistencia", "🚨 Reportar Hallazgo"])
     with tab_asist:
         st.subheader("Firma Rápida")
@@ -886,7 +886,7 @@ elif menu == "📱 App Móvil":
     conn.close()
 
 elif menu == "🎓 Gestión Capacitación":
-    st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect('sgsst_v61_ds44_final.db')
+    st.title("Plan de Capacitación y Entrenamiento"); st.markdown("**Formato Oficial: RG-GD-02**"); tab_prog, tab_firma, tab_hist = st.tabs(["📅 Crear Nueva", "✍️ Asignar/Enviar a Móvil", "🗂️ Historial y PDF"]); conn = sqlite3.connect(DB_NAME)
     with tab_prog:
         st.subheader("Nueva Capacitación")
         # --- LOGIC V55: CAMARA + SAVE STATES ---
@@ -971,7 +971,7 @@ elif menu == "🎓 Gestión Capacitación":
             opciones = [f"ID {r['id']} - {r['tema']} ({r['tipo_charla']})" for i, r in caps_activas.iterrows()]; sel_cap = st.selectbox("Seleccione Actividad:", opciones); id_cap_sel = int(sel_cap.split(" - ")[0].replace("ID ", "")); trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
             
             def enviar_asistentes_callback(id_cap, df_trab):
-                c_cb = sqlite3.connect('sgsst_v61_ds44_final.db'); cursor_cb = c_cb.cursor(); selection = st.session_state.selector_asistentes
+                c_cb = sqlite3.connect(DB_NAME); cursor_cb = c_cb.cursor(); selection = st.session_state.selector_asistentes
                 if selection:
                     for nombre in selection:
                         rut_t = df_trab[df_trab['nombre'] == nombre]['rut'].values[0]
@@ -992,7 +992,7 @@ elif menu == "🎓 Gestión Capacitación":
         if not historial.empty:
             st.dataframe(historial, use_container_width=True); opciones_hist = [f"ID {r['id']} - {r['tema']}" for i, r in historial.iterrows()]; sel_pdf = st.selectbox("Gestionar Capacitación (Firmar/PDF):", opciones_hist); id_pdf = int(sel_pdf.split(" - ")[0].replace("ID ", "")); st.markdown("#### ✍️ Firma del Difusor (Instructor)")
             
-            conn_sig = sqlite3.connect('sgsst_v61_ds44_final.db')
+            conn_sig = sqlite3.connect(DB_NAME)
             firmado_db = pd.read_sql("SELECT firma_instructor_b64 FROM capacitaciones WHERE id=?", conn_sig, params=(id_pdf,))
             conn_sig.close()
             
@@ -1032,7 +1032,7 @@ elif menu == "🦺 Registro EPP":
     if 'epp_cart' not in st.session_state:
         st.session_state.epp_cart = []
         
-    conn = sqlite3.connect('sgsst_v61_ds44_final.db')
+    conn = sqlite3.connect(DB_NAME)
     trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
     opciones_trab = [f"{r['rut']} - {r['nombre']}" for i, r in trabajadores.iterrows()]
     
@@ -1121,7 +1121,7 @@ elif menu == "🦺 Registro EPP":
 
 elif menu == "📘 Entrega RIOHS":
     st.title("Entrega Reglamento Interno (RIOHS)")
-    conn = sqlite3.connect('sgsst_v61_ds44_final.db')
+    conn = sqlite3.connect(DB_NAME)
     trabajadores = pd.read_sql("SELECT rut, nombre FROM personal", conn)
     opciones_trab = [f"{r['rut']} - {r['nombre']}" for i, r in trabajadores.iterrows()]
     
@@ -1183,7 +1183,7 @@ elif menu == "📘 Entrega RIOHS":
 
 elif menu == "📄 Generador IRL":
     st.title("Generador de IRL Automático (Dinámico)")
-    conn = sqlite3.connect('sgsst_v61_ds44_final.db')
+    conn = sqlite3.connect(DB_NAME)
     
     # 1. Seleccionar Trabajador
     trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
@@ -1222,10 +1222,10 @@ elif menu == "📄 Generador IRL":
     conn.close()
 
 elif menu == "⚠️ Matriz IPER":
-    st.title("Matriz de Riesgos"); conn = sqlite3.connect('sgsst_v61_ds44_final.db'); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
+    st.title("Matriz de Riesgos"); conn = sqlite3.connect(DB_NAME); df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn); st.dataframe(df_iper); conn.close()
 
 elif menu == "🔐 Gestión Usuarios" and st.session_state['user_role'] == "ADMINISTRADOR":
-    st.title("Administración de Usuarios del Sistema"); conn = sqlite3.connect('sgsst_v61_ds44_final.db')
+    st.title("Administración de Usuarios del Sistema"); conn = sqlite3.connect(DB_NAME)
     with st.form("new_sys_user"):
         st.subheader("Nuevo Usuario"); new_u = st.text_input("Nombre Usuario"); new_p = st.text_input("Contraseña", type="password"); new_r = st.selectbox("Rol", ["ADMINISTRADOR", "SUPERVISOR", "ASISTENTE"])
         if st.form_submit_button("Crear Usuario"):
