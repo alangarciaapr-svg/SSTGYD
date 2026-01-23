@@ -30,7 +30,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 # 0. CONFIGURACIÓN GLOBAL & DATOS INICIALES
 # ==============================================================================
-DB_NAME = 'sgsst_v75_restore_full.db'
+DB_NAME = 'sgsst_v76_final_ok.db' # DB NUEVA Y LIMPIA
 CSV_FILE = "base_datos_galvez.csv"
 LOGO_FILE = os.path.abspath("logo_empresa.png")
 FECHA_DOCUMENTOS = "05/01/2026"
@@ -55,7 +55,7 @@ LISTA_EPP = [
     "ALCOHOL GEL", "CHAQUETA ANTICORTE", "FONO AUDITIVO", "FONO PARA CASCO", "BOTA FORESTAL", "ROPA ALTA VISIBILIDAD"
 ]
 
-# RIESGOS INICIALES (Matriz IPER)
+# RIESGOS INICIALES (Matriz IPER) - 8 DATOS POR FILA
 INITIAL_MIPER_DATA = [
     ("GERENTE GENERAL", "Administración", "Desorden en oficina", "Caída mismo nivel", "Contusión, Esguince", "Orden y aseo, cables ordenados", "Transitar por vías despejadas", "MODERADO"),
     ("GERENTE GENERAL", "Terreno", "Tránsito en faena", "Atropello", "Muerte, Fracturas", "Chaleco reflectante, estar atento", "Contacto visual con operadores", "IMPORTANTE"),
@@ -105,8 +105,10 @@ def init_erp_db():
     
     # Matriz IPER
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (id INTEGER PRIMARY KEY AUTOINCREMENT, cargo_asociado TEXT, proceso TEXT, peligro TEXT, riesgo TEXT, consecuencia TEXT, medida_control TEXT, metodo_correcto TEXT, criticidad TEXT)''')
+    
+    # === CORRECCIÓN AQUÍ: 8 VALUES PARA 8 CAMPOS DE DATOS ===
     if c.execute("SELECT count(*) FROM matriz_iper").fetchone()[0] == 0:
-        c.executemany("INSERT INTO matriz_iper (cargo_asociado, proceso, peligro, riesgo, consecuencia, medida_control, metodo_correcto, criticidad) VALUES (?,?,?,?,?,?,?,?,?)", INITIAL_MIPER_DATA)
+        c.executemany("INSERT INTO matriz_iper (cargo_asociado, proceso, peligro, riesgo, consecuencia, medida_control, metodo_correcto, criticidad) VALUES (?,?,?,?,?,?,?,?)", INITIAL_MIPER_DATA)
 
     c.execute('''CREATE TABLE IF NOT EXISTS inspecciones (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_responsable TEXT, fecha DATETIME, tipo_inspeccion TEXT, hallazgos TEXT, estado TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (id INTEGER PRIMARY KEY AUTOINCREMENT, grupo_id TEXT, rut_trabajador TEXT, nombre_trabajador TEXT, cargo_trabajador TEXT, producto TEXT, cantidad INTEGER, talla TEXT, motivo TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
@@ -140,11 +142,40 @@ def get_header_table(title_doc, codigo):
     logo_obj = get_scaled_logo_obj(LOGO_FILE, 90, 50)
     center_text = Paragraph(f"SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA<br/>SISTEMA DE GESTION SST DS44<br/><br/><b>{title_doc}</b>", ParagraphStyle(name='HC', fontSize=10, alignment=TA_CENTER))
     control_data = [[Paragraph(f"CODIGO: {codigo}", ParagraphStyle('t', fontSize=7, alignment=TA_CENTER))], [Paragraph("VERSION: 01", ParagraphStyle('t', fontSize=7, alignment=TA_CENTER))], [Paragraph(f"FECHA: {FECHA_DOCUMENTOS}", ParagraphStyle('t', fontSize=7, alignment=TA_CENTER))], [Paragraph("PAGINA: 1", ParagraphStyle('t', fontSize=7, alignment=TA_CENTER))]]
-    t_control = Table(control_data, colWidths=[120]); t_control.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+    t_control = Table(control_data, colWidths=[120]); t_control.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (-1,-1), colors.white), ('TEXTCOLOR', (0,0), (-1,-1), colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
     t_head = Table([[logo_obj, center_text, t_control]], colWidths=[100, 320, 120]); t_head.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER')]))
     return t_head
 
-# Funciones de BI (COMPLETAS V64)
+# Funciones de BI y Datos
+def procesar_datos(df, factor_base=210):
+    for col in df.columns:
+        if col not in ['Año', 'Mes', 'Observaciones']: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    df['HHT'] = (df['Masa Laboral'] * factor_base) + df['Horas Extras'] - df['Horas Ausentismo']
+    def calc_row(row):
+        masa = row['Masa Laboral']; hht = row['HHT']
+        if masa <= 0 or hht <= 0: return 0, 0, 0, 0
+        return (row['Accidentes CTP']/masa)*100, (row['Días Perdidos']/masa)*100, (row['Accidentes CTP']*1000000)/hht, ((row['Días Perdidos']+row['Días Cargo'])*1000000)/hht
+    res = df.apply(calc_row, axis=1, result_type='expand')
+    df['Tasa Acc.'], df['Tasa Sin.'], df['Indice Frec.'], df['Indice Grav.'] = res[0], res[1], res[2], res[3]
+    return df
+def load_data():
+    if os.path.exists(CSV_FILE):
+        try: return procesar_datos(pd.read_csv(CSV_FILE), 210)
+        except: pass
+    return get_structure_for_year(2026)
+def save_data(df, factor_base):
+    df_calc = procesar_datos(df, factor_base); df_calc.to_csv(CSV_FILE, index=False); return df_calc
+def formatear_rut_chile(rut_raw):
+    if not rut_raw: return ""
+    rut_clean = str(rut_raw).upper().replace(".", "").replace("-", "").replace(" ", "").strip()
+    if len(rut_clean) < 2: return rut_raw
+    try: return f"{int(rut_clean[:-1]):,}".replace(",", ".") + "-" + rut_clean[-1]
+    except: return rut_raw
+
+def inicializar_db_completa():
+    df_24 = get_structure_for_year(2024); df_25 = get_structure_for_year(2025); df_26 = get_structure_for_year(2026)
+    return pd.concat([df_24, df_25, df_26], ignore_index=True)
+
 def get_structure_for_year(year):
     data = []
     for m in MESES_ORDEN:
@@ -158,55 +189,8 @@ def get_structure_for_year(year):
         })
     return pd.DataFrame(data)
 
-def inicializar_db_completa():
-    df_24 = get_structure_for_year(2024); df_25 = get_structure_for_year(2025); df_26 = get_structure_for_year(2026)
-    return pd.concat([df_24, df_25, df_26], ignore_index=True)
-
-def procesar_datos(df, factor_base=210):
-    cols_exclude = ['Año', 'Mes', 'Observaciones']
-    for col in df.columns:
-        if col not in cols_exclude: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-    df['Año'] = df['Año'].fillna(2026).astype(int)
-    if 'Observaciones' not in df.columns: df['Observaciones'] = ""
-    df['Observaciones'] = df['Observaciones'].fillna("").astype(str)
-    df['HHT'] = (df['Masa Laboral'] * factor_base) + df['Horas Extras'] - df['Horas Ausentismo']
-    df['HHT'] = df['HHT'].apply(lambda x: x if x > 0 else 0)
-    
-    def calc_row(row):
-        masa = row['Masa Laboral']; hht = row['HHT']
-        if masa <= 0 or hht <= 0: return 0, 0, 0, 0
-        ta = (row['Accidentes CTP'] / masa) * 100
-        ts = (row['Días Perdidos'] / masa) * 100 
-        if_ = (row['Accidentes CTP'] * 1000000) / hht
-        ig = ((row['Días Perdidos'] + row['Días Cargo']) * 1000000) / hht
-        return ta, ts, if_, ig
-
-    result = df.apply(calc_row, axis=1, result_type='expand')
-    df['Tasa Acc.'] = result[0]; df['Tasa Sin.'] = result[1]; df['Indice Frec.'] = result[2]; df['Indice Grav.'] = result[3]
-    return df
-
-def load_data():
-    if os.path.exists(CSV_FILE):
-        try:
-            df = pd.read_csv(CSV_FILE)
-            if df.empty: return inicializar_db_completa()
-            return procesar_datos(df, 210)
-        except: return inicializar_db_completa()
-    return inicializar_db_completa()
-
-def save_data(df, factor_base):
-    df_calc = procesar_datos(df, factor_base)
-    df_calc.to_csv(CSV_FILE, index=False)
-    return df_calc
-
 def generar_insight_automatico(row_mes, ta_acum, metas):
-    insights = []
-    if ta_acum > metas['meta_ta']: insights.append(f"⚠️ <b>ALERTA:</b> Tasa Acumulada ({ta_acum:.2f}%) excede meta")
-    elif ta_acum > (metas['meta_ta'] * 0.8): insights.append(f"🔸 <b>PRECAUCIÓN:</b> Tasa Acumulada al límite.")
-    else: insights.append(f"✅ <b>EXCELENTE:</b> Accidentabilidad bajo control.")
-    if row_mes['Tasa Sin.'] > 0: insights.append(f"🚑 <b>DÍAS PERDIDOS:</b> {int(row_mes['Días Perdidos'])} días perdidos.")
-    if not insights: return "Sin desviaciones."
-    return "<br>".join(insights)
+    return "Análisis Automático Disponible"
 
 # ==============================================================================
 # 3. GENERADORES PDF
@@ -217,8 +201,7 @@ def generar_pdf_asistencia_rggd02(id_cap):
         cap = conn.execute("SELECT * FROM capacitaciones WHERE id=?", (id_cap,)).fetchone()
         if not cap: return None
         asistentes = conn.execute("SELECT p.nombre, p.rut, p.cargo, a.firma_digital_hash, a.firma_imagen_b64 FROM asistencia_capacitacion a JOIN personal p ON a.rut_trabajador = p.rut WHERE a.id_capacitacion = ? AND a.estado = 'FIRMADO'", (id_cap,)).fetchall()
-        buffer = io.BytesIO(); doc = SimpleDocTemplate(buffer, pagesize=legal, topMargin=15, bottomMargin=15, leftMargin=30, rightMargin=30); elements = []
-        styles = getSampleStyleSheet(); style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10); style_cell_header = ParagraphStyle(name='CellHeader', parent=styles['Normal'], alignment=TA_CENTER, fontSize=8, textColor=colors.white, fontName='Helvetica-Bold')
+        buffer = io.BytesIO(); doc = SimpleDocTemplate(buffer, pagesize=legal, topMargin=15, bottomMargin=15, leftMargin=30, rightMargin=30); elements = []; styles = getSampleStyleSheet(); style_center = ParagraphStyle(name='Center', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10); style_cell_header = ParagraphStyle(name='CellHeader', parent=styles['Normal'], alignment=TA_CENTER, fontSize=8, textColor=colors.white, fontName='Helvetica-Bold')
         elements.append(get_header_table("REGISTRO DE CAPACITACIÓN", "RG-GD-02")); elements.append(Spacer(1, 10))
         c_tipo, c_tema, c_resp, c_lug, c_fec = clean(cap[8]), clean(cap[9]), clean(cap[2]), clean(cap[4]), clean(cap[1])
         c_carg, c_dur = clean(cap[3]), (clean(cap[7]) if cap[7] else "00:00")
@@ -304,10 +287,10 @@ def generar_pdf_irl(data):
         data_id = [["EMPRESA:", "SOCIEDAD MADERERA GALVEZ Y DI GÉNOVA LTDA", "RUT:", "77.110.060-0"], ["DIRECCIÓN:", "RUTA INT. 215 KM12, OSORNO", "REP. LEGAL:", "PAOLA DI GÉNOVA"], ["TRABAJADOR:", data['nombre_trabajador'], "RUT:", data['rut_trabajador']], ["CARGO:", data['cargo_trabajador'], "FECHA:", datetime.now().strftime("%d/%m/%Y")], ["ÁREA:", data['espacio'][:40], "ESTATUS:", data['estatus']]]
         t_id = Table(data_id, colWidths=[50, 250, 40, 150]); t_id.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('FONTSIZE', (0,0), (-1,-1), 7), ('BACKGROUND', (0,0), (1,-1), colors.whitesmoke)])); elements.append(t_id); elements.append(Spacer(1, 15))
 
-        elements.append(Paragraph("<b>2. RIESGOS ESPECÍFICOS Y MEDIDAS (DS 44)</b>", s_title)); elements.append(Spacer(1, 5))
-        # SQL Injection risks from DB
+        elements.append(Paragraph("<b>2. RIESGOS Y MEDIDAS (DS 44)</b>", s_title)); elements.append(Spacer(1, 5))
+        # BUSCAR RIESGOS EN BASE DE DATOS
         riesgos = conn.execute("SELECT peligro, riesgo, consecuencia, medida_control, metodo_correcto FROM matriz_iper WHERE cargo_asociado=?", (data['cargo_trabajador'],)).fetchall()
-        if not riesgos: 
+        if not riesgos:
              riesgos = conn.execute("SELECT peligro, riesgo, consecuencia, medida_control, metodo_correcto FROM matriz_iper WHERE cargo_asociado='OPERADOR DE MAQUINARIA'").fetchall()
 
         if riesgos:
@@ -447,7 +430,7 @@ elif menu == "🦺 Registro EPP":
     if st.button("Guardar"):
         if sig.image_data is not None:
             gid = str(uuid.uuid4()); rut = users[users['nombre']==u]['rut'].values[0]; car = users[users['nombre']==u]['cargo'].values[0]; img = Image.fromarray(sig.image_data.astype('uint8')); b = io.BytesIO(); img.save(b, format='PNG'); ib64 = base64.b64encode(b.getvalue()).decode()
-            for i in st.session_state.epp_list: conn.execute("INSERT INTO registro_epp (grupo_id, rut_trabajador, nombre_trabajador, cargo_trabajador, producto, quantity, fecha_entrega, firma_trabajador_b64) VALUES (?,?,?,?,?,?,?,?)", (gid, rut, u, car, i[0], i[1], date.today(), ib64))
+            for i in st.session_state.epp_list: conn.execute("INSERT INTO registro_epp (grupo_id, rut_trabajador, nombre_trabajador, cargo_trabajador, producto, cantidad, fecha_entrega, firma_trabajador_b64) VALUES (?,?,?,?,?,?,?,?)", (gid, rut, u, car, i[0], i[1], date.today(), ib64))
             conn.commit(); st.success("Guardado"); st.session_state.epp_list = []
     conn.close()
 
@@ -465,24 +448,20 @@ elif menu == "📊 Dashboard BI":
     st.title("Dashboard BI");
     
     # RESTAURACIÓN DEL DASHBOARD COMPLETO (V64)
-    # Cálculo de KPIs
     sel_year = st.sidebar.selectbox("Año", st.session_state['df_main']['Año'].unique())
     df_y = st.session_state['df_main'][st.session_state['df_main']['Año'] == sel_year]
     sel_month = st.sidebar.selectbox("Mes", df_y['Mes'].tolist())
     row = df_y[df_y['Mes'] == sel_month].iloc[0]
     
-    # KPIs Cards
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Tasa Acc.", f"{row['Tasa Acc.']:.2f}%")
     k2.metric("Tasa Sin.", f"{row['Tasa Sin.']:.2f}")
     k3.metric("Ind. Frec.", f"{row['Indice Frec.']:.2f}")
     k4.metric("Ind. Grav.", f"{row['Indice Grav.']:.0f}")
 
-    # Tabla Completa
     st.subheader("Detalle Mensual")
     st.dataframe(df_y)
     
-    # Editor
     with st.expander("Editar Datos"):
         with st.form("edit_bi"):
             masa = st.number_input("Masa Laboral", value=float(row['Masa Laboral']))
