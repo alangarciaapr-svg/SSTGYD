@@ -30,8 +30,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 # 0. CONFIGURACIÓN GLOBAL
 # ==============================================================================
-# CAMBIO DE DB PARA REINICIO LIMPIO
-DB_NAME = 'sgsst_v73_fixed.db'
+DB_NAME = 'sgsst_v74_pro.db'
 CSV_FILE = "base_datos_galvez.csv"
 LOGO_FILE = os.path.abspath("logo_empresa.png")
 FECHA_DOCUMENTOS = "05/01/2026"
@@ -39,9 +38,10 @@ G_CORP = HexColor('#5A2F1B')
 G_WHITE = colors.white
 
 # ==============================================================================
-# 1. CAPA DE DATOS E INICIALIZACIÓN
+# 1. BASE DE CONOCIMIENTOS (CARGA INICIAL)
 # ==============================================================================
-# Datos de Riesgos para Carga Inicial (8 COLUMNAS)
+
+# 1.1 RIESGOS INICIALES PARA MATRIZ IPER (Extracto de tus documentos)
 INITIAL_MIPER_DATA = [
     ("GERENTE GENERAL", "Administración", "Desorden en oficina", "Caída mismo nivel", "Contusión, Esguince", "Orden y aseo, cables ordenados", "Transitar por vías despejadas", "MODERADO"),
     ("GERENTE GENERAL", "Terreno", "Tránsito en faena", "Atropello", "Muerte, Fracturas", "Chaleco reflectante, estar atento", "Contacto visual con operadores", "IMPORTANTE"),
@@ -63,60 +63,98 @@ INITIAL_MIPER_DATA = [
     ("AYUDANTE MECANICO", "Mantención", "Herramientas manuales", "Golpe/Corte", "Herida leve", "Herramientas en buen estado", "Uso correcto herramienta", "MODERADO")
 ]
 
+# 1.2 DESCRIPCIONES DE LUGAR PARA IRL (Diccionario Estático)
+IRL_DESC_DB = {
+    "OPERADOR DE MAQUINARIA": {
+        "espacio": "Ubicación: Faena forestal. Dimensiones: Extensas. Acceso: Restringido/Irregular. Pisos: Natural, irregular, riesgo volcamiento.",
+        "ambiente": "Iluminación: Variable. Ventilación: Cabina. Ruido: Elevado (Motor). Polvo: En suspensión.",
+        "orden": "Herramientas ordenadas en caja. Cabina limpia de residuos.",
+        "maquinas": "Cosechadora, Skidder, Forwarder. Herramientas: Llaves, Extintor.",
+        "sustancia": "DIESEL"
+    },
+    "MOTOSIERRISTA": {
+        "espacio": "Bosque denso, terreno irregular, tocones y ramas.",
+        "ambiente": "Ruido: >85dB. Vibración: Alta. Clima: Extremo.",
+        "orden": "Vía de escape despejada. Combustible zona segura.",
+        "maquinas": "Motosierra, Cuñas, Hacha.",
+        "sustancia": "MEZCLA"
+    },
+    "ESTROBERO": {
+        "espacio": "Canchas madereo, pendientes, suelo resbaladizo.",
+        "ambiente": "Polvo, Ruido maquinaria, Clima variable.",
+        "orden": "Estrobos ordenados.",
+        "maquinas": "Estrobos acero, Ganchos, Radio.",
+        "sustancia": "N/A"
+    },
+    "JEFE DE PATIO": {
+        "espacio": "Patio aserradero, zonas acopio, alto tránsito.",
+        "ambiente": "Ruido constante, Polvo madera.",
+        "orden": "Vías despejadas.",
+        "maquinas": "Manitou, Camioneta, Radio.",
+        "sustancia": "DIESEL"
+    },
+    "AYUDANTE DE ASERRADERO": {
+        "espacio": "Planta industrial fija (Galpón).",
+        "ambiente": "Ruido elevado. Polvo suspensión. Iluminación artificial.",
+        "orden": "Retiro constante de aserrín/viruta.",
+        "maquinas": "Sierras, Cintas, Herramientas manuales.",
+        "sustancia": "N/A"
+    },
+    "PREVENCIONISTA DE RIESGOS": {
+        "espacio": "Oficina y Terreno.",
+        "ambiente": "Oficina (Ergonomía) / Terreno (Clima).",
+        "orden": "Escritorio limpio.",
+        "maquinas": "Computador, Camioneta.",
+        "sustancia": "N/A"
+    },
+    "DEFAULT": {
+        "espacio": "Instalaciones empresa.",
+        "ambiente": "Estándar.",
+        "orden": "Mantener orden.",
+        "maquinas": "Herramientas manuales.",
+        "sustancia": "N/A"
+    }
+}
+
+# ==============================================================================
+# 2. CAPA DE DATOS (SQL)
+# ==============================================================================
 def init_erp_db():
     conn = sqlite3.connect(DB_NAME) 
     c = conn.cursor()
     
-    # --- CREACIÓN DE TABLAS ---
-    c.execute('''CREATE TABLE IF NOT EXISTS usuarios (
-                    username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
-    
+    # Tablas Base
+    c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
     try:
         c.execute("INSERT OR IGNORE INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
     except: pass
 
-    c.execute('''CREATE TABLE IF NOT EXISTS personal (
-                    rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, 
-                    centro_costo TEXT, fecha_contrato DATE, estado TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, responsable TEXT, cargo_responsable TEXT, lugar TEXT, hora_inicio TEXT, hora_termino TEXT, duracion TEXT, tipo_charla TEXT, tema TEXT, estado TEXT, firma_instructor_b64 TEXT, evidencia_foto_b64 TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (id INTEGER PRIMARY KEY AUTOINCREMENT, id_capacitacion INTEGER, rut_trabajador TEXT, hora_firma DATETIME, firma_digital_hash TEXT, firma_imagen_b64 TEXT, estado TEXT)''')
     
-    c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, 
-                    fecha DATE, responsable TEXT, cargo_responsable TEXT, lugar TEXT, 
-                    hora_inicio TEXT, hora_termino TEXT, duracion TEXT, tipo_charla TEXT, 
-                    tema TEXT, estado TEXT, firma_instructor_b64 TEXT, evidencia_foto_b64 TEXT)''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, id_capacitacion INTEGER, 
-                    rut_trabajador TEXT, hora_firma DATETIME, firma_digital_hash TEXT, 
-                    firma_imagen_b64 TEXT, estado TEXT)''')
-    
-    # MATRIZ IPER
+    # MATRIZ IPER (Con 9 columnas: id + 8 datos)
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, cargo_asociado TEXT, proceso TEXT, 
-                    peligro TEXT, riesgo TEXT, consecuencia TEXT, medida_control TEXT, 
-                    metodo_correcto TEXT, criticidad TEXT)''')
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                    cargo_asociado TEXT, 
+                    proceso TEXT, 
+                    peligro TEXT, 
+                    riesgo TEXT, 
+                    consecuencia TEXT, 
+                    medida_control TEXT, 
+                    metodo_correcto TEXT, 
+                    criticidad TEXT)''')
     
-    # CARGA INICIAL CORREGIDA (8 VALORES = 8 SIGNOS DE INTERROGACIÓN)
-    c.execute("SELECT count(*) FROM matriz_iper")
-    if c.fetchone()[0] == 0:
+    # Carga Inicial Matriz
+    if c.execute("SELECT count(*) FROM matriz_iper").fetchone()[0] == 0:
         c.executemany("INSERT INTO matriz_iper (cargo_asociado, proceso, peligro, riesgo, consecuencia, medida_control, metodo_correcto, criticidad) VALUES (?,?,?,?,?,?,?,?)", INITIAL_MIPER_DATA)
 
-    c.execute('''CREATE TABLE IF NOT EXISTS inspecciones (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, rut_responsable TEXT, fecha DATETIME, 
-                    tipo_inspeccion TEXT, hallazgos TEXT, estado TEXT)''')
-
-    c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, grupo_id TEXT, rut_trabajador TEXT, 
-                    nombre_trabajador TEXT, cargo_trabajador TEXT, producto TEXT, cantidad INTEGER, 
-                    talla TEXT, motivo TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
-
-    c.execute('''CREATE TABLE IF NOT EXISTS entrega_riohs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, nombre_trabajador TEXT, 
-                    tipo_entrega TEXT, correo_trabajador TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS inspecciones (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_responsable TEXT, fecha DATETIME, tipo_inspeccion TEXT, hallazgos TEXT, estado TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (id INTEGER PRIMARY KEY AUTOINCREMENT, grupo_id TEXT, rut_trabajador TEXT, nombre_trabajador TEXT, cargo_trabajador TEXT, producto TEXT, cantidad INTEGER, talla TEXT, motivo TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS entrega_riohs (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, nombre_trabajador TEXT, tipo_entrega TEXT, correo_trabajador TEXT, fecha_entrega DATE, firma_trabajador_b64 TEXT)''')
 
     # Personal Default
-    c.execute("SELECT count(*) FROM personal")
-    if c.fetchone()[0] == 0:
+    if c.execute("SELECT count(*) FROM personal").fetchone()[0] == 0:
         c.executemany("INSERT OR IGNORE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", [
             ("16.781.002-0", "ALAN FABIAN GARCIA VIDAL", "PREVENCIONISTA DE RIESGOS", "OFICINA", "2025-10-21", "ACTIVO"),
             ("10.518.096-9", "OSCAR EDUARDO TRIVIÑO SALAZAR", "OPERADOR DE MAQUINARIA", "FAENA", "2024-01-01", "ACTIVO")
@@ -126,7 +164,7 @@ def init_erp_db():
     conn.close()
 
 # ==============================================================================
-# 2. SOPORTE Y LISTAS
+# 3. SOPORTE Y CONSTANTES
 # ==============================================================================
 MESES_ORDEN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 COLOR_PRIMARY = (183, 28, 28)
@@ -146,85 +184,6 @@ LISTA_EPP = [
     "ALCOHOL GEL", "CHAQUETA ANTICORTE", "FONO AUDITIVO", "FONO PARA CASCO", "BOTA FORESTAL", "ROPA ALTA VISIBILIDAD"
 ]
 
-# --- BASE DE DATOS IRL ---
-IRL_DATA_DB = {
-    "OPERADOR DE MAQUINARIA": {
-        "espacio": "Ubicación: Faena forestal. Dimensiones: Extensas. Acceso: Restringido/Irregular. Pisos: Natural, irregular, riesgo volcamiento.",
-        "ambiente": "Iluminación: Variable. Ventilación: Cabina. Ruido: Elevado (Motor). Polvo: En suspensión.",
-        "orden": "Herramientas ordenadas en caja. Cabina limpia de residuos.",
-        "maquinas": "Cosechadora, Skidder, Forwarder. Herramientas: Llaves, Extintor.",
-        "riesgos_txt": "Volcamiento, Atropello, Incendio, Golpes.",
-        "medidas_txt": "Cinturón seguridad, Cabina ROPS/FOPS, Extintor PQS, LOTO en mantención.",
-        "metodos_txt": "Check list diario, operar en pendientes autorizadas, mantener distancia.",
-        "sustancia": "DIESEL"
-    },
-    "MOTOSIERRISTA": {
-        "espacio": "Bosque denso, terreno irregular, tocones y ramas.",
-        "ambiente": "Ruido: >85dB. Vibración: Alta. Clima: Extremo.",
-        "orden": "Vía de escape despejada. Combustible zona segura.",
-        "maquinas": "Motosierra, Cuñas, Hacha.",
-        "riesgos_txt": "Cortes graves, Golpe por rama, Vibración, Ruido.",
-        "medidas_txt": "EPP Anticorte, Freno cadena, Pausas activas.",
-        "metodos_txt": "Técnica tala dirigida, Vía escape 45°.",
-        "sustancia": "MEZCLA"
-    },
-    "ESTROBERO": {
-        "espacio": "Canchas madereo, pendientes, suelo resbaladizo.",
-        "ambiente": "Polvo, Ruido maquinaria, Clima variable.",
-        "orden": "Estrobos ordenados.",
-        "maquinas": "Estrobos acero, Ganchos, Radio.",
-        "riesgos_txt": "Atropello, Golpes por cables (Latigazo), Caídas.",
-        "medidas_txt": "Chaleco Reflectante, Contacto visual, Distancia seguridad.",
-        "metodos_txt": "Nunca exponerse a línea tensión. Esperar cable quieto.",
-        "sustancia": "N/A"
-    },
-    "JEFE DE PATIO": {
-        "espacio": "Patio aserradero, zonas acopio, alto tránsito.",
-        "ambiente": "Ruido constante, Polvo madera.",
-        "orden": "Vías despejadas.",
-        "maquinas": "Manitou, Camioneta, Radio.",
-        "riesgos_txt": "Atropello, Caída altura (Manitou), Golpes carga.",
-        "medidas_txt": "Chaleco Alta Visibilidad, Vías peatonales, 3 puntos apoyo.",
-        "metodos_txt": "Contacto visual permanente. No transitar bajo carga.",
-        "sustancia": "DIESEL"
-    },
-    "AYUDANTE DE ASERRADERO": {
-        "espacio": "Planta industrial fija (Galpón).",
-        "ambiente": "Ruido elevado. Polvo suspensión. Iluminación artificial.",
-        "orden": "Retiro constante de aserrín/viruta.",
-        "maquinas": "Sierras, Cintas, Herramientas manuales.",
-        "riesgos_txt": "Cortes, Ruido, Proyección partículas, Incendio.",
-        "medidas_txt": "No intervenir movimiento, Fonos, Lentes, Extintores.",
-        "metodos_txt": "Uso empujadores. Respetar señalética.",
-        "sustancia": "N/A"
-    },
-    "PREVENCIONISTA DE RIESGOS": {
-        "espacio": "Oficina y Terreno.",
-        "ambiente": "Oficina (Ergonomía) / Terreno (Clima).",
-        "orden": "Escritorio limpio.",
-        "maquinas": "Computador, Camioneta.",
-        "riesgos_txt": "Caídas, Atropello, UV.",
-        "medidas_txt": "Vías despejadas, Chaleco, Bloqueador.",
-        "metodos_txt": "Conducción a la defensiva.",
-        "sustancia": "N/A"
-    },
-    "DEFAULT": {
-        "espacio": "Instalaciones empresa.",
-        "ambiente": "Estándar.",
-        "orden": "Mantener orden.",
-        "maquinas": "Herramientas manuales.",
-        "riesgos_txt": "Caída, Golpe.",
-        "medidas_txt": "Uso EPP, Precaución.",
-        "metodos_txt": "Seguir procedimientos.",
-        "sustancia": "N/A"
-    }
-}
-for c in LISTA_CARGOS:
-    if c not in IRL_DATA_DB: 
-        if "ASERRADERO" in c: IRL_DATA_DB[c] = IRL_DATA_DB["AYUDANTE DE ASERRADERO"]
-        elif "MECANICO" in c: IRL_DATA_DB[c] = IRL_DATA_DB["DEFAULT"]
-        else: IRL_DATA_DB[c] = IRL_DATA_DB["DEFAULT"]
-
 def hash_pass(password): return hashlib.sha256(password.encode()).hexdigest()
 def login_user(username, password):
     conn = sqlite3.connect(DB_NAME); c = conn.cursor()
@@ -243,7 +202,7 @@ def get_header_table(title_doc, codigo):
     logo_obj = get_scaled_logo_obj(LOGO_FILE, 90, 50)
     center_text = Paragraph(f"SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA<br/>SISTEMA DE GESTION SST DS44<br/><br/><b>{title_doc}</b>", ParagraphStyle(name='HC', fontSize=10, alignment=TA_CENTER))
     control_data = [[Paragraph(f"CODIGO: {codigo}", ParagraphStyle('t', fontSize=7, alignment=TA_CENTER))], [Paragraph("VERSION: 01", ParagraphStyle('t', fontSize=7, alignment=TA_CENTER))], [Paragraph(f"FECHA: {FECHA_DOCUMENTOS}", ParagraphStyle('t', fontSize=7, alignment=TA_CENTER))], [Paragraph("PAGINA: 1", ParagraphStyle('t', fontSize=7, alignment=TA_CENTER))]]
-    t_control = Table(control_data, colWidths=[120]); t_control.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (-1,-1), colors.white), ('TEXTCOLOR', (0,0), (-1,-1), colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+    t_control = Table(control_data, colWidths=[120]); t_control.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
     t_head = Table([[logo_obj, center_text, t_control]], colWidths=[100, 320, 120]); t_head.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER')]))
     return t_head
 
@@ -294,7 +253,7 @@ def generar_insight_automatico(row_mes, ta_acum, metas):
     return "Análisis Automático Disponible"
 
 # ==============================================================================
-# 3. GENERADORES PDF
+# 4. GENERADORES PDF
 # ==============================================================================
 def generar_pdf_asistencia_rggd02(id_cap):
     conn = sqlite3.connect(DB_NAME)
@@ -388,11 +347,10 @@ def generar_pdf_irl(data):
         data_id = [["EMPRESA:", "SOCIEDAD MADERERA GALVEZ Y DI GÉNOVA LTDA", "RUT:", "77.110.060-0"], ["DIRECCIÓN:", "RUTA INT. 215 KM12, OSORNO", "REP. LEGAL:", "PAOLA DI GÉNOVA"], ["TRABAJADOR:", data['nombre_trabajador'], "RUT:", data['rut_trabajador']], ["CARGO:", data['cargo_trabajador'], "FECHA:", datetime.now().strftime("%d/%m/%Y")], ["ÁREA:", data['espacio'][:40], "ESTATUS:", data['estatus']]]
         t_id = Table(data_id, colWidths=[50, 250, 40, 150]); t_id.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black), ('FONTSIZE', (0,0), (-1,-1), 7), ('BACKGROUND', (0,0), (1,-1), colors.whitesmoke)])); elements.append(t_id); elements.append(Spacer(1, 15))
 
-        elements.append(Paragraph("<b>2. RIESGOS ESPECÍFICOS Y MEDIDAS (DS 44)</b>", s_title)); elements.append(Spacer(1, 5))
-        
-        # SQL Injection risks from DB
+        elements.append(Paragraph("<b>2. RIESGOS Y MEDIDAS (DS 44)</b>", s_title)); elements.append(Spacer(1, 5))
+        # BUSCAR RIESGOS EN BASE DE DATOS
         riesgos = conn.execute("SELECT peligro, riesgo, consecuencia, medida_control, metodo_correcto FROM matriz_iper WHERE cargo_asociado=?", (data['cargo_trabajador'],)).fetchall()
-        if not riesgos: 
+        if not riesgos:
              riesgos = conn.execute("SELECT peligro, riesgo, consecuencia, medida_control, metodo_correcto FROM matriz_iper WHERE cargo_asociado='OPERADOR DE MAQUINARIA'").fetchall()
 
         if riesgos:
@@ -406,18 +364,19 @@ def generar_pdf_irl(data):
         
         elements.append(Spacer(1, 15))
         elements.append(Paragraph("<b>3. CARACTERÍSTICAS DEL LUGAR</b>", s_title))
-        t_l = Table([[Paragraph(f"<b>Espacio:</b> {data['espacio']}<br/><b>Ambiente:</b> {data['ambiente']}<br/><b>Maquinaria:</b> {data['maquinas']}", s_c)]], colWidths=[540]); t_l.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, colors.black)])); elements.append(t_l); elements.append(Spacer(1, 15))
-
-        elements.append(Paragraph("<b>4. PLAN DE EMERGENCIA</b>", s_title))
-        elements.append(Paragraph("<b>ANTES:</b> Conocer vías evacuación. <b>DURANTE:</b> Mantener calma, evacuar a Zona Seguridad. <b>DESPUÉS:</b> Esperar instrucciones.", ParagraphStyle('N', fontSize=8))); elements.append(Spacer(1, 30))
-
+        elements.append(Paragraph(f"Espacio: {data['espacio']} | Ambiente: {data['ambiente']} | Maquinaria: {data['maquinas']}", s_c))
+        elements.append(Spacer(1, 15))
+        elements.append(Paragraph("<b>4. SUSTANCIAS Y PLAN DE EMERGENCIA</b>", s_title))
+        elements.append(Paragraph(f"Sustancia: {data['sustancia']}. Emergencia: Seguir Plan de Emergencia y Vías de Evacuación. No reingresar sin autorización.", s_c))
+        
+        elements.append(Spacer(1, 30))
         t_f = Table([["__________________________", "__________________________"], ["FIRMA RELATOR", "FIRMA TRABAJADOR"]], colWidths=[250, 250]); t_f.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER')])); elements.append(t_f)
         doc.build(elements); buffer.seek(0); conn.close(); return buffer
     except: return None
     finally: conn.close()
 
 # ==============================================================================
-# 4. FRONTEND
+# 5. FRONTEND
 # ==============================================================================
 st.set_page_config(page_title="ERP SGSST - G&D", layout="wide")
 init_erp_db()
@@ -492,7 +451,7 @@ elif menu == "📄 Generador IRL":
     
     if sel:
         rut = sel.split(" - ")[0]; row = trab[trab['rut']==rut].iloc[0]
-        base = IRL_DATA_DB.get(row['cargo'], IRL_DATA_DB["DEFAULT"])
+        base = IRL_DESC_DB.get(row['cargo'], IRL_DESC_DB["DEFAULT"])
         
         with st.form("irl"):
             c1, c2 = st.columns(2); fi = c1.date_input("Inicio"); ft = c2.date_input("Fin"); dur = c1.text_input("Duración", "1h"); rel = c2.text_input("Relator"); mod = c1.selectbox("Modalidad", ["Presencial", "Online"])
@@ -503,7 +462,7 @@ elif menu == "📄 Generador IRL":
             data = {'rut_trabajador': rut, 'nombre_trabajador': row['nombre'], 'cargo_trabajador': row['cargo'],
                     'fecha_inicio': fi, 'fecha_termino': ft, 'duracion': dur, 'relator': rel, 'cargo_relator': "APR",
                     'modalidad': mod, 'espacio': esp, 'ambiente': amb, 'orden': ord, 'maquinas': maq,
-                    'estatus': st_user, 'material': False, 'material_nombre': ''}
+                    'estatus': st_user, 'material': False, 'material_nombre': '', 'sustancia': base['sustancia']}
             pdf = generar_pdf_irl(data)
             if pdf: st.download_button("Descargar IRL", pdf, f"IRL_{rut}.pdf", "application/pdf")
     conn.close()
@@ -530,7 +489,7 @@ elif menu == "🦺 Registro EPP":
     if st.button("Guardar"):
         if sig.image_data is not None:
             gid = str(uuid.uuid4()); rut = users[users['nombre']==u]['rut'].values[0]; car = users[users['nombre']==u]['cargo'].values[0]; img = Image.fromarray(sig.image_data.astype('uint8')); b = io.BytesIO(); img.save(b, format='PNG'); ib64 = base64.b64encode(b.getvalue()).decode()
-            for i in st.session_state.epp_list: conn.execute("INSERT INTO registro_epp (grupo_id, rut_trabajador, nombre_trabajador, cargo_trabajador, producto, quantity, fecha_entrega, firma_trabajador_b64) VALUES (?,?,?,?,?,?,?,?)", (gid, rut, u, car, i[0], i[1], date.today(), ib64))
+            for i in st.session_state.epp_list: conn.execute("INSERT INTO registro_epp (grupo_id, rut_trabajador, nombre_trabajador, cargo_trabajador, producto, cantidad, fecha_entrega, firma_trabajador_b64) VALUES (?,?,?,?,?,?,?,?)", (gid, rut, u, car, i[0], i[1], date.today(), ib64))
             conn.commit(); st.success("Guardado"); st.session_state.epp_list = []
     conn.close()
 
@@ -546,3 +505,6 @@ elif menu == "📘 Entrega RIOHS":
 elif menu == "📊 Dashboard BI":
     if 'df_main' not in st.session_state: st.session_state['df_main'] = load_data()
     st.title("Dashboard BI"); st.dataframe(st.session_state['df_main'].head())
+
+elif menu == "📱 App Móvil":
+    st.title("App Móvil"); conn = sqlite3.connect(DB_NAME); st.info("Módulo Operario - Funcionalidad Firma QR")
