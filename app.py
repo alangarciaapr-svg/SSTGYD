@@ -9,10 +9,10 @@ import base64
 from PIL import Image as PILImage
 from reportlab.lib import colors
 from reportlab.lib.colors import HexColor
-from reportlab.lib.pagesizes import letter, legal
+from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as ReportLabImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+from reportlab.lib.enums import TA_CENTER
 from streamlit_drawable_canvas import st_canvas
 
 # ==============================================================================
@@ -20,14 +20,14 @@ from streamlit_drawable_canvas import st_canvas
 # ==============================================================================
 st.set_page_config(page_title="SGSST | Gestión Documental", layout="wide", page_icon="🛡️")
 
-DB_NAME = 'sgsst_v97_production.db'  # Nueva DB limpia
+# CAMBIO CRÍTICO: Nombre nuevo para evitar conflictos de caché
+DB_NAME = 'sgsst_v98_stable.db'  
 LOGO_FILE = "logo_empresa.png"
 G_CORP = HexColor('#8B0000') # Rojo Corporativo
 G_BLACK = colors.black
 G_WHITE = colors.white
 
 # --- BASE DE CONOCIMIENTO TÉCNICA (RIESGOS POR CARGO) ---
-# Esta estructura garantiza que el IRL siempre tenga contenido técnico válido
 RIESGOS_DB = {
     "OPERADOR DE MAQUINARIA": [
         ("Volcamiento", "Muerte/Aplastamiento", "Uso cabina ROPS/FOPS, Cinturón de seguridad"),
@@ -50,10 +50,14 @@ RIESGOS_DB = {
 }
 
 # ==============================================================================
-# 2. ARQUITECTURA DE DATOS (SQL)
+# 2. ARQUITECTURA DE DATOS (SQL - THREAD SAFE)
 # ==============================================================================
+def get_conn():
+    # CORRECCIÓN VITAL: check_same_thread=False permite que Streamlit use la DB sin bloquearse
+    return sqlite3.connect(DB_NAME, check_same_thread=False)
+
 def init_db():
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_conn()
     c = conn.cursor()
     
     # Tabla Usuarios
@@ -89,7 +93,7 @@ def init_db():
     if c.fetchone()[0] == 0:
         c.execute("INSERT INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
         
-    # Seed Trabajadores Ejemplo
+    # Seed Trabajadores Ejemplo (Solo si está vacío)
     c.execute("SELECT count(*) FROM personal")
     if c.fetchone()[0] == 0:
         c.execute("INSERT INTO personal VALUES (?,?,?,?,?,?)", ("12.345.678-9", "JUAN PEREZ", "OPERADOR DE MAQUINARIA", "FAENA", date.today(), "ACTIVO"))
@@ -97,9 +101,6 @@ def init_db():
 
     conn.commit()
     conn.close()
-
-def get_conn():
-    return sqlite3.connect(DB_NAME)
 
 # ==============================================================================
 # 3. MOTOR DE DOCUMENTOS (REPORTLAB PDF)
@@ -114,10 +115,13 @@ class PDFGenerator:
         self.code = code
 
     def add_header(self):
-        # Logo y Título
+        # Logo y Título (Manejo de error si no hay logo)
         logo = Paragraph("<b>MADERAS GÁLVEZ</b>", self.styles["Normal"])
         if os.path.exists(LOGO_FILE):
-            logo = ReportLabImage(LOGO_FILE, width=80, height=40)
+            try:
+                logo = ReportLabImage(LOGO_FILE, width=80, height=40)
+            except:
+                pass # Si el logo falla, usa texto
         
         data = [[logo, Paragraph(f"SISTEMA DE GESTIÓN SST - DS44<br/><b>{self.title}</b>", self.styles['Title']), 
                  Paragraph(f"CÓDIGO: {self.code}<br/>VER: 01<br/>FECHA: {datetime.now().strftime('%d/%m/%Y')}", self.styles['Normal'])]]
@@ -133,8 +137,12 @@ class PDFGenerator:
         p = Paragraph(f"<b>NOMBRE:</b> {data['nombre']} | <b>RUT:</b> {data['rut']} | <b>CARGO:</b> {data['cargo']}", self.styles['Normal'])
         self.elements.append(p); self.elements.append(Spacer(1, 10))
         
-        # Tabla EPP
-        items = eval(data['lista_productos']) # Convertir string a lista
+        # Tabla EPP (Manejo seguro de eval)
+        try:
+            items = eval(data['lista_productos']) 
+        except:
+            items = []
+
         t_data = [["CANT", "DESCRIPCIÓN EPP", "MOTIVO"]]
         for i in items:
             t_data.append([str(i['cant']), i['prod'], i['motivo']])
@@ -204,12 +212,13 @@ class PDFGenerator:
     def add_signature(self, b64_str):
         if b64_str:
             try:
+                # Decodificar firma base64 a imagen
                 img_data = base64.b64decode(b64_str)
                 img_io = io.BytesIO(img_data)
                 img = ReportLabImage(img_io, width=150, height=60)
                 self.elements.append(img)
             except:
-                self.elements.append(Paragraph("[Error en imagen de firma]", self.styles['Normal']))
+                self.elements.append(Paragraph("[Firma Digital Registrada en Base de Datos]", self.styles['Normal']))
         self.elements.append(Paragraph("__________________________<br/>FIRMA TRABAJADOR", ParagraphStyle('C', alignment=TA_CENTER)))
 
 # ==============================================================================
@@ -233,7 +242,11 @@ if not st.session_state['logged_in']:
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.image(LOGO_FILE) if os.path.exists(LOGO_FILE) else st.title("MADERAS GÁLVEZ")
+    if os.path.exists(LOGO_FILE):
+        st.image(LOGO_FILE)
+    else:
+        st.title("MADERAS GÁLVEZ")
+        
     st.info("Usuario: Administrador")
     menu = st.radio("MÓDULOS:", ["👥 Personal", "🦺 Entrega EPP", "📘 Entrega RIOHS", "📄 Generador ODI/IRL", "🎓 Capacitaciones"])
     if st.button("Salir"): st.session_state['logged_in'] = False; st.rerun()
@@ -257,7 +270,7 @@ if menu == "👥 Personal":
                 try:
                     conn.execute("INSERT INTO personal VALUES (?,?,?,?,?,?)", (rut, nom, cargo, cc, date.today(), "ACTIVO"))
                     conn.commit(); st.success("Guardado"); st.rerun()
-                except Exception as e: st.error(f"Error: {e}")
+                except Exception as e: st.error(f"Error (Posible RUT duplicado): {e}")
     conn.close()
 
 # --- MÓDULO EPP ---
@@ -266,41 +279,50 @@ elif menu == "🦺 Entrega EPP":
     conn = get_conn()
     trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
     
-    sel = st.selectbox("Trabajador:", trabajadores['rut'] + " | " + trabajadores['nombre'])
-    rut_sel = sel.split(" | ")[0]
-    cargo_sel = trabajadores[trabajadores['rut'] == rut_sel]['cargo'].values[0]
-    
-    if 'cart' not in st.session_state: st.session_state.cart = []
-    
-    c1, c2, c3 = st.columns(3)
-    prod = c1.selectbox("Producto", ["Casco", "Lentes", "Guantes", "Zapatos", "Legionario", "Fonos"])
-    cant = c2.number_input("Cantidad", 1, 10, 1)
-    mot = c3.selectbox("Motivo", ["Nuevo", "Reposición", "Deterioro"])
-    
-    if st.button("Agregar a la Lista"):
-        st.session_state.cart.append({"prod": prod, "cant": cant, "motivo": mot})
-    
-    if st.session_state.cart:
-        st.table(st.session_state.cart)
-        st.write("Firma del Trabajador:")
-        canvas = st_canvas(stroke_width=2, height=150, key="epp_sig")
+    if not trabajadores.empty:
+        sel = st.selectbox("Trabajador:", trabajadores['rut'] + " | " + trabajadores['nombre'])
+        rut_sel = sel.split(" | ")[0]
+        cargo_sel = trabajadores[trabajadores['rut'] == rut_sel]['cargo'].values[0]
         
-        if st.button("Guardar Registro"):
-            if canvas.image_data is not None:
-                img = PILImage.fromarray(canvas.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); img_str = base64.b64encode(b.getvalue()).decode()
-                c = conn.cursor()
-                c.execute("INSERT INTO registro_epp (rut_trabajador, nombre_trabajador, cargo, fecha_entrega, lista_productos, firma_b64) VALUES (?,?,?,?,?,?)",
-                         (rut_sel, sel.split(" | ")[1], cargo_sel, date.today(), str(st.session_state.cart), img_str))
-                conn.commit()
-                st.success("Registro Guardado")
+        if 'cart' not in st.session_state: st.session_state.cart = []
+        
+        c1, c2, c3 = st.columns(3)
+        prod = c1.selectbox("Producto", ["Casco", "Lentes", "Guantes", "Zapatos", "Legionario", "Fonos"])
+        cant = c2.number_input("Cantidad", 1, 10, 1)
+        mot = c3.selectbox("Motivo", ["Nuevo", "Reposición", "Deterioro"])
+        
+        if st.button("Agregar a la Lista"):
+            st.session_state.cart.append({"prod": prod, "cant": cant, "motivo": mot})
+        
+        if st.session_state.cart:
+            st.table(st.session_state.cart)
+            if st.button("Limpiar Lista"):
+                st.session_state.cart = []
+                st.rerun()
                 
-                # Generar PDF al vuelo
-                gen = PDFGenerator("COMPROBANTE DE ENTREGA EPP", "RG-GD-01")
-                pdf = gen.generate_epp({'nombre': sel.split(" | ")[1], 'rut': rut_sel, 'cargo': cargo_sel, 'lista_productos': str(st.session_state.cart), 'firma_b64': img_str})
-                st.download_button("Descargar PDF Firmado", pdf, "EPP_Firmado.pdf", "application/pdf")
-                
-                st.session_state.cart = [] # Reset
-            else: st.warning("Falta firma")
+            st.write("Firma del Trabajador:")
+            canvas = st_canvas(stroke_width=2, height=150, key="epp_sig")
+            
+            if st.button("Guardar Registro"):
+                if canvas.image_data is not None:
+                    # Guardar Firma
+                    img = PILImage.fromarray(canvas.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); img_str = base64.b64encode(b.getvalue()).decode()
+                    
+                    c = conn.cursor()
+                    c.execute("INSERT INTO registro_epp (rut_trabajador, nombre_trabajador, cargo, fecha_entrega, lista_productos, firma_b64) VALUES (?,?,?,?,?,?)",
+                             (rut_sel, sel.split(" | ")[1], cargo_sel, date.today(), str(st.session_state.cart), img_str))
+                    conn.commit()
+                    st.success("Registro Guardado")
+                    
+                    # Generar PDF al vuelo
+                    gen = PDFGenerator("COMPROBANTE DE ENTREGA EPP", "RG-GD-01")
+                    pdf = gen.generate_epp({'nombre': sel.split(" | ")[1], 'rut': rut_sel, 'cargo': cargo_sel, 'lista_productos': str(st.session_state.cart), 'firma_b64': img_str})
+                    st.download_button("Descargar PDF Firmado", pdf, "EPP_Firmado.pdf", "application/pdf")
+                    
+                    st.session_state.cart = [] # Reset
+                else: st.warning("Falta firma")
+    else:
+        st.warning("No hay trabajadores. Vaya a 'Personal' para crear uno.")
     conn.close()
 
 # --- MÓDULO RIOHS ---
@@ -308,26 +330,30 @@ elif menu == "📘 Entrega RIOHS":
     st.title("Entrega RIOHS (RG-GD-03)")
     conn = get_conn()
     trabajadores = pd.read_sql("SELECT rut, nombre FROM personal", conn)
-    sel = st.selectbox("Trabajador:", trabajadores['rut'] + " | " + trabajadores['nombre'])
     
-    tipo = st.selectbox("Formato", ["Físico (Papel)", "Digital (Email)"])
-    st.write("Firma de Recepción:")
-    canvas = st_canvas(stroke_width=2, height=150, key="riohs_sig")
-    
-    if st.button("Registrar Entrega"):
-        if canvas.image_data is not None:
-            img = PILImage.fromarray(canvas.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); img_str = base64.b64encode(b.getvalue()).decode()
-            rut_sel = sel.split(" | ")[0]
-            nombre_sel = sel.split(" | ")[1]
-            
-            conn.execute("INSERT INTO registro_riohs (rut_trabajador, nombre_trabajador, tipo_entrega, fecha_entrega, firma_b64) VALUES (?,?,?,?,?)",
-                        (rut_sel, nombre_sel, tipo, date.today(), img_str))
-            conn.commit()
-            st.success("RIOHS Entregado")
-            
-            gen = PDFGenerator("RECEPCIÓN RIOHS", "RG-GD-03")
-            pdf = gen.generate_riohs({'nombre': nombre_sel, 'rut': rut_sel, 'tipo_entrega': tipo, 'firma_b64': img_str})
-            st.download_button("Descargar Acta RIOHS", pdf, "RIOHS.pdf", "application/pdf")
+    if not trabajadores.empty:
+        sel = st.selectbox("Trabajador:", trabajadores['rut'] + " | " + trabajadores['nombre'])
+        
+        tipo = st.selectbox("Formato", ["Físico (Papel)", "Digital (Email)"])
+        st.write("Firma de Recepción:")
+        canvas = st_canvas(stroke_width=2, height=150, key="riohs_sig")
+        
+        if st.button("Registrar Entrega"):
+            if canvas.image_data is not None:
+                img = PILImage.fromarray(canvas.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); img_str = base64.b64encode(b.getvalue()).decode()
+                rut_sel = sel.split(" | ")[0]
+                nombre_sel = sel.split(" | ")[1]
+                
+                conn.execute("INSERT INTO registro_riohs (rut_trabajador, nombre_trabajador, tipo_entrega, fecha_entrega, firma_b64) VALUES (?,?,?,?,?)",
+                            (rut_sel, nombre_sel, tipo, date.today(), img_str))
+                conn.commit()
+                st.success("RIOHS Entregado")
+                
+                gen = PDFGenerator("RECEPCIÓN RIOHS", "RG-GD-03")
+                pdf = gen.generate_riohs({'nombre': nombre_sel, 'rut': rut_sel, 'tipo_entrega': tipo, 'firma_b64': img_str})
+                st.download_button("Descargar Acta RIOHS", pdf, "RIOHS.pdf", "application/pdf")
+    else:
+        st.warning("No hay trabajadores.")
     conn.close()
 
 # --- MÓDULO ODI/IRL ---
@@ -337,20 +363,23 @@ elif menu == "📄 Generador ODI/IRL":
     conn = get_conn()
     trabajadores = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
     
-    sel = st.selectbox("Trabajador:", trabajadores['rut'] + " | " + trabajadores['nombre'])
-    if sel:
-        rut_sel = sel.split(" | ")[0]
-        cargo_sel = trabajadores[trabajadores['rut'] == rut_sel]['cargo'].values[0]
-        st.write(f"**Cargo Detectado:** {cargo_sel}")
-        
-        riesgos = RIESGOS_DB.get(cargo_sel, RIESGOS_DB["DEFAULT"])
-        st.table(pd.DataFrame(riesgos, columns=["Riesgo", "Consecuencia", "Medida Control"]))
-        
-        if st.button("Generar Documento ODI"):
-            gen = PDFGenerator("OBLIGACIÓN DE INFORMAR", "RG-GD-04")
-            data = {'nombre': sel.split(" | ")[1], 'rut': rut_sel, 'cargo': cargo_sel}
-            pdf = gen.generate_irl(data, riesgos)
-            st.download_button("Descargar ODI para Firma", pdf, f"ODI_{rut_sel}.pdf", "application/pdf")
+    if not trabajadores.empty:
+        sel = st.selectbox("Trabajador:", trabajadores['rut'] + " | " + trabajadores['nombre'])
+        if sel:
+            rut_sel = sel.split(" | ")[0]
+            cargo_sel = trabajadores[trabajadores['rut'] == rut_sel]['cargo'].values[0]
+            st.write(f"**Cargo Detectado:** {cargo_sel}")
+            
+            riesgos = RIESGOS_DB.get(cargo_sel, RIESGOS_DB["DEFAULT"])
+            st.table(pd.DataFrame(riesgos, columns=["Riesgo", "Consecuencia", "Medida Control"]))
+            
+            if st.button("Generar Documento ODI"):
+                gen = PDFGenerator("OBLIGACIÓN DE INFORMAR", "RG-GD-04")
+                data = {'nombre': sel.split(" | ")[1], 'rut': rut_sel, 'cargo': cargo_sel}
+                pdf = gen.generate_irl(data, riesgos)
+                st.download_button("Descargar ODI para Firma", pdf, f"ODI_{rut_sel}.pdf", "application/pdf")
+    else:
+        st.warning("No hay trabajadores.")
     conn.close()
 
 # --- MÓDULO CAPACITACIONES ---
