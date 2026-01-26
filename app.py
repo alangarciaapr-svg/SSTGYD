@@ -13,8 +13,8 @@ import matplotlib.pyplot as plt
 import plotly.express as px
 from reportlab.lib import colors
 from reportlab.lib.colors import HexColor
-from reportlab.lib.pagesizes import letter, legal, landscape
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage, PageBreak
+from reportlab.lib.pagesizes import letter, legal
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 from streamlit_drawable_canvas import st_canvas
@@ -34,7 +34,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP PRO", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v102_docmaster.db'
+DB_NAME = 'sgsst_v103_rhmaster.db' # Actualización de DB
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
@@ -71,7 +71,7 @@ def init_db():
     
     # Documentos y Operaciones
     c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, tema TEXT, tipo_actividad TEXT, responsable_rut TEXT, estado TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (id INTEGER PRIMARY KEY AUTOINCREMENT, capacitacion_id INTEGER, trabajador_rut TEXT, nombre_trabajador TEXT, cargo_trabajador TEXT, estado TEXT)''') # Se agregan campos para facilitar el PDF
+    c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (id INTEGER PRIMARY KEY AUTOINCREMENT, capacitacion_id INTEGER, trabajador_rut TEXT, nombre_trabajador TEXT, cargo_trabajador TEXT, estado TEXT)''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_entrega DATE, rut_trabajador TEXT, nombre_trabajador TEXT, cargo TEXT, lista_productos TEXT, firma_b64 TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS registro_riohs (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_entrega DATE, rut_trabajador TEXT, nombre_trabajador TEXT, tipo_entrega TEXT, firma_b64 TEXT)''')
@@ -151,13 +151,11 @@ class DocumentosLegalesPDF:
 
     def generar_epp(self, data):
         self._header()
-        # Info Trabajador
         info = [[f"NOMBRE: {data['nombre']}", f"RUT: {data['rut']}"], [f"CARGO: {data['cargo']}", f"FECHA: {data['fecha']}"]]
         t_info = Table(info, colWidths=[260, 260])
         t_info.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (-1,-1), colors.whitesmoke)]))
         self.elements.append(t_info); self.elements.append(Spacer(1, 15))
         
-        # Tabla Productos
         items = eval(data['lista'])
         t_data = [["CANT", "DESCRIPCIÓN EPP"]]
         for i in items: t_data.append([str(i.split('(')[1].replace(')','')), i.split('(')[0]])
@@ -209,17 +207,14 @@ class DocumentosLegalesPDF:
 
     def generar_asistencia_capacitacion(self, data_cap, asistentes):
         self._header()
-        # Datos Capacitación
         c = [[f"ACTIVIDAD: {data_cap['tema']}", f"TIPO: {data_cap['tipo']}"], [f"RELATOR: {data_cap['resp']}", f"FECHA: {data_cap['fecha']}"]]
         tc = Table(c, colWidths=[260, 260])
         tc.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (-1,-1), colors.whitesmoke)]))
         self.elements.append(tc); self.elements.append(Spacer(1, 15))
         
-        # Tabla Asistentes
         self.elements.append(Paragraph("<b>LISTA DE ASISTENCIA</b>", self.styles['Heading3']))
         a_data = [["NOMBRE", "RUT", "CARGO", "FIRMA"]]
         for a in asistentes:
-            # Aquí podríamos intentar poner la imagen si la tuvieramos individual, por ahora espacio firma
             a_data.append([a['nombre'], a['rut'], a['cargo'], "__________________"])
             
         ta = Table(a_data, colWidths=[180, 80, 120, 140], repeatRows=1)
@@ -250,8 +245,8 @@ if not st.session_state['logged_in']:
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("ERP V102 - Doc Master")
-    menu = st.radio("MENÚ", ["📊 Dashboard", "👥 Personal", "🛡️ Matriz IPER", "🦺 Entrega EPP", "📘 Entrega RIOHS", "⚖️ Generador ODI/IRL", "🎓 Capacitaciones", "🤝 Comité Paritario", "🚨 Incidentes"])
+    st.caption("ERP V103 - RH Master")
+    menu = st.radio("MENÚ", ["📊 Dashboard", "👥 Gestión Personas", "🛡️ Matriz IPER", "🦺 Entrega EPP", "📘 Entrega RIOHS", "⚖️ Generador ODI/IRL", "🎓 Capacitaciones", "🤝 Comité Paritario", "🚨 Incidentes"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
 
 # --- DASHBOARD ---
@@ -280,26 +275,97 @@ if menu == "📊 Dashboard":
         st.dataframe(audit, use_container_width=True)
         conn.close()
 
-# --- PERSONAL ---
-elif menu == "👥 Personal":
-    st.markdown("<div class='main-header'>Gestión de Personas</div>", unsafe_allow_html=True)
-    tab1, tab2 = st.tabs(["Base de Datos", "Carpeta Digital"])
+# --- GESTIÓN PERSONAS (MEJORADO V103) ---
+elif menu == "👥 Gestión Personas":
+    st.markdown("<div class='main-header'>Gestión de Personas (RH)</div>", unsafe_allow_html=True)
+    
+    # NUEVA ESTRUCTURA DE TABS
+    tab_list, tab_carga, tab_new, tab_dig = st.tabs(["📋 Nómina & Edición", "📂 Carga Masiva (Excel/CSV)", "➕ Nuevo Manual", "🗂️ Carpeta Digital"])
+    
     conn = get_conn()
-    with tab1:
-        df = pd.read_sql("SELECT rut, nombre, cargo, estado FROM personal", conn)
-        st.dataframe(df, use_container_width=True)
-        with st.expander("➕ Nuevo"):
-            with st.form("add"):
-                r = st.text_input("RUT"); n = st.text_input("Nombre"); c = st.selectbox("Cargo", LISTA_CARGOS)
-                if st.form_submit_button("Guardar"):
-                    conn.execute("INSERT INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (r, n, c, "FAENA", date.today(), "ACTIVO"))
+    
+    with tab_list:
+        st.info("💡 Edite los datos directamente en la tabla y presione 'Guardar Cambios'")
+        df_p = pd.read_sql("SELECT rut, nombre, cargo, centro_costo, estado FROM personal", conn)
+        
+        # Editor interactivo (Modificaciones manuales rápidas)
+        edited_df = st.data_editor(df_p, num_rows="dynamic", key="editor_personal", use_container_width=True)
+        
+        if st.button("💾 Guardar Cambios Nómina"):
+            # Lógica de actualización (UPSERT simplificado borrando y reinsertando por simplicidad en demo)
+            # En producción se recomienda UPDATE por RUT
+            try:
+                c = conn.cursor()
+                for index, row in edited_df.iterrows():
+                    c.execute("""
+                        UPDATE personal SET nombre=?, cargo=?, centro_costo=?, estado=? 
+                        WHERE rut=?
+                    """, (row['nombre'], row['cargo'], row['centro_costo'], row['estado'], row['rut']))
+                conn.commit()
+                st.success("Nómina actualizada correctamente.")
+                registrar_auditoria(st.session_state['user'], "PERSONAL", "Edición masiva nómina")
+            except Exception as e:
+                st.error(f"Error al guardar: {e}")
+
+    with tab_carga:
+        st.subheader("Importar Trabajadores desde Plantilla")
+        st.markdown("Suba su archivo `.csv` o `.xlsx`. Columnas requeridas: **NOMBRE, RUT, CARGO, FECHA DE CONTRATO**")
+        
+        up_file = st.file_uploader("Cargar Archivo", type=['csv', 'xlsx'])
+        
+        if up_file:
+            try:
+                if up_file.name.endswith('.csv'):
+                    df_upload = pd.read_csv(up_file)
+                else:
+                    df_upload = pd.read_excel(up_file)
+                
+                st.write("Vista Previa:", df_upload.head())
+                
+                if st.button("🚀 Procesar Carga Masiva"):
+                    count = 0
+                    c = conn.cursor()
+                    for index, row in df_upload.iterrows():
+                        # Mapeo de columnas según tu plantilla
+                        rut_val = str(row.get('RUT', '')).strip()
+                        nom_val = str(row.get('NOMBRE', '')).strip()
+                        car_val = str(row.get('CARGO', '')).strip()
+                        fec_val = pd.to_datetime(row.get('FECHA DE CONTRATO', date.today())).date()
+                        
+                        if rut_val and nom_val:
+                            # INSERT OR IGNORE para no duplicar si ya existe
+                            c.execute("""
+                                INSERT OR REPLACE INTO personal 
+                                (rut, nombre, cargo, centro_costo, fecha_contrato, estado) 
+                                VALUES (?,?,?,?,?,?)
+                            """, (rut_val, nom_val, car_val, "FAENA", fec_val, "ACTIVO"))
+                            count += 1
+                    
+                    conn.commit()
+                    st.success(f"Proceso completado. {count} trabajadores procesados.")
+                    registrar_auditoria(st.session_state['user'], "CARGA_MASIVA", f"{count} registros importados")
+            
+            except Exception as e:
+                st.error(f"Error al procesar archivo: {e}")
+
+    with tab_new:
+        with st.form("add_p_manual"):
+            c1, c2 = st.columns(2)
+            r = c1.text_input("RUT"); n = c2.text_input("Nombre")
+            cg = c1.selectbox("Cargo", LISTA_CARGOS); cc = c2.selectbox("Centro Costo", ["FAENA", "ASERRADERO", "OFICINA"])
+            if st.form_submit_button("Guardar Trabajador"):
+                try:
+                    conn.execute("INSERT INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (r, n, cg, cc, date.today(), "ACTIVO"))
                     conn.commit(); st.success("Guardado"); st.rerun()
-    with tab2:
-        df = pd.read_sql("SELECT rut, nombre FROM personal", conn)
-        if not df.empty:
-            sel = st.selectbox("Trabajador", df['rut'] + " - " + df['nombre'])
+                except: st.error("Error: RUT duplicado")
+
+    with tab_dig:
+        df_all = pd.read_sql("SELECT rut, nombre FROM personal", conn)
+        if not df_all.empty:
+            sel = st.selectbox("Seleccionar Trabajador:", df_all['rut'] + " - " + df_all['nombre'])
             if QR_AVAILABLE:
-                if st.button("🪪 Credencial QR"): st.info("Módulo Credencial Activo (Ver V101)")
+                if st.button("🪪 Credencial QR"): st.info("Módulo Credencial Activo")
+    
     conn.close()
 
 # --- EPP (PDF MEJORADO) ---
