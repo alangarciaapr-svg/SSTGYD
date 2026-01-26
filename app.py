@@ -34,17 +34,26 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP PRO", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v104_fixed.db' # DB Actualizada con corrección
+DB_NAME = 'sgsst_v106_irl_ds44.db' # Nueva versión DB
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 
-# Estilos CSS
+# Estilos CSS (Alertas Compactas)
 st.markdown("""
     <style>
-    .main-header {font-size: 2.2rem; font-weight: 700; color: #2C3E50; border-bottom: 3px solid #8B0000; margin-bottom: 20px;}
-    .alert-box {padding: 12px; border-radius: 6px; margin-bottom: 8px; font-weight: 600;}
-    .alert-high {background-color: #ffebee; color: #b71c1c; border-left: 5px solid #d32f2f;}
+    .main-header {font-size: 2.0rem; font-weight: 700; color: #2C3E50; border-bottom: 2px solid #8B0000; margin-bottom: 15px;}
+    .alert-box {
+        padding: 8px 12px; 
+        border-radius: 4px; 
+        margin-bottom: 6px; 
+        font-size: 0.85rem; 
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+    }
+    .alert-high {background-color: #ffebee; color: #b71c1c; border-left: 4px solid #d32f2f;}
+    .alert-ok {background-color: #e8f5e9; color: #2e7d32; border-left: 4px solid #388e3c;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -102,18 +111,32 @@ def registrar_auditoria(usuario, accion, detalle):
         conn.commit(); conn.close()
     except: pass
 
+# --- ALERTAS DS44 (IRL ACTUALIZADO) ---
 def get_alertas():
     conn = get_conn()
     alertas = []
     trabs = pd.read_sql("SELECT rut, nombre FROM personal WHERE estado='ACTIVO'", conn)
     for i, t in trabs.iterrows():
-        count = pd.read_sql("SELECT count(*) FROM asistencia_capacitacion WHERE trabajador_rut=?", conn, params=(t['rut'],)).iloc[0,0]
-        if count == 0: alertas.append(f"⚠️ Falta ODI/Inducción para: {t['nombre']}")
+        rut = t['rut']
+        falta = []
+        
+        # 1. Chequeo IRL (Ex-ODI) - Se asume que la asistencia a inducción cubre IRL
+        irl_ok = pd.read_sql("SELECT count(*) FROM asistencia_capacitacion WHERE trabajador_rut=?", conn, params=(rut,)).iloc[0,0] > 0
+        if not irl_ok: falta.append("IRL")
+        
+        riohs_ok = pd.read_sql("SELECT count(*) FROM registro_riohs WHERE rut_trabajador=?", conn, params=(rut,)).iloc[0,0] > 0
+        if not riohs_ok: falta.append("RIOHS")
+        
+        epp_ok = pd.read_sql("SELECT count(*) FROM registro_epp WHERE rut_trabajador=?", conn, params=(rut,)).iloc[0,0] > 0
+        if not epp_ok: falta.append("EPP")
+        
+        if falta:
+            alertas.append(f"⚠️ <b>{t['nombre']}</b>: Pendiente {', '.join(falta)}")
     conn.close()
     return alertas
 
 # ==============================================================================
-# 3. MOTOR DE DOCUMENTOS LEGALES (REPORTLAB PROFESIONAL)
+# 3. MOTOR DE DOCUMENTOS LEGALES (REPORTLAB)
 # ==============================================================================
 class DocumentosLegalesPDF:
     def __init__(self, titulo_doc, codigo_doc):
@@ -132,7 +155,7 @@ class DocumentosLegalesPDF:
             except: pass
             
         data = [[logo, Paragraph(f"SISTEMA DE GESTIÓN SST - DS44<br/><b>{self.titulo}</b>", ParagraphStyle('T', alignment=TA_CENTER, fontSize=12, fontName='Helvetica-Bold')), 
-                 Paragraph(f"CÓDIGO: {self.codigo}<br/>VERSIÓN: 01<br/>FECHA: {datetime.now().strftime('%d/%m/%Y')}", ParagraphStyle('C', alignment=TA_CENTER, fontSize=8))]]
+                 Paragraph(f"CÓDIGO: {self.codigo}<br/>VERSIÓN: 02<br/>FECHA: {datetime.now().strftime('%d/%m/%Y')}", ParagraphStyle('C', alignment=TA_CENTER, fontSize=8))]]
         
         t = Table(data, colWidths=[100, 320, 100])
         t.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER')]))
@@ -184,22 +207,31 @@ class DocumentosLegalesPDF:
         self.doc.build(self.elements); self.buffer.seek(0)
         return self.buffer
 
-    def generar_odi(self, data, riesgos):
+    # --- CAMBIO IMPORTANTE: GENERACIÓN DE IRL (NO ODI) ---
+    def generar_irl(self, data, riesgos):
         self._header()
         info = [["EMPRESA:", "MADERAS GÁLVEZ LTDA", "RUT:", "77.110.060-0"], ["TRABAJADOR:", data['nombre'], "RUT:", data['rut']], ["CARGO:", data['cargo'], "FECHA:", datetime.now().strftime("%d/%m/%Y")]]
         t = Table(info, colWidths=[70, 180, 50, 100])
         t.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (1,-1), colors.whitesmoke)]))
         self.elements.append(t); self.elements.append(Spacer(1, 15))
         
-        self.elements.append(Paragraph("<b>RIESGOS INHERENTES (ART 21 DS 40):</b>", self.styles['Heading3']))
-        r_data = [["PELIGRO/RIESGO", "CONSECUENCIA", "MEDIDA CONTROL"]]
-        for r in riesgos: r_data.append([Paragraph(f"<b>{r[0]}</b><br/>{r[1]}", ParagraphStyle('s', fontSize=8)), Paragraph(r[2], ParagraphStyle('s', fontSize=8)), Paragraph(r[3], ParagraphStyle('s', fontSize=8))])
+        self.elements.append(Paragraph("<b>IDENTIFICACIÓN DE PELIGROS Y EVALUACIÓN DE RIESGOS (IRL - DS 44):</b>", self.styles['Heading3']))
+        self.elements.append(Paragraph("En conformidad al Decreto Supremo N° 44 que aprueba el reglamento sobre gestión de seguridad y salud en el trabajo, se informa:", self.styles['Normal']))
+        self.elements.append(Spacer(1, 10))
+
+        r_data = [["PELIGRO", "RIESGO / CONSECUENCIA", "MEDIDA DE CONTROL / MÉTODO"]]
+        for r in riesgos: 
+            r_data.append([
+                Paragraph(f"<b>{r[0]}</b>", ParagraphStyle('s', fontSize=8)), 
+                Paragraph(f"R: {r[1]}<br/>C: {r[2]}", ParagraphStyle('s', fontSize=8)), 
+                Paragraph(f"<b>Medida:</b> {r[3]}<br/><b>Método:</b> {r[4]}", ParagraphStyle('s', fontSize=8))
+            ])
         
-        rt = Table(r_data, colWidths=[140, 120, 260], repeatRows=1)
+        rt = Table(r_data, colWidths=[100, 160, 260], repeatRows=1)
         rt.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), HexColor(COLOR_PRIMARY)), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'TOP')]))
         self.elements.append(rt); self.elements.append(Spacer(1, 30))
         
-        self.elements.append(Paragraph("Declaro haber sido informado acerca de los riesgos que entrañan mis labores, de las medidas preventivas y de los métodos de trabajo correctos.", ParagraphStyle('J', alignment=TA_JUSTIFY, fontSize=9)))
+        self.elements.append(Paragraph("Declaro haber recibido la Información de Riesgos Laborales (IRL), haber sido instruido sobre los métodos de trabajo correctos y las medidas preventivas, las cuales me comprometo a respetar.", ParagraphStyle('J', alignment=TA_JUSTIFY, fontSize=9)))
         self.elements.append(Spacer(1, 40))
         self._signature_block(None)
         self.doc.build(self.elements); self.buffer.seek(0)
@@ -245,18 +277,23 @@ if not st.session_state['logged_in']:
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("ERP V104 - Fixed RH")
-    menu = st.radio("MENÚ", ["📊 Dashboard", "👥 Gestión Personas", "🛡️ Matriz IPER", "🦺 Entrega EPP", "📘 Entrega RIOHS", "⚖️ Generador ODI/IRL", "🎓 Capacitaciones", "🤝 Comité Paritario", "🚨 Incidentes"])
+    st.caption("ERP V106 - DS44 Compliance")
+    menu = st.radio("MENÚ", ["📊 Dashboard", "👥 Gestión Personas", "🛡️ Matriz IPER", "🦺 Entrega EPP", "📘 Entrega RIOHS", "⚖️ Generador IRL", "🎓 Capacitaciones", "🤝 Comité Paritario", "🚨 Incidentes"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
 
 # --- DASHBOARD ---
 if menu == "📊 Dashboard":
     st.markdown("<div class='main-header'>Cuadro de Mando Integral</div>", unsafe_allow_html=True)
+    
+    st.subheader("🔔 Cumplimiento Legal DS44")
     alertas = get_alertas()
     if alertas:
-        st.warning(f"⚠️ {len(alertas)} Pendientes")
-        for a in alertas: st.markdown(f"<div class='alert-box alert-high'>{a}</div>", unsafe_allow_html=True)
+        with st.container(height=200):
+            for a in alertas: st.markdown(f"<div class='alert-box alert-high'>{a}</div>", unsafe_allow_html=True)
+    else:
+        st.markdown("<div class='alert-box alert-ok'>✅ Documentación IRL, EPP y RIOHS al día.</div>", unsafe_allow_html=True)
     
+    st.markdown("---")
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Accidentabilidad", "2.1%", "-0.2%")
     k2.metric("Siniestralidad", "12.5", "0%")
@@ -275,14 +312,12 @@ if menu == "📊 Dashboard":
         st.dataframe(audit, use_container_width=True)
         conn.close()
 
-# --- GESTIÓN PERSONAS (RH MASTER) ---
+# --- GESTIÓN PERSONAS ---
 elif menu == "👥 Gestión Personas":
     st.markdown("<div class='main-header'>Gestión de Personas (RH)</div>", unsafe_allow_html=True)
-    
     tab_list, tab_carga, tab_new, tab_dig = st.tabs(["📋 Nómina & Edición", "📂 Carga Masiva (Excel/CSV)", "➕ Nuevo Manual", "🗂️ Carpeta Digital"])
     conn = get_conn()
     
-    # 1. Edición Directa (Tipo Excel)
     with tab_list:
         st.info("💡 Edite los datos directamente en la tabla y presione 'Guardar Cambios'")
         df_p = pd.read_sql("SELECT rut, nombre, cargo, centro_costo, estado FROM personal", conn)
@@ -293,51 +328,37 @@ elif menu == "👥 Gestión Personas":
                 for index, row in edited_df.iterrows():
                     c.execute("UPDATE personal SET nombre=?, cargo=?, centro_costo=?, estado=? WHERE rut=?", 
                              (row['nombre'], row['cargo'], row['centro_costo'], row['estado'], row['rut']))
-                conn.commit()
-                st.success("Nómina actualizada.")
+                conn.commit(); st.success("Nómina actualizada.")
             except Exception as e: st.error(f"Error: {e}")
 
-    # 2. Carga Masiva (CORREGIDA PARA TU EXCEL)
     with tab_carga:
         st.subheader("Importar Trabajadores")
         st.markdown("Suba su archivo `.xlsx` o `.csv` (Plantilla Simple)")
         up_file = st.file_uploader("Cargar Archivo", type=['csv', 'xlsx'])
-        
         if up_file:
             try:
                 if up_file.name.endswith('.csv'): df_upload = pd.read_csv(up_file)
                 else: df_upload = pd.read_excel(up_file)
                 st.write("Vista Previa:", df_upload.head())
-                
                 if st.button("🚀 Procesar Carga"):
                     count = 0; c = conn.cursor()
                     for index, row in df_upload.iterrows():
-                        # Obtener valores con manejo de errores
                         rut_val = str(row.get('RUT', '')).strip()
                         nom_val = str(row.get('NOMBRE', '')).strip()
                         car_val = str(row.get('CARGO', '')).strip()
-                        
-                        # CORRECCIÓN DE FECHA ROBUSTA
                         raw_fec = row.get('FECHA DE CONTRATO')
                         try:
-                            # Intenta convertir, si falla o es NaT, usa hoy
                             val_dt = pd.to_datetime(raw_fec, errors='coerce')
-                            if pd.notnull(val_dt):
-                                fec_val = val_dt.date()
-                            else:
-                                fec_val = date.today()
-                        except:
-                            fec_val = date.today()
-
+                            if pd.notnull(val_dt): fec_val = val_dt.date()
+                            else: fec_val = date.today()
+                        except: fec_val = date.today()
                         if rut_val and nom_val:
                             c.execute("""INSERT OR REPLACE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) 
                                       VALUES (?,?,?,?,?,?)""", (rut_val, nom_val, car_val, "FAENA", fec_val, "ACTIVO"))
                             count += 1
-                    conn.commit()
-                    st.success(f"Carga completa: {count} trabajadores.")
+                    conn.commit(); st.success(f"Carga completa: {count} trabajadores.")
             except Exception as e: st.error(f"Error al procesar archivo: {e}")
 
-    # 3. Nuevo Manual
     with tab_new:
         with st.form("add_p_manual"):
             c1, c2 = st.columns(2)
@@ -349,7 +370,6 @@ elif menu == "👥 Gestión Personas":
                     conn.commit(); st.success("Guardado"); st.rerun()
                 except: st.error("Error: RUT duplicado")
 
-    # 4. Carpeta Digital
     with tab_dig:
         df_all = pd.read_sql("SELECT rut, nombre FROM personal", conn)
         if not df_all.empty:
@@ -412,21 +432,23 @@ elif menu == "📘 Entrega RIOHS":
             st.download_button("📥 Descargar Acta", pdf_bytes, "RIOHS_Firmado.pdf", "application/pdf")
     conn.close()
 
-# --- ODI/IRL ---
-elif menu == "⚖️ Generador ODI/IRL":
-    st.markdown("<div class='main-header'>Generador ODI (RG-GD-04)</div>", unsafe_allow_html=True)
+# --- IRL (ANTES ODI) ---
+elif menu == "⚖️ Generador IRL":
+    st.markdown("<div class='main-header'>Generador IRL (RG-GD-04) - DS44</div>", unsafe_allow_html=True)
     conn = get_conn()
     df = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
     sel = st.selectbox("Trabajador:", df['rut'] + " - " + df['nombre'])
     
-    if st.button("Generar ODI"):
+    if st.button("Generar IRL"):
         rut = sel.split(" - ")[0]; cargo = df[df['rut']==rut]['cargo'].values[0]
-        riesgos = pd.read_sql("SELECT peligro, riesgo, medida_control FROM matriz_iper WHERE cargo_asociado=?", conn, params=(cargo,))
-        if riesgos.empty: riesgos = pd.read_sql("SELECT peligro, riesgo, medida_control FROM matriz_iper LIMIT 3", conn)
+        # Buscar riesgos SQL
+        riesgos = pd.read_sql("SELECT peligro, riesgo, consecuencia, medida_control, metodo_correcto FROM matriz_iper WHERE cargo_asociado=?", conn, params=(cargo,))
+        if riesgos.empty: 
+            riesgos = pd.read_sql("SELECT peligro, riesgo, consecuencia, medida_control, metodo_correcto FROM matriz_iper LIMIT 3", conn)
         
-        pdf_gen = DocumentosLegalesPDF(f"OBLIGACIÓN DE INFORMAR (ODI)", "RG-GD-04")
-        pdf_bytes = pdf_gen.generar_odi({'nombre': sel.split(" - ")[1], 'rut': rut, 'cargo': cargo}, riesgos.values.tolist())
-        st.download_button("📥 Descargar ODI para Firma", pdf_bytes, f"ODI_{rut}.pdf", "application/pdf")
+        pdf_gen = DocumentosLegalesPDF(f"INFORMACIÓN DE RIESGOS LABORALES (IRL)", "RG-GD-04")
+        pdf_bytes = pdf_gen.generar_irl({'nombre': sel.split(" - ")[1], 'rut': rut, 'cargo': cargo}, riesgos.values.tolist())
+        st.download_button("📥 Descargar IRL para Firma", pdf_bytes, f"IRL_{rut}.pdf", "application/pdf")
     conn.close()
 
 # --- CAPACITACIONES ---
