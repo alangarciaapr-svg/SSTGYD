@@ -34,7 +34,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP PRO", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v103_rhmaster.db' # Actualización de DB
+DB_NAME = 'sgsst_v104_fixed.db' # DB Actualizada con corrección
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
@@ -245,7 +245,7 @@ if not st.session_state['logged_in']:
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("ERP V103 - RH Master")
+    st.caption("ERP V104 - Fixed RH")
     menu = st.radio("MENÚ", ["📊 Dashboard", "👥 Gestión Personas", "🛡️ Matriz IPER", "🦺 Entrega EPP", "📘 Entrega RIOHS", "⚖️ Generador ODI/IRL", "🎓 Capacitaciones", "🤝 Comité Paritario", "🚨 Incidentes"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
 
@@ -275,100 +275,90 @@ if menu == "📊 Dashboard":
         st.dataframe(audit, use_container_width=True)
         conn.close()
 
-# --- GESTIÓN PERSONAS (MEJORADO V103) ---
+# --- GESTIÓN PERSONAS (RH MASTER) ---
 elif menu == "👥 Gestión Personas":
     st.markdown("<div class='main-header'>Gestión de Personas (RH)</div>", unsafe_allow_html=True)
     
-    # NUEVA ESTRUCTURA DE TABS
     tab_list, tab_carga, tab_new, tab_dig = st.tabs(["📋 Nómina & Edición", "📂 Carga Masiva (Excel/CSV)", "➕ Nuevo Manual", "🗂️ Carpeta Digital"])
-    
     conn = get_conn()
     
+    # 1. Edición Directa (Tipo Excel)
     with tab_list:
         st.info("💡 Edite los datos directamente en la tabla y presione 'Guardar Cambios'")
         df_p = pd.read_sql("SELECT rut, nombre, cargo, centro_costo, estado FROM personal", conn)
-        
-        # Editor interactivo (Modificaciones manuales rápidas)
         edited_df = st.data_editor(df_p, num_rows="dynamic", key="editor_personal", use_container_width=True)
-        
         if st.button("💾 Guardar Cambios Nómina"):
-            # Lógica de actualización (UPSERT simplificado borrando y reinsertando por simplicidad en demo)
-            # En producción se recomienda UPDATE por RUT
             try:
                 c = conn.cursor()
                 for index, row in edited_df.iterrows():
-                    c.execute("""
-                        UPDATE personal SET nombre=?, cargo=?, centro_costo=?, estado=? 
-                        WHERE rut=?
-                    """, (row['nombre'], row['cargo'], row['centro_costo'], row['estado'], row['rut']))
+                    c.execute("UPDATE personal SET nombre=?, cargo=?, centro_costo=?, estado=? WHERE rut=?", 
+                             (row['nombre'], row['cargo'], row['centro_costo'], row['estado'], row['rut']))
                 conn.commit()
-                st.success("Nómina actualizada correctamente.")
-                registrar_auditoria(st.session_state['user'], "PERSONAL", "Edición masiva nómina")
-            except Exception as e:
-                st.error(f"Error al guardar: {e}")
+                st.success("Nómina actualizada.")
+            except Exception as e: st.error(f"Error: {e}")
 
+    # 2. Carga Masiva (CORREGIDA PARA TU EXCEL)
     with tab_carga:
-        st.subheader("Importar Trabajadores desde Plantilla")
-        st.markdown("Suba su archivo `.csv` o `.xlsx`. Columnas requeridas: **NOMBRE, RUT, CARGO, FECHA DE CONTRATO**")
-        
+        st.subheader("Importar Trabajadores")
+        st.markdown("Suba su archivo `.xlsx` o `.csv` (Plantilla Simple)")
         up_file = st.file_uploader("Cargar Archivo", type=['csv', 'xlsx'])
         
         if up_file:
             try:
-                if up_file.name.endswith('.csv'):
-                    df_upload = pd.read_csv(up_file)
-                else:
-                    df_upload = pd.read_excel(up_file)
-                
+                if up_file.name.endswith('.csv'): df_upload = pd.read_csv(up_file)
+                else: df_upload = pd.read_excel(up_file)
                 st.write("Vista Previa:", df_upload.head())
                 
-                if st.button("🚀 Procesar Carga Masiva"):
-                    count = 0
-                    c = conn.cursor()
+                if st.button("🚀 Procesar Carga"):
+                    count = 0; c = conn.cursor()
                     for index, row in df_upload.iterrows():
-                        # Mapeo de columnas según tu plantilla
+                        # Obtener valores con manejo de errores
                         rut_val = str(row.get('RUT', '')).strip()
                         nom_val = str(row.get('NOMBRE', '')).strip()
                         car_val = str(row.get('CARGO', '')).strip()
-                        fec_val = pd.to_datetime(row.get('FECHA DE CONTRATO', date.today())).date()
                         
-                        if rut_val and nom_val:
-                            # INSERT OR IGNORE para no duplicar si ya existe
-                            c.execute("""
-                                INSERT OR REPLACE INTO personal 
-                                (rut, nombre, cargo, centro_costo, fecha_contrato, estado) 
-                                VALUES (?,?,?,?,?,?)
-                            """, (rut_val, nom_val, car_val, "FAENA", fec_val, "ACTIVO"))
-                            count += 1
-                    
-                    conn.commit()
-                    st.success(f"Proceso completado. {count} trabajadores procesados.")
-                    registrar_auditoria(st.session_state['user'], "CARGA_MASIVA", f"{count} registros importados")
-            
-            except Exception as e:
-                st.error(f"Error al procesar archivo: {e}")
+                        # CORRECCIÓN DE FECHA ROBUSTA
+                        raw_fec = row.get('FECHA DE CONTRATO')
+                        try:
+                            # Intenta convertir, si falla o es NaT, usa hoy
+                            val_dt = pd.to_datetime(raw_fec, errors='coerce')
+                            if pd.notnull(val_dt):
+                                fec_val = val_dt.date()
+                            else:
+                                fec_val = date.today()
+                        except:
+                            fec_val = date.today()
 
+                        if rut_val and nom_val:
+                            c.execute("""INSERT OR REPLACE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) 
+                                      VALUES (?,?,?,?,?,?)""", (rut_val, nom_val, car_val, "FAENA", fec_val, "ACTIVO"))
+                            count += 1
+                    conn.commit()
+                    st.success(f"Carga completa: {count} trabajadores.")
+            except Exception as e: st.error(f"Error al procesar archivo: {e}")
+
+    # 3. Nuevo Manual
     with tab_new:
         with st.form("add_p_manual"):
             c1, c2 = st.columns(2)
             r = c1.text_input("RUT"); n = c2.text_input("Nombre")
             cg = c1.selectbox("Cargo", LISTA_CARGOS); cc = c2.selectbox("Centro Costo", ["FAENA", "ASERRADERO", "OFICINA"])
-            if st.form_submit_button("Guardar Trabajador"):
+            if st.form_submit_button("Guardar"):
                 try:
                     conn.execute("INSERT INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (r, n, cg, cc, date.today(), "ACTIVO"))
                     conn.commit(); st.success("Guardado"); st.rerun()
                 except: st.error("Error: RUT duplicado")
 
+    # 4. Carpeta Digital
     with tab_dig:
         df_all = pd.read_sql("SELECT rut, nombre FROM personal", conn)
         if not df_all.empty:
             sel = st.selectbox("Seleccionar Trabajador:", df_all['rut'] + " - " + df_all['nombre'])
             if QR_AVAILABLE:
                 if st.button("🪪 Credencial QR"): st.info("Módulo Credencial Activo")
-    
     conn.close()
 
-# --- EPP (PDF MEJORADO) ---
+# --- EPP ---
 elif menu == "🦺 Entrega EPP":
     st.markdown("<div class='main-header'>Registro EPP (RG-GD-01)</div>", unsafe_allow_html=True)
     conn = get_conn()
@@ -399,7 +389,7 @@ elif menu == "🦺 Entrega EPP":
             st.session_state.epp_c = []
     conn.close()
 
-# --- RIOHS (PDF MEJORADO) ---
+# --- RIOHS ---
 elif menu == "📘 Entrega RIOHS":
     st.markdown("<div class='main-header'>Entrega RIOHS (RG-GD-03)</div>", unsafe_allow_html=True)
     conn = get_conn()
@@ -422,7 +412,7 @@ elif menu == "📘 Entrega RIOHS":
             st.download_button("📥 Descargar Acta", pdf_bytes, "RIOHS_Firmado.pdf", "application/pdf")
     conn.close()
 
-# --- ODI/IRL (PDF MEJORADO + SQL) ---
+# --- ODI/IRL ---
 elif menu == "⚖️ Generador ODI/IRL":
     st.markdown("<div class='main-header'>Generador ODI (RG-GD-04)</div>", unsafe_allow_html=True)
     conn = get_conn()
@@ -431,7 +421,6 @@ elif menu == "⚖️ Generador ODI/IRL":
     
     if st.button("Generar ODI"):
         rut = sel.split(" - ")[0]; cargo = df[df['rut']==rut]['cargo'].values[0]
-        # Buscar riesgos SQL
         riesgos = pd.read_sql("SELECT peligro, riesgo, medida_control FROM matriz_iper WHERE cargo_asociado=?", conn, params=(cargo,))
         if riesgos.empty: riesgos = pd.read_sql("SELECT peligro, riesgo, medida_control FROM matriz_iper LIMIT 3", conn)
         
@@ -440,13 +429,12 @@ elif menu == "⚖️ Generador ODI/IRL":
         st.download_button("📥 Descargar ODI para Firma", pdf_bytes, f"ODI_{rut}.pdf", "application/pdf")
     conn.close()
 
-# --- CAPACITACIONES (NUEVO PDF ASISTENCIA) ---
+# --- CAPACITACIONES ---
 elif menu == "🎓 Capacitaciones":
     st.markdown("<div class='main-header'>Registro Capacitaciones (RG-GD-02)</div>", unsafe_allow_html=True)
     conn = get_conn()
     
     tab_new, tab_hist = st.tabs(["Nueva", "Historial & Descargas"])
-    
     with tab_new:
         with st.form("cap"):
             tema = st.text_input("Tema")
@@ -454,7 +442,6 @@ elif menu == "🎓 Capacitaciones":
             resp = st.text_input("Relator", "Prevencionista")
             df = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
             asis = st.multiselect("Asistentes", df['rut'] + " | " + df['nombre'])
-            
             if st.form_submit_button("Guardar Registro"):
                 c = conn.cursor()
                 c.execute("INSERT INTO capacitaciones (fecha, tema, tipo_actividad, responsable_rut, estado) VALUES (?,?,?,?,?)", (date.today(), tema, tipo, resp, "EJECUTADA"))
@@ -463,8 +450,7 @@ elif menu == "🎓 Capacitaciones":
                     rut = a.split(" | ")[0]; nom = a.split(" | ")[1]
                     cargo = df[df['rut']==rut]['cargo'].values[0]
                     c.execute("INSERT INTO asistencia_capacitacion (capacitacion_id, trabajador_rut, nombre_trabajador, cargo_trabajador, estado) VALUES (?,?,?,?,?)", (cid, rut, nom, cargo, "ASISTIÓ"))
-                conn.commit()
-                st.success("Guardado.")
+                conn.commit(); st.success("Guardado.")
     
     with tab_hist:
         caps = pd.read_sql("SELECT * FROM capacitaciones ORDER BY id DESC", conn)
@@ -475,13 +461,12 @@ elif menu == "🎓 Capacitaciones":
                 cid = int(sel_cap.split(" - ")[0])
                 data_cap = pd.read_sql("SELECT * FROM capacitaciones WHERE id=?", conn, params=(cid,)).iloc[0]
                 asis_list = pd.read_sql("SELECT nombre_trabajador as nombre, trabajador_rut as rut, cargo_trabajador as cargo FROM asistencia_capacitacion WHERE capacitacion_id=?", conn, params=(cid,)).to_dict('records')
-                
                 pdf_gen = DocumentosLegalesPDF("REGISTRO DE CAPACITACIÓN", "RG-GD-02")
                 pdf_bytes = pdf_gen.generar_asistencia_capacitacion({'tema': data_cap['tema'], 'tipo': data_cap['tipo_actividad'], 'resp': data_cap['responsable_rut'], 'fecha': data_cap['fecha']}, asis_list)
                 st.download_button("📥 Bajar PDF Asistencia", pdf_bytes, f"Asistencia_{cid}.pdf", "application/pdf")
     conn.close()
 
-# --- OTROS MÓDULOS (COMPLEMENTARIOS) ---
+# --- OTROS ---
 elif menu == "🛡️ Matriz IPER":
     st.title("Matriz IPER"); conn = get_conn(); df = pd.read_sql("SELECT * FROM matriz_iper", conn); st.data_editor(df, key="iper"); conn.close()
 elif menu == "🤝 Comité Paritario":
