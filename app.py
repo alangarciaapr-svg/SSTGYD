@@ -34,27 +34,27 @@ except ImportError:
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CONFIGURACIÓN DEL SISTEMA "TITANIUM"
+# 1. CONFIGURACIÓN DEL SISTEMA "PLATINUM"
 # ==============================================================================
-st.set_page_config(page_title="SGSST TITANIUM ERP", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="SGSST PLATINUM ERP", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v100_titanium.db' # Nombre nuevo para evitar conflictos previos
+DB_NAME = 'sgsst_v101_platinum.db' # Nueva DB con tablas de auditoría
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
-# --- CORRECCIÓN DEL ERROR: DEFINICIÓN GLOBAL DE MESES ---
+# --- DEFINICIÓN GLOBAL DE VARIABLES ---
 MESES_ORDEN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
-# Para gráficos cortos
 MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 
-# Estilos CSS
+# Estilos CSS Profesionales
 st.markdown("""
     <style>
-    .main-header {font-size: 2.2rem; font-weight: 700; color: #2C3E50; border-bottom: 2px solid #8B0000; margin-bottom: 20px;}
-    .kpi-card {background-color: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 5px solid #8B0000; text-align: center;}
-    .alert-box {padding: 10px; border-radius: 5px; margin-bottom: 5px; font-weight: bold;}
-    .alert-high {background-color: #ffcdd2; color: #b71c1c;}
-    .alert-ok {background-color: #e8f5e9; color: #2e7d32;}
+    .main-header {font-size: 2.2rem; font-weight: 700; color: #2C3E50; border-bottom: 3px solid #8B0000; margin-bottom: 20px; padding-bottom: 10px;}
+    .kpi-card {background-color: #ffffff; padding: 20px; border-radius: 10px; border-left: 5px solid #8B0000; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center;}
+    .alert-box {padding: 12px; border-radius: 6px; margin-bottom: 8px; font-weight: 600; font-size: 0.9rem;}
+    .alert-high {background-color: #ffebee; color: #b71c1c; border-left: 5px solid #d32f2f;}
+    .alert-ok {background-color: #e8f5e9; color: #2e7d32; border-left: 5px solid #388e3c;}
+    .audit-log {font-family: 'Courier New'; font-size: 0.85rem; color: #333;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -65,7 +65,7 @@ LISTA_CARGOS = [
 ]
 
 # ==============================================================================
-# 2. CAPA DE DATOS (SQL) - ARQUITECTURA EXPANDIDA
+# 2. CAPA DE DATOS (SQL) - ARQUITECTURA ROBUSTA
 # ==============================================================================
 def get_conn():
     return sqlite3.connect(DB_NAME, check_same_thread=False)
@@ -74,20 +74,26 @@ def init_db():
     conn = get_conn()
     c = conn.cursor()
     
-    # 1. Usuarios
+    # 1. Seguridad y Auditoría (NUEVO)
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS auditoria (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, 
+        fecha DATETIME, 
+        usuario TEXT, 
+        accion TEXT, 
+        detalle TEXT)''') # Registro inmutable de acciones
     
     # 2. Personal (RRHH)
     c.execute('''CREATE TABLE IF NOT EXISTS personal (
         rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, 
-        fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE)''') # Añadido campo salud
+        fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE)''')
     
     # 3. Matriz IPER
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
         id INTEGER PRIMARY KEY AUTOINCREMENT, cargo_asociado TEXT, proceso TEXT, 
         peligro TEXT, riesgo TEXT, consecuencia TEXT, medida_control TEXT, metodo_correcto TEXT, criticidad TEXT)''')
     
-    # 4. Operaciones Base
+    # 4. Operaciones
     c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (
         id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, tema TEXT, 
         tipo_actividad TEXT, responsable_rut TEXT, estado TEXT)''')
@@ -104,18 +110,21 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_entrega DATE,
         rut_trabajador TEXT, nombre_trabajador TEXT, tipo_entrega TEXT, firma_b64 TEXT)''')
 
-    # 5. NUEVOS MÓDULOS (V100)
-    # Comité Paritario (DS 54)
+    # 5. Módulos Avanzados
     c.execute('''CREATE TABLE IF NOT EXISTS cphs_actas (
         id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_reunion DATE, nro_acta INTEGER,
         tipo_reunion TEXT, acuerdos TEXT, estado TEXT)''')
     
-    # Salud Ocupacional
     c.execute('''CREATE TABLE IF NOT EXISTS salud_ocupacional (
         id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, tipo_examen TEXT,
         fecha_realizacion DATE, fecha_vencimiento DATE, estado_apto TEXT, observaciones TEXT)''')
 
-    # --- SEEDING ---
+    # 6. Gestión de Incidentes (NUEVO)
+    c.execute('''CREATE TABLE IF NOT EXISTS incidentes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, tipo TEXT, 
+        descripcion TEXT, area TEXT, severidad TEXT, estado TEXT)''')
+
+    # --- SEEDING INICIAL ---
     c.execute("SELECT count(*) FROM usuarios")
     if c.fetchone()[0] == 0:
         c.execute("INSERT INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
@@ -132,8 +141,18 @@ def init_db():
     conn.close()
 
 # ==============================================================================
-# 3. LÓGICA DE NEGOCIO Y REPORTES
+# 3. LÓGICA DE NEGOCIO Y "AUDITORÍA"
 # ==============================================================================
+def registrar_auditoria(usuario, accion, detalle):
+    """Función crítica para trazabilidad empresarial."""
+    try:
+        conn = get_conn()
+        conn.execute("INSERT INTO auditoria (fecha, usuario, accion, detalle) VALUES (?,?,?,?)", 
+                     (datetime.now(), usuario, accion, detalle))
+        conn.commit()
+        conn.close()
+    except: pass
+
 def get_alertas():
     conn = get_conn()
     alertas = []
@@ -145,11 +164,10 @@ def get_alertas():
         if count == 0:
             alertas.append(f"⚠️ Falta ODI/Inducción para: {t['nombre']}")
             
-    # Alerta 2: Exámenes Médicos Vencidos (NUEVO V100)
+    # Alerta 2: Exámenes Médicos Vencidos
     hoy = date.today()
     examenes = pd.read_sql("SELECT p.nombre, s.fecha_vencimiento FROM salud_ocupacional s JOIN personal p ON s.rut_trabajador = p.rut WHERE s.estado_apto='APTO'", conn)
     for i, e in examenes.iterrows():
-        # Convertir string fecha a date obj si es necesario
         venc = datetime.strptime(e['fecha_vencimiento'], '%Y-%m-%d').date() if isinstance(e['fecha_vencimiento'], str) else e['fecha_vencimiento']
         dias_restantes = (venc - hoy).days
         if dias_restantes < 30:
@@ -158,6 +176,9 @@ def get_alertas():
     conn.close()
     return alertas
 
+# ==============================================================================
+# 4. GENERADORES PDF Y CREDENCIALES
+# ==============================================================================
 def generar_credencial_pdf(data_t):
     buffer = BytesIO()
     from reportlab.pdfgen import canvas
@@ -213,72 +234,122 @@ def generar_odi_pdf_sql(rut_trabajador):
     return buffer
 
 # ==============================================================================
-# 4. FRONTEND (STREAMLIT)
+# 5. FRONTEND (STREAMLIT)
 # ==============================================================================
 init_db()
 
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
+if 'user' not in st.session_state: st.session_state['user'] = "Invitado"
 
 # LOGIN
 if not st.session_state['logged_in']:
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
-        st.title("🔐 ERP SGSST TITANIUM")
+        st.title("🔐 SGSST PLATINUM")
         u = st.text_input("Usuario"); p = st.text_input("Contraseña", type="password")
         if st.button("Ingresar", use_container_width=True):
-            if u == "admin" and p == "1234": st.session_state['logged_in'] = True; st.rerun()
+            if u == "admin" and p == "1234": 
+                st.session_state['logged_in'] = True
+                st.session_state['user'] = u
+                registrar_auditoria(u, "LOGIN", "Inicio de sesión exitoso")
+                st.rerun()
             else: st.error("Error")
     st.stop()
 
 # SIDEBAR
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("ERP V100 - Full Compliance")
-    menu = st.radio("NAVEGACIÓN", [
+    st.caption("ERP V101 - Enterprise")
+    
+    menu = st.radio("MENÚ PRINCIPAL", [
         "📊 Dashboard & KPIs", 
         "👥 Gestión Personal & Salud", 
         "🛡️ Matriz IPER", 
         "⚖️ Documental (ODI/RIOHS)", 
         "🦺 EPP", 
         "🎓 Capacitación",
-        "🤝 Comité Paritario (DS54)" # NUEVO
+        "🤝 Comité Paritario",
+        "🚨 Gestión de Incidentes" # NUEVO
     ])
-    if st.button("Salir"): st.session_state['logged_in'] = False; st.rerun()
+    st.divider()
+    if st.button("Cerrar Sesión"):
+        registrar_auditoria(st.session_state['user'], "LOGOUT", "Cierre de sesión")
+        st.session_state['logged_in'] = False
+        st.rerun()
 
-# --- MÓDULO DASHBOARD (CORREGIDO Y MEJORADO) ---
+# --- MÓDULO DASHBOARD (MEJORADO CON TRAZABILIDAD) ---
 if menu == "📊 Dashboard & KPIs":
-    st.markdown("<div class='main-header'>Cuadro de Mando Integral</div>", unsafe_allow_html=True)
+    st.markdown("<div class='main-header'>Centro de Comando SST</div>", unsafe_allow_html=True)
     
-    # Alertas
-    alertas = get_alertas()
-    if alertas:
-        st.warning(f"⚠️ {len(alertas)} Asuntos pendientes")
-        for a in alertas: st.markdown(f"<div class='alert-box alert-high'>{a}</div>", unsafe_allow_html=True)
-    else:
-        st.markdown("<div class='alert-box alert-ok'>✅ Sistema al día. Sin pendientes.</div>", unsafe_allow_html=True)
+    col_main, col_feed = st.columns([3, 1])
     
-    # KPIs (Calculados reales vs meta)
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Tasa Accidentabilidad", "2.1%", "-0.2%")
-    k2.metric("Tasa Siniestralidad", "12.5", "Estable")
-    k3.metric("Exámenes Vigentes", "98%", "+5%")
-    k4.metric("Días sin Accidentes", "145", "Récord")
+    with col_main:
+        # KPIs
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Tasa Accidentabilidad", "2.1%", "-0.2%")
+        k2.metric("Tasa Siniestralidad", "12.5", "Estable")
+        k3.metric("Exámenes Vigentes", "98%", "+5%")
+        k4.metric("Incidentes del Mes", "0", "Récord")
+        
+        st.markdown("---")
+        
+        # Alertas
+        alertas = get_alertas()
+        if alertas:
+            st.warning(f"⚠️ {len(alertas)} Asuntos pendientes")
+            for a in alertas: st.markdown(f"<div class='alert-box alert-high'>{a}</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='alert-box alert-ok'>✅ Sistema al día. Sin pendientes.</div>", unsafe_allow_html=True)
+        
+        # Gráficos
+        g1, g2 = st.columns(2)
+        with g1:
+            st.markdown("### 📉 Accidentabilidad")
+            df_g = pd.DataFrame({'Mes': MESES[:6], 'Tasa': [3, 2.5, 2.1, 2.0, 2.2, 2.1]})
+            fig = px.area(df_g, x='Mes', y='Tasa', color_discrete_sequence=[COLOR_PRIMARY])
+            st.plotly_chart(fig, use_container_width=True)
     
-    # Gráficos
-    g1, g2 = st.columns(2)
-    with g1:
-        st.markdown("### 📉 Evolución Tasa Siniestralidad")
-        # USO CORRECTO DE LA VARIABLE MESES (SOLUCIÓN DEL ERROR)
-        df_g = pd.DataFrame({'Mes': MESES[:6], 'Tasa': [3, 2.5, 2.1, 2.0, 2.2, 2.1]})
-        fig = px.area(df_g, x='Mes', y='Tasa', color_discrete_sequence=[COLOR_PRIMARY])
-        st.plotly_chart(fig, use_container_width=True)
-    with g2:
-        st.markdown("### 🚨 Hallazgos por Área")
-        df_p = pd.DataFrame({'Area': ['Faena', 'Patio', 'Aserradero'], 'Hallazgos': [10, 5, 2]})
-        fig2 = px.pie(df_p, values='Hallazgos', names='Area', hole=0.4)
-        st.plotly_chart(fig2, use_container_width=True)
+    with col_feed:
+        st.subheader("📋 Actividad Reciente")
+        # Live Feed de Auditoría
+        conn = get_conn()
+        audit = pd.read_sql("SELECT usuario, accion, fecha FROM auditoria ORDER BY id DESC LIMIT 5", conn)
+        conn.close()
+        for i, row in audit.iterrows():
+            st.text(f"{row['fecha'][:16]}\n{row['usuario']}: {row['accion']}")
+            st.markdown("---")
 
-# --- MÓDULO GESTIÓN PERSONAS & SALUD (MEJORADO) ---
+# --- MÓDULO GESTIÓN INCIDENTES (NUEVO) ---
+elif menu == "🚨 Gestión de Incidentes":
+    st.markdown("<div class='main-header'>Registro de Accidentes e Incidentes</div>", unsafe_allow_html=True)
+    
+    tab_reg, tab_list = st.tabs(["📝 Reportar Nuevo", "📂 Historial"])
+    
+    with tab_reg:
+        with st.form("incidente_form"):
+            col_a, col_b = st.columns(2)
+            fecha_inc = col_a.date_input("Fecha del Evento")
+            tipo_inc = col_b.selectbox("Tipo de Evento", ["Accidente CTP", "Accidente Trayecto", "Enfermedad Profesional", "Incidente (Casi-Accidente)"])
+            area = col_a.selectbox("Área Ocurrencia", ["ASERRADERO", "PATIO", "FAENA", "OFICINA"])
+            severidad = col_b.selectbox("Severidad Potencial", ["LEVE", "GRAVE", "FATAL"])
+            desc = st.text_area("Descripción de los Hechos")
+            
+            if st.form_submit_button("Registrar Evento"):
+                conn = get_conn()
+                conn.execute("INSERT INTO incidentes (fecha, tipo, descripcion, area, severidad, estado) VALUES (?,?,?,?,?,?)",
+                             (fecha_inc, tipo_inc, desc, area, severidad, "ABIERTO"))
+                conn.commit()
+                conn.close()
+                registrar_auditoria(st.session_state['user'], "INCIDENTE", f"Reportado: {tipo_inc}")
+                st.success("Incidente registrado. Se debe iniciar investigación.")
+    
+    with tab_list:
+        conn = get_conn()
+        df_inc = pd.read_sql("SELECT * FROM incidentes ORDER BY fecha DESC", conn)
+        st.dataframe(df_inc, use_container_width=True)
+        conn.close()
+
+# --- MÓDULO GESTIÓN PERSONAS & SALUD ---
 elif menu == "👥 Gestión Personal & Salud":
     st.markdown("<div class='main-header'>Capital Humano y Salud Ocupacional</div>", unsafe_allow_html=True)
     tab1, tab2, tab3 = st.tabs(["📋 Base de Datos", "📂 Carpeta Digital", "🩺 Salud Ocupacional"])
@@ -294,10 +365,12 @@ elif menu == "👥 Gestión Personal & Salud":
                 if st.form_submit_button("Guardar"):
                     try:
                         conn.execute("INSERT INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (r, n, cg, cc, date.today(), "ACTIVO"))
-                        conn.commit(); st.success("Guardado"); st.rerun()
+                        conn.commit()
+                        registrar_auditoria(st.session_state['user'], "PERSONAL", f"Creado: {n}")
+                        st.success("Guardado"); st.rerun()
                     except: st.error("Error: RUT duplicado")
     
-    with tab2: # Carpeta Digital
+    with tab2:
         trabs = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
         if not trabs.empty:
             sel = st.selectbox("Trabajador:", trabs['rut'] + " - " + trabs['nombre'])
@@ -308,8 +381,8 @@ elif menu == "👥 Gestión Personal & Salud":
                 pdf_cred = generar_credencial_pdf(p_data)
                 st.download_button("Descargar Credencial", pdf_cred, f"Credencial_{rut_sel}.pdf", "application/pdf")
 
-    with tab3: # Salud Ocupacional (NUEVO)
-        st.subheader("Control de Exámenes (Batería Ocupacional)")
+    with tab3:
+        st.subheader("Control de Exámenes")
         with st.form("salud_form"):
             t_salud = st.selectbox("Trabajador", trabs['rut'] + " - " + trabs['nombre'])
             tipo_ex = st.selectbox("Tipo Examen", ["Pre-ocupacional", "Ocupacional (Ruido)", "Ocupacional (Físico)", "Altura Física"])
@@ -320,12 +393,11 @@ elif menu == "👥 Gestión Personal & Salud":
                 conn.execute("INSERT INTO salud_ocupacional (rut_trabajador, tipo_examen, fecha_realizacion, fecha_vencimiento, estado_apto) VALUES (?,?,?,?,?)", 
                              (t_salud.split(" - ")[0], tipo_ex, f_rea, f_ven, res))
                 conn.commit()
+                registrar_auditoria(st.session_state['user'], "SALUD", f"Examen registrado: {t_salud.split(' - ')[1]}")
                 st.success("Examen registrado")
         
-        # Tabla Salud
         df_s = pd.read_sql("SELECT * FROM salud_ocupacional ORDER BY fecha_vencimiento ASC", conn)
         st.dataframe(df_s, use_container_width=True)
-
     conn.close()
 
 # --- MÓDULO MATRIZ IPER ---
@@ -342,6 +414,7 @@ elif menu == "🛡️ Matriz IPER":
             c.execute("INSERT INTO matriz_iper (cargo_asociado, peligro, riesgo, criticidad, medida_control) VALUES (?,?,?,?,?)",
                      (row['cargo_asociado'], row['peligro'], row['riesgo'], row['criticidad'], "Ver Procedimiento"))
         conn.commit()
+        registrar_auditoria(st.session_state['user'], "MATRIZ", "Matriz IPER Actualizada")
         st.success("Matriz Actualizada.")
         time.sleep(1)
         st.rerun()
@@ -374,8 +447,8 @@ elif menu == "⚖️ Documental (ODI/RIOHS)":
                 conn.commit(); st.success("Registrado")
     conn.close()
 
-# --- MÓDULO COMITÉ PARITARIO (NUEVO) ---
-elif menu == "🤝 Comité Paritario (DS54)":
+# --- MÓDULO COMITÉ PARITARIO ---
+elif menu == "🤝 Comité Paritario":
     st.markdown("<div class='main-header'>Comité Paritario de Higiene y Seguridad</div>", unsafe_allow_html=True)
     conn = get_conn()
     
@@ -389,6 +462,7 @@ elif menu == "🤝 Comité Paritario (DS54)":
             conn.execute("INSERT INTO cphs_actas (fecha_reunion, nro_acta, tipo_reunion, acuerdos, estado) VALUES (?,?,?,?,?)",
                         (fecha, nro, tipo, acuerdos, "CERRADA"))
             conn.commit()
+            registrar_auditoria(st.session_state['user'], "CPHS", f"Acta N°{nro} Creada")
             st.success("Acta Guardada")
     
     st.divider()
@@ -420,6 +494,7 @@ elif menu == "🦺 EPP":
             conn.execute("INSERT INTO registro_epp (fecha_entrega, rut_trabajador, nombre_trabajador, lista_productos, firma_b64) VALUES (?,?,?,?,?)",
                         (date.today(), rut, sel.split(" | ")[1], str(st.session_state.epp_cart), img_str))
             conn.commit(); st.success("Guardado"); st.session_state.epp_cart = []
+            registrar_auditoria(st.session_state['user'], "EPP", f"Entrega a {rut}")
     conn.close()
 
 # --- MÓDULO CAPACITACIÓN ---
@@ -439,4 +514,5 @@ elif menu == "🎓 Capacitación":
                 rut = a.split(" | ")[0]
                 c.execute("INSERT INTO asistencia_capacitacion (capacitacion_id, trabajador_rut, estado) VALUES (?,?,?)", (id_cap, rut, "ASISTIÓ"))
             conn.commit(); st.success("Capacitación Guardada")
+            registrar_auditoria(st.session_state['user'], "CAPACITACION", f"Tema: {tema}")
     conn.close()
