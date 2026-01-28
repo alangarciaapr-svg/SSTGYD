@@ -14,7 +14,7 @@ import plotly.express as px
 from reportlab.lib import colors
 from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import letter, legal
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 from streamlit_drawable_canvas import st_canvas
@@ -32,9 +32,9 @@ matplotlib.use('Agg')
 # ==============================================================================
 # 1. CONFIGURACIÓN DEL SISTEMA
 # ==============================================================================
-st.set_page_config(page_title="SGSST ERP INTEGRAL", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="SGSST GLOBAL SUITE", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v107_integral.db' # DB FINAL CON TODOS LOS MODULOS
+DB_NAME = 'sgsst_v108_global.db'
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
@@ -63,40 +63,51 @@ def init_db():
     conn = get_conn()
     c = conn.cursor()
     
-    # --- MÓDULOS BASE (V106) ---
+    # --- MÓDULOS BASE (V107) ---
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, usuario TEXT, accion TEXT, detalle TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE)''')
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (id INTEGER PRIMARY KEY AUTOINCREMENT, cargo_asociado TEXT, proceso TEXT, peligro TEXT, riesgo TEXT, consecuencia TEXT, medida_control TEXT, metodo_correcto TEXT, criticidad TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, tema TEXT, tipo_actividad TEXT, responsable_rut TEXT, estado TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (id INTEGER PRIMARY KEY AUTOINCREMENT, capacitacion_id INTEGER, trabajador_rut TEXT, nombre_trabajador TEXT, cargo_trabajador TEXT, estado TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_entrega DATE, rut_trabajador TEXT, nombre_trabajador TEXT, cargo TEXT, lista_productos TEXT, firma_b64 TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS registro_riohs (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_entrega DATE, rut_trabajador TEXT, nombre_trabajador TEXT, tipo_entrega TEXT, firma_b64 TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS cphs_actas (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_reunion DATE, nro_acta INTEGER, tipo_reunion TEXT, acuerdos TEXT, estado TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS incidentes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, tipo TEXT, descripcion TEXT, area TEXT, severidad TEXT, rut_afectado TEXT, nombre_afectado TEXT, estado TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS extintores (id INTEGER PRIMARY KEY AUTOINCREMENT, codigo TEXT, tipo TEXT, capacidad TEXT, ubicacion TEXT, fecha_vencimiento DATE, estado_inspeccion TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS programa_anual (id INTEGER PRIMARY KEY AUTOINCREMENT, actividad TEXT, responsable TEXT, fecha_programada DATE, estado TEXT, fecha_ejecucion DATE)''')
 
-    # --- MÓDULOS NUEVOS (V107) ---
-    # Gestión de Extintores (DS 594)
-    c.execute('''CREATE TABLE IF NOT EXISTS extintores (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, codigo TEXT, tipo TEXT, capacidad TEXT, 
-        ubicacion TEXT, fecha_vencimiento DATE, estado_inspeccion TEXT)''')
+    # --- MODIFICACIONES Y NUEVOS MÓDULOS (V108) ---
     
-    # Programa de Trabajo (DS 44)
-    c.execute('''CREATE TABLE IF NOT EXISTS programa_anual (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, actividad TEXT, responsable TEXT, 
-        fecha_programada DATE, estado TEXT, fecha_ejecucion DATE)''')
+    # 1. Registro EPP (Ahora vinculado a Inventario)
+    c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_entrega DATE, rut_trabajador TEXT, nombre_trabajador TEXT, cargo TEXT, lista_productos TEXT, firma_b64 TEXT)''')
+    
+    # 2. Inventario EPP (Stock)
+    c.execute('''CREATE TABLE IF NOT EXISTS inventario_epp (id INTEGER PRIMARY KEY AUTOINCREMENT, producto TEXT, stock_actual INTEGER, stock_minimo INTEGER, ubicacion TEXT)''')
+    
+    # 3. Protocolos MINSAL
+    c.execute('''CREATE TABLE IF NOT EXISTS protocolos_minsal (id INTEGER PRIMARY KEY AUTOINCREMENT, protocolo TEXT, area TEXT, fecha_medicion DATE, resultado TEXT, estado TEXT, vigencia DATE)''')
+    
+    # 4. Contratistas
+    c.execute('''CREATE TABLE IF NOT EXISTS contratistas (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_empresa TEXT, razon_social TEXT, estado_documental TEXT, fecha_vencimiento_f30 DATE)''')
+    
+    # 5. Incidentes (Mejorado con Parte del Cuerpo)
+    c.execute('''CREATE TABLE IF NOT EXISTS incidentes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, tipo TEXT, descripcion TEXT, area TEXT, severidad TEXT, rut_afectado TEXT, nombre_afectado TEXT, parte_cuerpo TEXT, estado TEXT)''')
 
     # Seed Inicial
     c.execute("SELECT count(*) FROM usuarios")
     if c.fetchone()[0] == 0:
         c.execute("INSERT INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
-        datos_matriz = [
-            ("OPERADOR DE MAQUINARIA", "Cosecha", "Pendiente Abrupta", "Volcamiento", "Muerte", "Cabina ROPS/FOPS", "No operar >30%", "CRITICO"),
-            ("MOTOSIERRISTA", "Tala", "Caída árbol", "Golpe", "Muerte", "Planificación caída", "Distancia seguridad", "CRITICO"),
-            ("JEFE DE PATIO", "Logística", "Tránsito Maquinaria", "Atropello", "Muerte", "Chaleco Reflectante", "Contacto Visual", "ALTO")
-        ]
-        c.executemany("INSERT INTO matriz_iper (cargo_asociado, proceso, peligro, riesgo, consecuencia, medida_control, metodo_correcto, criticidad) VALUES (?,?,?,?,?,?,?,?)", datos_matriz)
-        c.execute("INSERT INTO personal VALUES (?,?,?,?,?,?,?)", ("12.345.678-9", "JUAN PEREZ", "OPERADOR DE MAQUINARIA", "FAENA", date.today(), "ACTIVO", date(2026, 12, 31)))
+        
+        # Seed Inventario
+        c.executemany("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion) VALUES (?,?,?,?)", [
+            ("Casco Seguridad", 50, 10, "Bodega 1"),
+            ("Lentes Seguridad", 100, 20, "Bodega 1"),
+            ("Guantes Cabritilla", 200, 30, "Bodega 2"),
+            ("Zapatos Seguridad", 40, 5, "Bodega 1"),
+            ("Protector Auditivo", 80, 15, "Bodega 2")
+        ])
+        
+        # Seed Contratistas
+        c.execute("INSERT INTO contratistas (rut_empresa, razon_social, estado_documental, fecha_vencimiento_f30) VALUES (?,?,?,?)", ("76.111.222-3", "TRANS-FORESTAL SPA", "AL DIA", date(2026, 6, 30)))
 
     conn.commit()
     conn.close()
@@ -113,7 +124,7 @@ def get_alertas():
     alertas = []
     hoy = date.today()
     
-    # 1. Alertas Personales
+    # Alertas Personales
     trabs = pd.read_sql("SELECT rut, nombre FROM personal WHERE estado='ACTIVO'", conn)
     for i, t in trabs.iterrows():
         rut = t['rut']
@@ -124,22 +135,17 @@ def get_alertas():
         if not riohs: falta.append("RIOHS")
         if falta: alertas.append(f"⚠️ <b>{t['nombre']}</b>: Falta {', '.join(falta)}")
     
-    # 2. Alertas Extintores (NUEVO V107)
-    exts = pd.read_sql("SELECT codigo, ubicacion, fecha_vencimiento FROM extintores", conn)
-    for i, e in exts.iterrows():
-        try:
-            venc = datetime.strptime(e['fecha_vencimiento'], '%Y-%m-%d').date()
-            if venc < hoy:
-                alertas.append(f"🧯 <b>Extintor {e['codigo']} ({e['ubicacion']})</b>: VENCIDO")
-            elif (venc - hoy).days < 30:
-                alertas.append(f"🧯 <b>Extintor {e['codigo']}</b>: Vence pronto")
-        except: pass
+    # Alertas Stock EPP (NUEVO)
+    stock = pd.read_sql("SELECT producto, stock_actual, stock_minimo FROM inventario_epp", conn)
+    for i, s in stock.iterrows():
+        if s['stock_actual'] <= s['stock_minimo']:
+            alertas.append(f"📦 <b>Stock Crítico:</b> {s['producto']} ({s['stock_actual']} unid.)")
 
     conn.close()
     return alertas
 
 # ==============================================================================
-# 3. MOTOR DOCUMENTAL (REPORTLAB)
+# 3. MOTOR DOCUMENTAL (REPORTLAB) - MANTENIDO
 # ==============================================================================
 class DocumentosLegalesPDF:
     def __init__(self, titulo_doc, codigo_doc):
@@ -171,12 +177,11 @@ class DocumentosLegalesPDF:
             except: pass
         self.elements.append(Paragraph(f"__________________________<br/>{label}", ParagraphStyle('C', alignment=TA_CENTER)))
 
-    # --- MÉTODOS EXISTENTES (EPP, RIOHS, IRL, CAP) ---
     def generar_epp(self, data):
         self._header()
         items = eval(data['lista'])
         t_data = [["CANT", "DESCRIPCIÓN EPP"]]
-        for i in items: t_data.append([str(i.split('(')[1].replace(')','')), i.split('(')[0]])
+        for i in items: t_data.append([str(i['cant']), i['prod']])
         t = Table(t_data, colWidths=[60, 460])
         t.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), HexColor(COLOR_PRIMARY)), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('GRID', (0,0), (-1,-1), 0.5, colors.black)]))
         self.elements.append(Paragraph(f"ENTREGA EPP A: {data['nombre']} - RUT: {data['rut']}", self.styles['Heading3']))
@@ -211,36 +216,11 @@ class DocumentosLegalesPDF:
         t.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (-1,0), HexColor(COLOR_PRIMARY)), ('TEXTCOLOR', (0,0), (-1,0), colors.white)]))
         self.elements.append(Spacer(1,10)); self.elements.append(t); self.doc.build(self.elements); self.buffer.seek(0); return self.buffer
 
-    # --- NUEVO: GENERADOR DE DIAT (LEY 16.744) ---
     def generar_diat(self, data):
         self._header()
         self.elements.append(Paragraph("DENUNCIA INDIVIDUAL DE ACCIDENTE DEL TRABAJO (DIAT)", self.styles['Title']))
-        self.elements.append(Spacer(1, 20))
-        
-        # Sección A: Empleador
-        self.elements.append(Paragraph("A. IDENTIFICACIÓN DEL EMPLEADOR", self.styles['Heading3']))
-        emp = [["RAZÓN SOCIAL:", "MADERAS GÁLVEZ LTDA"], ["RUT:", "77.110.060-0"], ["DIRECCIÓN:", "RUTA 215 KM 12, OSORNO"]]
-        t1 = Table(emp, colWidths=[120, 350]); t1.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black)]))
-        self.elements.append(t1); self.elements.append(Spacer(1, 15))
-        
-        # Sección B: Trabajador
-        self.elements.append(Paragraph("B. IDENTIFICACIÓN DEL TRABAJADOR", self.styles['Heading3']))
-        trab = [["NOMBRE:", data['nombre']], ["RUT:", data['rut']], ["CARGO:", "VERIFICAR EN CONTRATO"]]
-        t2 = Table(trab, colWidths=[120, 350]); t2.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black)]))
-        self.elements.append(t2); self.elements.append(Spacer(1, 15))
-        
-        # Sección C: Accidente
-        self.elements.append(Paragraph("C. DATOS DEL ACCIDENTE", self.styles['Heading3']))
-        acc = [["FECHA:", str(data['fecha'])], ["TIPO:", data['tipo']], ["LUGAR:", data['area']], ["GRAVEDAD:", data['severidad']]]
-        t3 = Table(acc, colWidths=[120, 350]); t3.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black)]))
-        self.elements.append(t3); self.elements.append(Spacer(1, 15))
-        
-        self.elements.append(Paragraph("<b>DESCRIPCIÓN BREVE:</b>", self.styles['Normal']))
-        self.elements.append(Paragraph(data['descripcion'], self.styles['Normal']))
-        self.elements.append(Spacer(1, 40))
-        
-        self.elements.append(Paragraph("__________________________<br/>FIRMA REPRESENTANTE LEGAL", ParagraphStyle('C', alignment=TA_CENTER)))
-        
+        self.elements.append(Paragraph(f"AFECTADO: {data['nombre']} RUT: {data['rut']}", self.styles['Normal']))
+        self.elements.append(Spacer(1,20)); self.elements.append(Paragraph(data['descripcion'], self.styles['Normal']))
         self.doc.build(self.elements); self.buffer.seek(0); return self.buffer
 
 # ==============================================================================
@@ -264,105 +244,180 @@ if not st.session_state['logged_in']:
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V107 - Integral Suite")
-    menu = st.radio("MENÚ", ["📊 Dashboard", "📅 Plan Anual (DS44)", "👥 Gestión Personas", "🛡️ Matriz IPER", "🧯 Extintores (DS594)", "⚖️ Generador IRL", "🦺 Entrega EPP", "📘 Entrega RIOHS", "🎓 Capacitaciones", "🚨 Incidentes & DIAT"])
+    st.caption("V108 - GLOBAL SUITE")
+    menu = st.radio("MENÚ", ["📊 Dashboard", "👥 Gestión Personas", "🛡️ Matriz IPER", "🩺 Protocolos MINSAL", "📦 Logística EPP", "🏗️ Contratistas", "⚖️ Documental", "🚨 Incidentes", "🎓 Capacitaciones", "📅 Plan Anual", "🧯 Extintores"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
 
 # --- DASHBOARD ---
 if menu == "📊 Dashboard":
     st.markdown("<div class='main-header'>Cuadro de Mando Integral</div>", unsafe_allow_html=True)
     
-    col_a, col_b = st.columns([3, 1])
+    col_a, col_b = st.columns([2, 1])
     with col_a:
         st.subheader("🔔 Estado de Cumplimiento")
         alertas = get_alertas()
         if alertas:
-            with st.container(height=200):
+            with st.container(height=150):
                 for a in alertas: st.markdown(f"<div class='alert-box alert-high'>{a}</div>", unsafe_allow_html=True)
         else: st.markdown("<div class='alert-box alert-ok'>✅ Sistema al día.</div>", unsafe_allow_html=True)
         
         k1, k2, k3 = st.columns(3)
         k1.metric("Accidentabilidad", "2.1%", "-0.2%")
         k2.metric("Siniestralidad", "12.5", "0%")
-        k3.metric("Cumplimiento Plan", "45%", "En Proceso")
+        k3.metric("Stock Crítico", f"{len([a for a in alertas if 'Stock' in a])} Items", "Logística")
 
     with col_b:
-        st.write("**Resumen Actividad**")
+        st.write("**Mapa de Calor (Lesiones)**")
         conn = get_conn()
-        audit = pd.read_sql("SELECT accion, fecha FROM auditoria ORDER BY id DESC LIMIT 5", conn)
-        st.dataframe(audit, use_container_width=True)
+        df_inc = pd.read_sql("SELECT parte_cuerpo, count(*) as total FROM incidentes GROUP BY parte_cuerpo", conn)
+        if not df_inc.empty:
+            fig = px.pie(df_inc, values='total', names='parte_cuerpo', hole=0.4)
+            st.plotly_chart(fig, use_container_width=True)
+        else: st.info("Sin datos de lesiones.")
         conn.close()
 
-# --- MÓDULO PLAN ANUAL (NUEVO V107) ---
-elif menu == "📅 Plan Anual (DS44)":
-    st.markdown("<div class='main-header'>Programa de Trabajo de SST</div>", unsafe_allow_html=True)
+# --- PROTOCOLOS MINSAL (NUEVO) ---
+elif menu == "🩺 Protocolos MINSAL":
+    st.markdown("<div class='main-header'>Salud Ocupacional (MINSAL)</div>", unsafe_allow_html=True)
+    conn = get_conn()
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        with st.form("minsal"):
+            proto = st.selectbox("Protocolo", ["PREXOR (Ruido)", "TMERT (Musculoesquelético)", "MMC (Cargas)", "UV (Radiación)", "PSICOSOCIAL"])
+            area = st.selectbox("Área/GES", ["ASERRADERO", "CANCHA", "OFICINA"])
+            fec = st.date_input("Fecha Medición")
+            res = st.selectbox("Resultado", ["BAJO", "MEDIO", "ALTO/CRITICO"])
+            if st.form_submit_button("Registrar Medición"):
+                conn.execute("INSERT INTO protocolos_minsal (protocolo, area, fecha_medicion, resultado, estado) VALUES (?,?,?,?,?)", (proto, area, fec, res, "VIGENTE"))
+                conn.commit(); st.success("Registrado"); st.rerun()
+    
+    with c2:
+        df = pd.read_sql("SELECT * FROM protocolos_minsal ORDER BY fecha_medicion DESC", conn)
+        st.dataframe(df, use_container_width=True)
+    conn.close()
+
+# --- CONTRATISTAS (NUEVO) ---
+elif menu == "🏗️ Contratistas":
+    st.markdown("<div class='main-header'>Control de Contratistas (Ley 20.123)</div>", unsafe_allow_html=True)
     conn = get_conn()
     
     c1, c2 = st.columns([1, 2])
     with c1:
-        with st.form("plan"):
-            act = st.text_input("Actividad")
-            resp = st.text_input("Responsable")
-            fec = st.date_input("Fecha Programada")
-            if st.form_submit_button("Agendar"):
-                conn.execute("INSERT INTO programa_anual (actividad, responsable, fecha_programada, estado) VALUES (?,?,?,?)", (act, resp, fec, "PENDIENTE"))
-                conn.commit(); st.success("Agendado"); st.rerun()
-                
+        with st.form("contra"):
+            rut = st.text_input("RUT Empresa")
+            raz = st.text_input("Razón Social")
+            f30 = st.date_input("Vencimiento F30-1")
+            est = st.selectbox("Estado", ["AL DIA", "PENDIENTE", "BLOQUEADO"])
+            if st.form_submit_button("Registrar Empresa"):
+                conn.execute("INSERT INTO contratistas (rut_empresa, razon_social, estado_documental, fecha_vencimiento_f30) VALUES (?,?,?,?)", (rut, raz, est, f30))
+                conn.commit(); st.success("Registrado"); st.rerun()
+    
     with c2:
-        df = pd.read_sql("SELECT * FROM programa_anual ORDER BY fecha_programada", conn)
+        df = pd.read_sql("SELECT * FROM contratistas", conn)
+        # Semáforo Visual
         if not df.empty:
-            prog = len(df[df['estado']=='REALIZADO']) / len(df)
-            st.progress(prog)
-            st.caption(f"Avance del Plan: {int(prog*100)}%")
-            st.dataframe(df, use_container_width=True)
-            
-            # Marcar como realizado
-            act_id = st.selectbox("Marcar como Realizado:", df['id'].astype(str) + " - " + df['actividad'])
-            if st.button("✅ Confirmar Realización"):
-                conn.execute("UPDATE programa_anual SET estado='REALIZADO', fecha_ejecucion=? WHERE id=?", (date.today(), int(act_id.split(" - ")[0])))
-                conn.commit(); st.rerun()
+            st.dataframe(df.style.applymap(lambda v: 'background-color: #ffcdd2' if v == 'BLOQUEADO' else ('background-color: #c8e6c9' if v == 'AL DIA' else ''), subset=['estado_documental']), use_container_width=True)
     conn.close()
 
-# --- MÓDULO EXTINTORES (NUEVO V107) ---
-elif menu == "🧯 Extintores (DS594)":
-    st.markdown("<div class='main-header'>Gestión de Extintores</div>", unsafe_allow_html=True)
+# --- LOGISTICA EPP (MEJORADO: STOCK) ---
+elif menu == "📦 Logística EPP":
+    st.markdown("<div class='main-header'>Gestión de EPP e Inventario</div>", unsafe_allow_html=True)
     conn = get_conn()
     
-    tab_inv, tab_alert = st.tabs(["Inventario", "Alertas Vencimiento"])
+    tab_ent, tab_inv = st.tabs(["Entrega a Trabajador", "Gestión de Stock"])
     
     with tab_inv:
-        with st.form("ext"):
-            c1, c2 = st.columns(2)
-            cod = c1.text_input("Código Interno")
-            tipo = c2.selectbox("Tipo", ["PQS", "CO2", "Agua"])
-            cap = c1.selectbox("Capacidad", ["2KG", "4KG", "6KG", "10KG"])
-            ubic = c2.text_input("Ubicación")
-            venc = st.date_input("Vencimiento Carga")
-            if st.form_submit_button("Registrar Extintor"):
-                conn.execute("INSERT INTO extintores (codigo, tipo, capacidad, ubicacion, fecha_vencimiento, estado_inspeccion) VALUES (?,?,?,?,?,?)",
-                            (cod, tipo, cap, ubic, venc, "OK"))
-                conn.commit(); st.success("Guardado"); st.rerun()
-        
-        st.dataframe(pd.read_sql("SELECT * FROM extintores", conn), use_container_width=True)
+        st.subheader("Inventario Bodega")
+        df_inv = pd.read_sql("SELECT * FROM inventario_epp", conn)
+        edited_inv = st.data_editor(df_inv, key="editor_inv", use_container_width=True)
+        if st.button("Actualizar Inventario"):
+            c = conn.cursor()
+            c.execute("DELETE FROM inventario_epp")
+            for i, r in edited_inv.iterrows():
+                c.execute("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion) VALUES (?,?,?,?)", (r['producto'], r['stock_actual'], r['stock_minimo'], r['ubicacion']))
+            conn.commit(); st.success("Inventario Actualizado"); st.rerun()
 
-    with tab_alert:
-        df_e = pd.read_sql("SELECT * FROM extintores", conn)
-        alert_count = 0
-        for i, row in df_e.iterrows():
-            fv = datetime.strptime(row['fecha_vencimiento'], '%Y-%m-%d').date()
-            if fv < date.today():
-                st.error(f"🔴 VENCIDO: Extintor {row['codigo']} en {row['ubicacion']}")
-                alert_count += 1
-            elif (fv - date.today()).days < 30:
-                st.warning(f"🟡 POR VENCER: Extintor {row['codigo']} en {row['ubicacion']}")
-                alert_count += 1
-        if alert_count == 0: st.success("Todos los equipos operativos.")
+    with tab_ent:
+        df_p = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
+        sel = st.selectbox("Trabajador:", df_p['rut'] + " | " + df_p['nombre'])
+        
+        # Selectbox dinámico desde inventario
+        items_inv = pd.read_sql("SELECT producto, stock_actual FROM inventario_epp WHERE stock_actual > 0", conn)
+        
+        if not items_inv.empty:
+            if 'epp_c' not in st.session_state: st.session_state.epp_c = []
+            
+            c1, c2 = st.columns(2)
+            prod = c1.selectbox("Producto Disponible", items_inv['producto'] + " (Stock: " + items_inv['stock_actual'].astype(str) + ")")
+            cant = c2.number_input("Cantidad", 1, 5, 1)
+            
+            if st.button("Agregar a Entrega"):
+                p_name = prod.split(" (")[0]
+                st.session_state.epp_c.append({'prod': p_name, 'cant': cant})
+            
+            if st.session_state.epp_c:
+                st.write("Resumen Entrega:", st.session_state.epp_c)
+                canvas = st_canvas(stroke_width=2, height=150, key="epp_s")
+                if st.button("Confirmar Entrega y Descontar Stock"):
+                    if canvas.image_data is not None:
+                        # 1. Descontar Stock
+                        c = conn.cursor()
+                        for item in st.session_state.epp_c:
+                            c.execute("UPDATE inventario_epp SET stock_actual = stock_actual - ? WHERE producto = ?", (item['cant'], item['prod']))
+                        
+                        # 2. Registrar
+                        rut = sel.split(" | ")[0]; nom = sel.split(" | ")[1]
+                        cargo = df_p[df_p['rut']==rut]['cargo'].values[0]
+                        img = PILImage.fromarray(canvas.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); img_str = base64.b64encode(b.getvalue()).decode()
+                        c.execute("INSERT INTO registro_epp (fecha_entrega, rut_trabajador, nombre_trabajador, cargo, lista_productos, firma_b64) VALUES (?,?,?,?,?,?)", (date.today(), rut, nom, cargo, str(st.session_state.epp_c), img_str))
+                        conn.commit()
+                        
+                        # 3. PDF
+                        pdf = DocumentosLegalesPDF("COMPROBANTE EPP", "RG-GD-01").generar_epp({'nombre': nom, 'rut': rut, 'cargo': cargo, 'fecha': date.today(), 'lista': str(st.session_state.epp_c), 'firma_b64': img_str})
+                        st.download_button("Descargar PDF", pdf, "EPP.pdf")
+                        st.session_state.epp_c = []
+                        st.success("Entrega Procesada y Stock Actualizado")
+        else:
+            st.error("No hay stock disponible en inventario. Vaya a la pestaña 'Gestión de Stock' para reponer.")
+            
     conn.close()
 
-# --- GESTIÓN PERSONAS ---
+# --- INCIDENTES (MEJORADO: MAPA CALOR) ---
+elif menu == "🚨 Incidentes":
+    st.markdown("<div class='main-header'>Gestión de Accidentes</div>", unsafe_allow_html=True)
+    conn = get_conn()
+    
+    with st.form("inc"):
+        st.subheader("Reporte Inmediato")
+        fec = st.date_input("Fecha"); tipo = st.selectbox("Tipo", ["Accidente CTP", "Trayecto", "Incidente"])
+        afectado = st.selectbox("Afectado", pd.read_sql("SELECT rut, nombre FROM personal", conn)['rut'].astype(str) + " | " + pd.read_sql("SELECT nombre FROM personal", conn)['nombre'])
+        parte = st.selectbox("Parte del Cuerpo Afectada", ["MANO DERECHA", "MANO IZQUIERDA", "OJOS", "ESPALDA", "PIERNA", "CABEZA"])
+        desc = st.text_area("Relato")
+        if st.form_submit_button("Guardar Reporte"):
+            conn.execute("INSERT INTO incidentes (fecha, tipo, descripcion, rut_afectado, nombre_afectado, parte_cuerpo, estado) VALUES (?,?,?,?,?,?,?)",
+                        (fec, tipo, desc, afectado.split(" | ")[0], afectado.split(" | ")[1], parte, "ABIERTO"))
+            conn.commit(); st.success("Registrado")
+    
+    st.divider()
+    st.subheader("Generación DIAT")
+    incs = pd.read_sql("SELECT * FROM incidentes ORDER BY id DESC", conn)
+    if not incs.empty:
+        sel_inc = st.selectbox("Seleccione Incidente:", incs['id'].astype(str) + " - " + incs['nombre_afectado'])
+        if st.button("📄 Generar PDF DIAT"):
+            i_data = incs[incs['id']==int(sel_inc.split(" - ")[0])].iloc[0]
+            pdf = DocumentosLegalesPDF("DENUNCIA INDIVIDUAL", "DIAT").generar_diat({
+                'nombre': i_data['nombre_afectado'], 'rut': i_data['rut_afectado'], 
+                'fecha': i_data['fecha'], 'tipo': i_data['tipo'], 
+                'area': 'FAENA', 'severidad': 'GRAVE', 'descripcion': i_data['descripcion']
+            })
+            st.download_button("Descargar DIAT", pdf, "DIAT.pdf", "application/pdf")
+    conn.close()
+
+# --- MÓDULOS MANTENIDOS (ESTABLES) ---
 elif menu == "👥 Gestión Personas":
     st.markdown("<div class='main-header'>Gestión de Personas (RH)</div>", unsafe_allow_html=True)
-    tab_list, tab_carga, tab_new = st.tabs(["📋 Nómina & Edición", "📂 Carga Masiva", "➕ Nuevo Manual"])
+    tab_list, tab_carga, tab_new, tab_dig = st.tabs(["📋 Nómina", "📂 Carga Masiva", "➕ Nuevo", "🗂️ Carpeta"])
     conn = get_conn()
     with tab_list:
         df_p = pd.read_sql("SELECT rut, nombre, cargo, centro_costo, estado FROM personal", conn)
@@ -379,57 +434,48 @@ elif menu == "👥 Gestión Personas":
                 if st.button("Procesar"):
                     c = conn.cursor()
                     for i, r in df.iterrows():
-                        fec = date.today() # Simplificado para evitar error
-                        c.execute("INSERT OR REPLACE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", 
-                                 (str(r.get('RUT','')), str(r.get('NOMBRE','')), str(r.get('CARGO','')), "FAENA", fec, "ACTIVO"))
+                        raw_fec = r.get('FECHA DE CONTRATO'); fec = date.today()
+                        try: val_dt = pd.to_datetime(raw_fec, errors='coerce'); fec = val_dt.date() if pd.notnull(val_dt) else date.today()
+                        except: pass
+                        c.execute("INSERT OR REPLACE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (str(r.get('RUT','')), str(r.get('NOMBRE','')), str(r.get('CARGO','')), "FAENA", fec, "ACTIVO"))
                     conn.commit(); st.success("Carga OK")
             except Exception as e: st.error(f"Error: {e}")
     with tab_new:
         with st.form("newp"):
             r = st.text_input("RUT"); n = st.text_input("Nombre"); c = st.selectbox("Cargo", LISTA_CARGOS)
             if st.form_submit_button("Guardar"): conn.execute("INSERT INTO personal VALUES (?,?,?,?,?,?,?)", (r, n, c, "FAENA", date.today(), "ACTIVO", None)); conn.commit(); st.success("OK")
+    with tab_dig:
+        df_all = pd.read_sql("SELECT rut, nombre FROM personal", conn)
+        if not df_all.empty:
+            sel = st.selectbox("Trabajador:", df_all['rut'] + " - " + df_all['nombre'])
+            if QR_AVAILABLE: st.button("🪪 Credencial")
     conn.close()
 
-# --- MÓDULOS OPERATIVOS CONSERVADOS ---
 elif menu == "🛡️ Matriz IPER":
     st.title("Matriz IPER"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM matriz_iper", conn), key="iper"); conn.close()
 
-elif menu == "⚖️ Generador IRL":
-    st.title("Generador IRL (DS44)"); conn = get_conn()
+elif menu == "⚖️ Documental":
+    st.markdown("<div class='main-header'>Gestor Documental</div>", unsafe_allow_html=True)
+    tab_odi, tab_riohs = st.tabs(["IRL (DS44)", "RIOHS"])
+    conn = get_conn()
     df = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
-    sel = st.selectbox("Trabajador:", df['rut'] + " - " + df['nombre'])
-    if st.button("Generar IRL"):
-        rut = sel.split(" - ")[0]; cargo = df[df['rut']==rut]['cargo'].values[0]
-        riesgos = pd.read_sql("SELECT peligro, riesgo, consecuencia, medida_control, metodo_correcto FROM matriz_iper WHERE cargo_asociado=?", conn, params=(cargo,))
-        if riesgos.empty: riesgos = pd.read_sql("SELECT peligro, riesgo, consecuencia, medida_control, metodo_correcto FROM matriz_iper LIMIT 3", conn)
-        pdf = DocumentosLegalesPDF("INFORMACIÓN RIESGOS LABORALES", "RG-GD-04").generar_irl({'nombre': sel.split(" - ")[1], 'rut': rut, 'cargo': cargo}, riesgos.values.tolist())
-        st.download_button("Descargar PDF", pdf, f"IRL_{rut}.pdf", "application/pdf")
-    conn.close()
-
-elif menu == "🦺 Entrega EPP":
-    st.title("EPP"); conn = get_conn(); df = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn); sel = st.selectbox("Trabajador:", df['rut'] + " | " + df['nombre'])
-    if 'cart' not in st.session_state: st.session_state.cart = []
-    p = st.selectbox("Prod", ["Casco", "Lentes"]); q = st.number_input("Cant", 1); 
-    if st.button("Agregar"): st.session_state.cart.append(f"{p} ({q})")
-    st.write(st.session_state.cart); canvas = st_canvas(stroke_width=2, height=150, key="epp")
-    if st.button("Guardar"):
-        if canvas.image_data is not None:
-            img = PILImage.fromarray(canvas.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); ib64 = base64.b64encode(b.getvalue()).decode()
-            rut = sel.split(" | ")[0]; cargo = df[df['rut']==rut]['cargo'].values[0]
-            conn.execute("INSERT INTO registro_epp (fecha_entrega, rut_trabajador, nombre_trabajador, cargo, lista_productos, firma_b64) VALUES (?,?,?,?,?,?)", (date.today(), rut, sel.split(" | ")[1], cargo, str(st.session_state.cart), ib64))
-            conn.commit(); st.success("OK"); st.session_state.cart = []
-            pdf = DocumentosLegalesPDF("COMPROBANTE EPP", "RG-GD-01").generar_epp({'nombre': sel.split(" | ")[1], 'rut': rut, 'cargo': cargo, 'fecha': date.today(), 'lista': str(st.session_state.cart), 'firma_b64': ib64})
-            st.download_button("Descargar PDF", pdf, "EPP.pdf")
-    conn.close()
-
-elif menu == "📘 Entrega RIOHS":
-    st.title("RIOHS"); conn = get_conn(); df = pd.read_sql("SELECT rut, nombre FROM personal", conn); sel = st.selectbox("Trabajador", df['rut']+" | "+df['nombre']); canvas = st_canvas(stroke_width=2, height=150, key="riohs")
-    if st.button("Registrar"):
-        if canvas.image_data is not None:
-            img = PILImage.fromarray(canvas.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); ib64 = base64.b64encode(b.getvalue()).decode()
-            conn.execute("INSERT INTO registro_riohs (fecha_entrega, rut_trabajador, nombre_trabajador, tipo_entrega, firma_b64) VALUES (?,?,?,?,?)", (date.today(), sel.split(" | ")[0], sel.split(" | ")[1], "Físico", ib64))
-            conn.commit(); st.success("OK"); pdf = DocumentosLegalesPDF("RECEPCIÓN RIOHS", "RG-GD-03").generar_riohs({'nombre': sel.split(" | ")[1], 'rut': sel.split(" | ")[0], 'tipo': 'Físico', 'firma_b64': ib64})
-            st.download_button("Descargar", pdf, "RIOHS.pdf")
+    with tab_odi:
+        sel = st.selectbox("Trabajador:", df['rut'] + " - " + df['nombre'])
+        if st.button("Generar IRL"):
+            rut = sel.split(" - ")[0]; cargo = df[df['rut']==rut]['cargo'].values[0]
+            riesgos = pd.read_sql("SELECT peligro, riesgo, consecuencia, medida_control, metodo_correcto FROM matriz_iper WHERE cargo_asociado=?", conn, params=(cargo,))
+            if riesgos.empty: riesgos = pd.read_sql("SELECT peligro, riesgo, consecuencia, medida_control, metodo_correcto FROM matriz_iper LIMIT 3", conn)
+            pdf = DocumentosLegalesPDF("INFORMACIÓN RIESGOS LABORALES", "RG-GD-04").generar_irl({'nombre': sel.split(" - ")[1], 'rut': rut, 'cargo': cargo}, riesgos.values.tolist())
+            st.download_button("Descargar PDF", pdf, f"IRL_{rut}.pdf", "application/pdf")
+    with tab_riohs:
+        sel_r = st.selectbox("Trabajador RIOHS:", df['rut'] + " | " + df['nombre'])
+        canvas = st_canvas(stroke_width=2, height=150, key="riohs")
+        if st.button("Registrar"):
+            if canvas.image_data is not None:
+                img = PILImage.fromarray(canvas.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); ib64 = base64.b64encode(b.getvalue()).decode()
+                conn.execute("INSERT INTO registro_riohs (fecha_entrega, rut_trabajador, nombre_trabajador, tipo_entrega, firma_b64) VALUES (?,?,?,?,?)", (date.today(), sel_r.split(" | ")[0], sel_r.split(" | ")[1], "Físico", ib64))
+                conn.commit(); st.success("OK"); pdf = DocumentosLegalesPDF("RECEPCIÓN RIOHS", "RG-GD-03").generar_riohs({'nombre': sel_r.split(" | ")[1], 'rut': sel_r.split(" | ")[0], 'tipo': 'Físico', 'firma_b64': ib64})
+                st.download_button("Descargar", pdf, "RIOHS.pdf")
     conn.close()
 
 elif menu == "🎓 Capacitaciones":
@@ -442,32 +488,8 @@ elif menu == "🎓 Capacitaciones":
             conn.commit(); st.success("Guardado")
     conn.close()
 
-# --- INCIDENTES & DIAT (MEJORADO V107) ---
-elif menu == "🚨 Incidentes & DIAT":
-    st.markdown("<div class='main-header'>Gestión de Accidentes (Ley 16.744)</div>", unsafe_allow_html=True)
-    conn = get_conn()
-    
-    with st.form("inc"):
-        st.subheader("Reporte Inmediato")
-        fec = st.date_input("Fecha"); tipo = st.selectbox("Tipo", ["Accidente CTP", "Trayecto", "Incidente"])
-        afectado = st.selectbox("Afectado", pd.read_sql("SELECT rut, nombre FROM personal", conn)['rut'].astype(str) + " | " + pd.read_sql("SELECT nombre FROM personal", conn)['nombre'])
-        desc = st.text_area("Relato")
-        if st.form_submit_button("Guardar Reporte"):
-            conn.execute("INSERT INTO incidentes (fecha, tipo, descripcion, rut_afectado, nombre_afectado, estado) VALUES (?,?,?,?,?,?)",
-                        (fec, tipo, desc, afectado.split(" | ")[0], afectado.split(" | ")[1], "ABIERTO"))
-            conn.commit(); st.success("Registrado")
-    
-    st.divider()
-    st.subheader("Generación DIAT (Oficial)")
-    incs = pd.read_sql("SELECT * FROM incidentes ORDER BY id DESC", conn)
-    if not incs.empty:
-        sel_inc = st.selectbox("Seleccione Incidente:", incs['id'].astype(str) + " - " + incs['nombre_afectado'])
-        if st.button("📄 Generar PDF DIAT"):
-            i_data = incs[incs['id']==int(sel_inc.split(" - ")[0])].iloc[0]
-            pdf = DocumentosLegalesPDF("DENUNCIA INDIVIDUAL", "DIAT").generar_diat({
-                'nombre': i_data['nombre_afectado'], 'rut': i_data['rut_afectado'], 
-                'fecha': i_data['fecha'], 'tipo': i_data['tipo'], 
-                'area': 'FAENA', 'severidad': 'GRAVE', 'descripcion': i_data['descripcion']
-            })
-            st.download_button("Descargar DIAT", pdf, "DIAT.pdf", "application/pdf")
-    conn.close()
+elif menu == "📅 Plan Anual":
+    st.title("Plan SST"); conn = get_conn(); st.dataframe(pd.read_sql("SELECT * FROM programa_anual", conn)); conn.close()
+
+elif menu == "🧯 Extintores":
+    st.title("Extintores"); conn = get_conn(); st.dataframe(pd.read_sql("SELECT * FROM extintores", conn)); conn.close()
