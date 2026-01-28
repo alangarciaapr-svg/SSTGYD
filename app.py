@@ -7,6 +7,7 @@ import hashlib
 import os
 import time
 import base64
+import ast  # NUEVO: Para leer listas de forma segura
 from PIL import Image as PILImage
 import matplotlib
 import matplotlib.pyplot as plt
@@ -34,7 +35,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v111_standard.db' # DB Final Estabilizada
+DB_NAME = 'sgsst_v112_refined.db' # DB Refinada
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
@@ -53,7 +54,7 @@ st.markdown("""
 LISTA_CARGOS = ["GERENTE GENERAL", "PREVENCIONISTA DE RIESGOS", "JEFE DE PATIO", "OPERADOR DE ASERRADERO", "OPERADOR DE MAQUINARIA", "MOTOSIERRISTA", "ESTROBERO", "MECANICO", "ADMINISTRATIVO"]
 
 # ==============================================================================
-# 2. CAPA DE DATOS (SQL) - ESTRUCTURA COMPLETA MANTENIDA
+# 2. CAPA DE DATOS (SQL)
 # ==============================================================================
 def get_conn():
     return sqlite3.connect(DB_NAME, check_same_thread=False)
@@ -119,8 +120,10 @@ def get_alertas():
     for i, t in trabs.iterrows():
         rut = t['rut']
         falta = []
+        # Validación optimizada
         irl = pd.read_sql("SELECT count(*) FROM asistencia_capacitacion WHERE trabajador_rut=?", conn, params=(rut,)).iloc[0,0] > 0
         riohs = pd.read_sql("SELECT count(*) FROM registro_riohs WHERE rut_trabajador=?", conn, params=(rut,)).iloc[0,0] > 0
+        
         if not irl: falta.append("IRL")
         if not riohs: falta.append("RIOHS")
         if falta: alertas.append(f"⚠️ <b>{t['nombre']}</b>: Falta {', '.join(falta)}")
@@ -141,6 +144,19 @@ def get_alertas():
     conn.close()
     return alertas
 
+def get_incidentes_mes():
+    # Cálculo real para el dashboard
+    conn = get_conn()
+    try:
+        mes_actual = datetime.now().strftime('%m')
+        anio_actual = datetime.now().strftime('%Y')
+        # SQLite substr para fecha YYYY-MM-DD
+        count = pd.read_sql(f"SELECT count(*) FROM incidentes WHERE strftime('%m', fecha) = '{mes_actual}' AND strftime('%Y', fecha) = '{anio_actual}'", conn).iloc[0,0]
+    except:
+        count = 0
+    conn.close()
+    return count
+
 # ==============================================================================
 # 3. MOTOR DOCUMENTAL ESTANDARIZADO (SGSST)
 # ==============================================================================
@@ -155,7 +171,6 @@ class DocumentosLegalesPDF:
         self.logo_path = "logo_empresa.png"
 
     def _header(self):
-        # Cabecera Estándar para TODO el sistema
         logo = Paragraph("<b>LOGO</b>", self.styles['Normal'])
         if os.path.exists(self.logo_path):
             try: logo = RLImage(self.logo_path, width=80, height=35)
@@ -170,7 +185,6 @@ class DocumentosLegalesPDF:
         self.elements.append(Spacer(1, 20))
 
     def _signature_block(self, firma_b64, label="FIRMA TRABAJADOR"):
-        # Bloque de firma estandarizado
         sig_img = Paragraph("", self.styles['Normal'])
         if firma_b64:
             try: sig_img = RLImage(io.BytesIO(base64.b64decode(firma_b64)), width=120, height=50)
@@ -183,7 +197,6 @@ class DocumentosLegalesPDF:
             ('LINEABOVE', (0,1), (0,1), 1, colors.black), ('GRID', (1,0), (1,1), 0.5, colors.grey),
             ('VALIGN', (1,0), (1,0), 'MIDDLE'), ('ALIGN', (1,0), (1,0), 'CENTER'), ('FONTSIZE', (1,0), (1,0), 6)
         ]))
-        
         main = Table([[t]], colWidths=[500]); main.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER')]))
         self.elements.append(Spacer(1, 20)); self.elements.append(main)
 
@@ -194,9 +207,14 @@ class DocumentosLegalesPDF:
         t_info.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (-1,-1), colors.whitesmoke)]))
         self.elements.append(t_info); self.elements.append(Spacer(1, 15))
         
-        items = eval(data['lista'])
+        # USO SEGURO DE AST.LITERAL_EVAL
+        try:
+            items = ast.literal_eval(data['lista'])
+        except:
+            items = [] # Fallback si falla
+            
         t_data = [["CANT", "ELEMENTO", "MOTIVO"]]
-        for i in items: t_data.append([str(i['cant']), i['prod'], i['mot']])
+        for i in items: t_data.append([str(i.get('cant','1')), i.get('prod','EPP'), i.get('mot','-')])
         
         t_prod = Table(t_data, colWidths=[40, 280, 200])
         t_prod.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), HexColor(COLOR_PRIMARY)), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('ALIGN', (0,0), (-1,-1), 'CENTER')]))
@@ -265,7 +283,7 @@ if not st.session_state['logged_in']:
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V111 - MASTER STANDARD")
+    st.caption("V112 - MASTER REFINED")
     menu = st.radio("MENÚ", ["📊 Dashboard", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🛡️ Matriz IPER", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
 
@@ -281,7 +299,8 @@ if menu == "📊 Dashboard":
                 for a in alertas: st.markdown(f"<div class='alert-box alert-high'>{a}</div>", unsafe_allow_html=True)
         else: st.markdown("<div class='alert-box alert-ok'>✅ Todo al día</div>", unsafe_allow_html=True)
     with col_b:
-        st.metric("Accidentabilidad", "0%", "0")
+        inc_count = get_incidentes_mes()
+        st.metric("Incidentes (Mes)", inc_count, "Bajo Control" if inc_count == 0 else "Atención")
         st.metric("Stock Crítico", f"{len([a for a in alertas if 'Stock' in a])} Items", "Logística")
 
 # --- MÓDULO 2: GESTIÓN PERSONAS ---
@@ -429,14 +448,21 @@ elif menu == "🚨 Incidentes & DIAT":
 
 # --- OTROS MÓDULOS ---
 elif menu == "🛡️ Matriz IPER":
-    st.title("Matriz IPER"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM matriz_iper", conn), key="iper"); conn.close()
+    st.title("Matriz IPER"); conn = get_conn(); 
+    df_iper = pd.read_sql("SELECT * FROM matriz_iper", conn)
+    edited = st.data_editor(df_iper, key="iper_ed", use_container_width=True)
+    if st.button("Guardar Cambios Matriz"):
+        c = conn.cursor(); c.execute("DELETE FROM matriz_iper"); 
+        for i, r in edited.iterrows(): c.execute("INSERT INTO matriz_iper (cargo_asociado, proceso, peligro, riesgo, consecuencia, medida_control, metodo_correcto, criticidad) VALUES (?,?,?,?,?,?,?,?)", (r['cargo_asociado'], r['proceso'], r['peligro'], r['riesgo'], r['consecuencia'], r['medida_control'], r['metodo_correcto'], r['criticidad']))
+        conn.commit(); st.success("Matriz Actualizada")
+    conn.close()
+
 elif menu == "🎓 Capacitaciones":
     st.title("Capacitaciones"); conn = get_conn(); 
     with st.form("cap"):
         t = st.text_input("Tema"); tp = st.selectbox("Tipo", ["Inducción", "Charla"]); a = st.multiselect("Asistentes", pd.read_sql("SELECT rut, nombre FROM personal", conn)['nombre'])
         if st.form_submit_button("Guardar"):
             c = conn.cursor(); c.execute("INSERT INTO capacitaciones (fecha, tema, tipo_actividad, responsable_rut, estado) VALUES (?,?,?,?,?)", (date.today(), t, tp, "PREVENCIONISTA", "OK")); cid = c.lastrowid
-            # Simplificación para el ejemplo, guardar asistentes
             conn.commit(); st.success("OK")
     conn.close()
 elif menu == "📅 Plan Anual":
