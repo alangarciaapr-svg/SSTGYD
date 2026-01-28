@@ -35,7 +35,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v116_email.db' # DB Actualizada con campo Email
+DB_NAME = 'sgsst_v117_fix_excel.db' # DB Actualizada
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
@@ -65,7 +65,7 @@ def init_db():
     conn = get_conn()
     c = conn.cursor()
     
-    # Base y RRHH (ACTUALIZADO: CAMPO EMAIL)
+    # Base y RRHH
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, usuario TEXT, accion TEXT, detalle TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS personal (
@@ -79,7 +79,7 @@ def init_db():
         email TEXT 
     )''')
     
-    # Prevención y Riesgos (MATRIZ ISP 2024)
+    # Prevención y Riesgos
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         proceso TEXT,
@@ -125,10 +125,8 @@ def init_db():
             ("Guantes Cabritilla", 200, 20, "Container"),
             ("Zapatos Seguridad", 30, 2, "Bodega Central")
         ])
-        # Actualizado con Email
         c.execute("INSERT INTO personal VALUES (?,?,?,?,?,?,?,?)", ("12.345.678-9", "JUAN PEREZ (EJEMPLO)", "OPERADOR DE MAQUINARIA", "FAENA", date.today(), "ACTIVO", None, "juan.perez@empresa.cl"))
         
-        # Datos Matriz Ejemplo ISP
         datos_matriz = [
             ("Cosecha", "Operativo", "Operador Harvester", "Tala de árboles", "SI", "Pendiente abrupta (Ambiente)", "Volcamiento", "Seguridad", 2, 4, 8, "IMPORTANTE", "Cabina ROPS/FOPS, Procedimiento trabajo seguro"),
             ("Mantención", "Apoyo", "Mecánico", "Uso de esmeril angular", "SI", "Proyección de partículas (Equipo)", "Lesión ocular", "Seguridad", 4, 2, 8, "IMPORTANTE", "Uso de careta facial, Lentes de seguridad")
@@ -159,7 +157,6 @@ def get_alertas():
     alertas = []
     hoy = date.today()
     
-    # 1. Documentación Personal (DS44)
     trabs = pd.read_sql("SELECT rut, nombre FROM personal WHERE estado='ACTIVO'", conn)
     for i, t in trabs.iterrows():
         rut = t['rut']
@@ -170,12 +167,10 @@ def get_alertas():
         if not riohs: falta.append("RIOHS")
         if falta: alertas.append(f"⚠️ <b>{t['nombre']}</b>: Falta {', '.join(falta)}")
     
-    # 2. Stock EPP
     stock = pd.read_sql("SELECT producto, stock_actual, stock_minimo FROM inventario_epp", conn)
     for i, s in stock.iterrows():
         if s['stock_actual'] <= s['stock_minimo']: alertas.append(f"📦 <b>Stock Crítico:</b> {s['producto']} ({s['stock_actual']})")
     
-    # 3. Extintores Vencidos
     exts = pd.read_sql("SELECT codigo, fecha_vencimiento FROM extintores", conn)
     for i, e in exts.iterrows():
         try:
@@ -197,7 +192,7 @@ def get_incidentes_mes():
     return count
 
 # ==============================================================================
-# 3. MOTOR DOCUMENTAL ESTANDARIZADO (SGSST)
+# 3. MOTOR DOCUMENTAL ESTANDARIZADO
 # ==============================================================================
 class DocumentosLegalesPDF:
     def __init__(self, titulo_doc, codigo_doc):
@@ -285,7 +280,7 @@ class DocumentosLegalesPDF:
         self.doc.build(self.elements); self.buffer.seek(0); return self.buffer
 
 # ==============================================================================
-# 4. FRONTEND (STREAMLIT)
+# 4. FRONTEND
 # ==============================================================================
 init_db()
 
@@ -305,7 +300,7 @@ if not st.session_state['logged_in']:
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V116 - MASTER + EMAIL/IPER")
+    st.caption("V117 - FIX EXCEL + EMAIL")
     menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
 
@@ -325,7 +320,7 @@ if menu == "📊 Dashboard":
         st.metric("Incidentes (Mes)", inc_count, "Bajo Control" if inc_count == 0 else "Atención")
         st.metric("Stock Crítico", f"{len([a for a in alertas if 'Stock' in a])} Items", "Logística")
 
-# --- 2. MATRIZ IPER (CON PLANTILLA DE CARGA) ---
+# --- 2. MATRIZ IPER ---
 elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Riesgos (Guía ISP 2024)</div>", unsafe_allow_html=True)
     tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Ver Matriz", "📂 Carga Masiva Excel", "➕ Crear Riesgo"])
@@ -350,8 +345,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
 
     with tab_carga:
         st.subheader("Carga Masiva (Formato ISP)")
-        
-        # --- BOTÓN DESCARGA PLANTILLA MATRIZ ---
+        # --- DESCARGA PLANTILLA MATRIZ (FIXED ENGINE) ---
         plantilla_iper = {
             'Proceso': ['Cosecha'], 'Puesto': ['Operador'], 'Tarea': ['Tala'], 
             'Peligro': ['Pendiente'], 'Riesgo': ['Volcamiento'], 
@@ -359,10 +353,11 @@ elif menu == "🛡️ Matriz IPER (ISP)":
         }
         df_plantilla_iper = pd.DataFrame(plantilla_iper)
         buffer_iper = io.BytesIO()
-        with pd.ExcelWriter(buffer_iper, engine='xlsxwriter') as writer: df_plantilla_iper.to_excel(writer, index=False)
+        # ENGINE CAMBIADO A OPENPYXL (CORRECCION SOLICITADA)
+        with pd.ExcelWriter(buffer_iper, engine='openpyxl') as writer: df_plantilla_iper.to_excel(writer, index=False)
         buffer_iper.seek(0)
-        st.download_button("📥 Descargar Plantilla Matriz", buffer_iper, "plantilla_matriz_isp.xlsx", "application/vnd.ms-excel")
-        # ---------------------------------------
+        st.download_button("📥 Descargar Plantilla Matriz", buffer_iper, "plantilla_matriz_isp.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        # -----------------------------------------------
 
         up = st.file_uploader("Subir Excel Matriz", type=['xlsx'])
         if up:
@@ -397,7 +392,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                 conn.commit(); st.success("Guardado"); st.rerun()
     conn.close()
 
-# --- 3. GESTIÓN PERSONAS (CON CAMPO EMAIL) ---
+# --- 3. GESTIÓN PERSONAS (CON EMAIL Y PLANTILLA FIXED) ---
 elif menu == "👥 Gestión Personas":
     st.markdown("<div class='main-header'>Gestión de Personas (RH)</div>", unsafe_allow_html=True)
     tab_list, tab_carga, tab_new, tab_dig = st.tabs(["📋 Nómina & Edición", "📂 Carga Masiva (Excel)", "➕ Nuevo Manual", "🗂️ Carpeta Digital"])
@@ -414,13 +409,14 @@ elif menu == "👥 Gestión Personas":
     with tab_carga:
         st.subheader("Carga Masiva (Plantilla Excel)")
         
-        # --- DESCARGA PLANTILLA PERSONAL CON EMAIL ---
+        # --- DESCARGA PLANTILLA PERSONAL CON EMAIL (FIXED ENGINE) ---
         template_data = {'RUT': ['12.345.678-9'], 'NOMBRE': ['Ejemplo'], 'CARGO': ['OPERADOR'], 'FECHA DE CONTRATO': ['2024-01-01'], 'EMAIL': ['correo@ejemplo.cl']}
         df_template = pd.DataFrame(template_data)
         buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer: df_template.to_excel(writer, index=False)
+        # ENGINE CAMBIADO A OPENPYXL (CORRECCION SOLICITADA)
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer: df_template.to_excel(writer, index=False)
         buffer.seek(0)
-        st.download_button(label="📥 Descargar Plantilla Personal", data=buffer, file_name="plantilla_carga_personal.xlsx", mime="application/vnd.ms-excel")
+        st.download_button(label="📥 Descargar Plantilla Personal", data=buffer, file_name="plantilla_carga_personal.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         # ---------------------------
 
         up = st.file_uploader("Archivo Excel/CSV", type=['csv','xlsx'])
@@ -433,7 +429,7 @@ elif menu == "👥 Gestión Personas":
                     count = 0
                     for i, r in df.iterrows():
                         rut = str(r.get('RUT','')).strip(); nom = str(r.get('NOMBRE','')).strip(); car = str(r.get('CARGO','')).strip()
-                        mail = str(r.get('EMAIL','')).strip() # NUEVO CAMPO EMAIL
+                        mail = str(r.get('EMAIL','')).strip()
                         try: fec = pd.to_datetime(r.get('FECHA DE CONTRATO'), errors='coerce').date()
                         except: fec = date.today()
                         if rut and nom:
@@ -446,7 +442,7 @@ elif menu == "👥 Gestión Personas":
         with st.form("newp"):
             c1, c2 = st.columns(2)
             r = c1.text_input("RUT"); n = c2.text_input("Nombre"); c = c1.selectbox("Cargo", LISTA_CARGOS)
-            em = c2.text_input("Email") # NUEVO CAMPO MANUAL
+            em = c2.text_input("Email")
             if st.form_submit_button("Guardar"): conn.execute("INSERT INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado, email) VALUES (?,?,?,?,?,?,?)", (r, n, c, "FAENA", date.today(), "ACTIVO", em)); conn.commit(); st.success("OK")
 
     with tab_dig:
@@ -456,7 +452,7 @@ elif menu == "👥 Gestión Personas":
             if QR_AVAILABLE: st.button("🪪 Ver Credencial")
     conn.close()
 
-# --- 4. GESTOR DOCUMENTAL (CONECTADO) ---
+# --- 4. GESTOR DOCUMENTAL ---
 elif menu == "⚖️ Gestor Documental":
     st.markdown("<div class='main-header'>Centro Documental (DS44)</div>", unsafe_allow_html=True)
     tab_irl, tab_riohs, tab_hist = st.tabs(["📄 IRL", "📘 RIOHS", "📂 Historial"])
@@ -488,7 +484,7 @@ elif menu == "⚖️ Gestor Documental":
         st.dataframe(pd.read_sql("SELECT * FROM registro_riohs", conn), use_container_width=True)
     conn.close()
 
-# --- 5. LOGÍSTICA EPP (COMPLETO) ---
+# --- 5. LOGÍSTICA EPP ---
 elif menu == "🦺 Logística EPP":
     st.markdown("<div class='main-header'>Gestión de EPP</div>", unsafe_allow_html=True)
     conn = get_conn()
@@ -518,12 +514,10 @@ elif menu == "🦺 Logística EPP":
             if canvas.image_data is not None:
                 img = PILImage.fromarray(canvas.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); ib64 = base64.b64encode(b.getvalue()).decode()
                 rut = sel.split(" | ")[0]; nom = sel.split(" | ")[1]; cargo = df_p[df_p['rut']==rut]['cargo'].values[0]
-                
                 c = conn.cursor()
                 for i in st.session_state.cart: c.execute("UPDATE inventario_epp SET stock_actual = stock_actual - ? WHERE producto=?", (i['cant'], i['prod']))
                 c.execute("INSERT INTO registro_epp (fecha_entrega, rut_trabajador, nombre_trabajador, cargo, lista_productos, firma_b64) VALUES (?,?,?,?,?,?)", (date.today(), rut, nom, cargo, str(st.session_state.cart), ib64))
                 conn.commit()
-                
                 pdf = DocumentosLegalesPDF("COMPROBANTE EPP", "RG-GD-01").generar_epp({'nombre': nom, 'rut': rut, 'cargo': cargo, 'fecha': date.today(), 'lista': str(st.session_state.cart), 'firma_b64': ib64})
                 st.download_button("Descargar PDF", pdf, "EPP.pdf")
                 st.session_state.cart = []; st.success("Listo")
@@ -540,7 +534,6 @@ elif menu == "🚨 Incidentes & DIAT":
         if st.form_submit_button("Guardar"):
             conn.execute("INSERT INTO incidentes (fecha, tipo, descripcion, nombre_afectado, estado) VALUES (?,?,?,?,?)", (fec, tipo, desc, afec, "ABIERTO"))
             conn.commit(); st.success("Registrado")
-    
     st.divider()
     incs = pd.read_sql("SELECT * FROM incidentes ORDER BY id DESC", conn)
     if not incs.empty:
@@ -551,7 +544,7 @@ elif menu == "🚨 Incidentes & DIAT":
             st.download_button("Descargar DIAT", pdf, "DIAT.pdf")
     conn.close()
 
-# --- 7. CAPACITACIONES (COMPLETO) ---
+# --- 7. CAPACITACIONES ---
 elif menu == "🎓 Capacitaciones":
     st.title("Capacitaciones"); conn = get_conn(); 
     with st.form("cap"):
@@ -562,19 +555,19 @@ elif menu == "🎓 Capacitaciones":
     st.dataframe(pd.read_sql("SELECT * FROM capacitaciones", conn))
     conn.close()
 
-# --- 8. PLAN ANUAL (COMPLETO) ---
+# --- 8. PLAN ANUAL ---
 elif menu == "📅 Plan Anual":
     st.title("Plan Anual"); conn = get_conn(); 
     st.data_editor(pd.read_sql("SELECT * FROM programa_anual", conn), key="plan_ed", num_rows="dynamic")
     conn.close()
 
-# --- 9. EXTINTORES (COMPLETO) ---
+# --- 9. EXTINTORES ---
 elif menu == "🧯 Extintores":
     st.title("Extintores"); conn = get_conn(); 
     st.data_editor(pd.read_sql("SELECT * FROM extintores", conn), key="ext_ed", num_rows="dynamic")
     conn.close()
 
-# --- 10. CONTRATISTAS (COMPLETO) ---
+# --- 10. CONTRATISTAS ---
 elif menu == "🏗️ Contratistas":
     st.title("Contratistas"); conn = get_conn(); 
     st.data_editor(pd.read_sql("SELECT * FROM contratistas", conn), key="cont_ed", num_rows="dynamic")
