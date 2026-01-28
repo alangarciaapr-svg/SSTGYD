@@ -35,7 +35,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v117_fix_excel.db' # DB Actualizada
+DB_NAME = 'sgsst_v118_isp_pro.db' # DB Actualizada
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
@@ -52,7 +52,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 LISTA_CARGOS = ["GERENTE GENERAL", "PREVENCIONISTA DE RIESGOS", "JEFE DE PATIO", "OPERADOR DE ASERRADERO", "OPERADOR DE MAQUINARIA", "MOTOSIERRISTA", "ESTROBERO", "MECANICO", "ADMINISTRATIVO"]
-LISTA_PROBABILIDAD = [1, 2, 4]
+# VALORES ISP VEP (Pág 10 Guía ISP)
+LISTA_PROBABILIDAD = [1, 2, 4] 
 LISTA_CONSECUENCIA = [1, 2, 4]
 
 # ==============================================================================
@@ -68,33 +69,25 @@ def init_db():
     # Base y RRHH
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, usuario TEXT, accion TEXT, detalle TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS personal (
-        rut TEXT PRIMARY KEY, 
-        nombre TEXT, 
-        cargo TEXT, 
-        centro_costo TEXT, 
-        fecha_contrato DATE, 
-        estado TEXT, 
-        vigencia_examen_medico DATE,
-        email TEXT 
-    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     
-    # Prevención y Riesgos
+    # Prevención y Riesgos (MATRIZ ACTUALIZADA ISP 2024 - ANEXO 6)
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         proceso TEXT,
-        tipo_proceso TEXT,
+        tipo_proceso TEXT, -- Operativo / Apoyo
         puesto_trabajo TEXT,
         tarea TEXT,
-        es_rutinaria TEXT,
-        peligro_factor TEXT,
+        es_rutinaria TEXT, -- SI / NO
+        peligro_factor TEXT, -- Fuente GEMA
         riesgo_asociado TEXT,
-        tipo_riesgo TEXT,
-        probabilidad INTEGER,
-        consecuencia INTEGER,
-        vep INTEGER,
-        nivel_riesgo TEXT,
-        medida_control TEXT
+        tipo_riesgo TEXT, -- Seguridad, Higiene, etc.
+        probabilidad INTEGER, -- 1, 2, 4
+        consecuencia INTEGER, -- 1, 2, 4
+        vep INTEGER, -- P x C
+        nivel_riesgo TEXT, -- Tolerable, Moderado...
+        medida_control TEXT,
+        genero_obs TEXT -- Observación de Género (Guía ISP Pág 5)
     )''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS incidentes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, tipo TEXT, descripcion TEXT, area TEXT, severidad TEXT, rut_afectado TEXT, nombre_afectado TEXT, parte_cuerpo TEXT, estado TEXT)''')
@@ -125,15 +118,16 @@ def init_db():
             ("Guantes Cabritilla", 200, 20, "Container"),
             ("Zapatos Seguridad", 30, 2, "Bodega Central")
         ])
-        c.execute("INSERT INTO personal VALUES (?,?,?,?,?,?,?,?)", ("12.345.678-9", "JUAN PEREZ (EJEMPLO)", "OPERADOR DE MAQUINARIA", "FAENA", date.today(), "ACTIVO", None, "juan.perez@empresa.cl"))
+        c.execute("INSERT INTO personal VALUES (?,?,?,?,?,?,?,?)", ("12.345.678-9", "JUAN PEREZ", "OPERADOR DE MAQUINARIA", "FAENA", date.today(), "ACTIVO", None, "juan@empresa.cl"))
         
+        # Datos Matriz Ejemplo ISP
         datos_matriz = [
-            ("Cosecha", "Operativo", "Operador Harvester", "Tala de árboles", "SI", "Pendiente abrupta (Ambiente)", "Volcamiento", "Seguridad", 2, 4, 8, "IMPORTANTE", "Cabina ROPS/FOPS, Procedimiento trabajo seguro"),
-            ("Mantención", "Apoyo", "Mecánico", "Uso de esmeril angular", "SI", "Proyección de partículas (Equipo)", "Lesión ocular", "Seguridad", 4, 2, 8, "IMPORTANTE", "Uso de careta facial, Lentes de seguridad")
+            ("Cosecha", "Operativo", "Operador Harvester", "Tala de árboles", "SI", "Pendiente abrupta (Ambiente)", "Volcamiento", "Seguridad", 2, 4, 8, "IMPORTANTE", "Cabina ROPS/FOPS", ""),
+            ("Mantención", "Apoyo", "Mecánico", "Uso de esmeril", "SI", "Proyección (Equipo)", "Lesión ocular", "Seguridad", 4, 2, 8, "IMPORTANTE", "Careta facial", "")
         ]
         c.executemany("""INSERT INTO matriz_iper 
-            (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control) 
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""", datos_matriz)
+            (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, genero_obs) 
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", datos_matriz)
 
     conn.commit()
     conn.close()
@@ -145,6 +139,7 @@ def registrar_auditoria(usuario, accion, detalle):
         conn.commit(); conn.close()
     except: pass
 
+# --- METODOLOGÍA VEP (GUÍA ISP Pág 9) ---
 def calcular_nivel_riesgo(vep):
     if vep <= 2: return "TOLERABLE"
     elif vep == 4: return "MODERADO"
@@ -155,7 +150,6 @@ def calcular_nivel_riesgo(vep):
 def get_alertas():
     conn = get_conn()
     alertas = []
-    hoy = date.today()
     
     trabs = pd.read_sql("SELECT rut, nombre FROM personal WHERE estado='ACTIVO'", conn)
     for i, t in trabs.iterrows():
@@ -171,13 +165,6 @@ def get_alertas():
     for i, s in stock.iterrows():
         if s['stock_actual'] <= s['stock_minimo']: alertas.append(f"📦 <b>Stock Crítico:</b> {s['producto']} ({s['stock_actual']})")
     
-    exts = pd.read_sql("SELECT codigo, fecha_vencimiento FROM extintores", conn)
-    for i, e in exts.iterrows():
-        try:
-            fv = datetime.strptime(e['fecha_vencimiento'], '%Y-%m-%d').date()
-            if fv < hoy: alertas.append(f"🧯 <b>Extintor {e['codigo']}</b> VENCIDO")
-        except: pass
-
     conn.close()
     return alertas
 
@@ -210,7 +197,7 @@ class DocumentosLegalesPDF:
             try: logo = RLImage(self.logo_path, width=80, height=35)
             except: pass
         data = [[logo, Paragraph(f"SISTEMA DE GESTIÓN SST - DS44<br/><b>{self.titulo}</b>", ParagraphStyle('T', alignment=TA_CENTER, fontSize=11, fontName='Helvetica-Bold')), 
-                 Paragraph(f"CÓDIGO: {self.codigo}<br/>VER: 05<br/>FECHA: {datetime.now().strftime('%d/%m/%Y')}", ParagraphStyle('C', alignment=TA_CENTER, fontSize=7))]]
+                 Paragraph(f"CÓDIGO: {self.codigo}<br/>VER: 06<br/>FECHA: {datetime.now().strftime('%d/%m/%Y')}", ParagraphStyle('C', alignment=TA_CENTER, fontSize=7))]]
         t = Table(data, colWidths=[90, 340, 90])
         t.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER')]))
         self.elements.append(t); self.elements.append(Spacer(1, 20))
@@ -252,6 +239,7 @@ class DocumentosLegalesPDF:
         self._header()
         self.elements.append(Paragraph(f"INFORMACIÓN RIESGOS LABORALES (IRL) - {data['nombre']}", self.styles['Heading3']))
         self.elements.append(Spacer(1, 10))
+        # Formato ISP: Peligro, Riesgo, Medida
         r_data = [["PELIGRO (GEMA)", "RIESGO", "MEDIDA DE CONTROL"]]
         for r in riesgos: r_data.append([Paragraph(r[0], ParagraphStyle('s', fontSize=8)), Paragraph(r[1], ParagraphStyle('s', fontSize=8)), Paragraph(r[2], ParagraphStyle('s', fontSize=8))])
         t = Table(r_data, colWidths=[130, 130, 250])
@@ -300,7 +288,7 @@ if not st.session_state['logged_in']:
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V117 - FIX EXCEL + EMAIL")
+    st.caption("V118 - MATRIZ ISP PRO")
     menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
 
@@ -320,79 +308,112 @@ if menu == "📊 Dashboard":
         st.metric("Incidentes (Mes)", inc_count, "Bajo Control" if inc_count == 0 else "Atención")
         st.metric("Stock Crítico", f"{len([a for a in alertas if 'Stock' in a])} Items", "Logística")
 
-# --- 2. MATRIZ IPER ---
+# --- 2. MATRIZ IPER (RENOVADA ISP 2024) ---
 elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Riesgos (Guía ISP 2024)</div>", unsafe_allow_html=True)
-    tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Ver Matriz", "📂 Carga Masiva Excel", "➕ Crear Riesgo"])
+    tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Ver / Exportar Matriz", "📂 Importar (Excel ISP)", "➕ Crear Riesgo Manual"])
     conn = get_conn()
     
+    # PESTAÑA 1: VER Y EXPORTAR
     with tab_ver:
         df_matriz = pd.read_sql("SELECT * FROM matriz_iper", conn)
+        
+        # Coloreado según nivel VEP (Pág 10 Guía ISP)
         def highlight_riesgo(val):
             if val == 'TOLERABLE': return 'background-color: #81c784'
             elif val == 'MODERADO': return 'background-color: #ffb74d'
             elif val == 'IMPORTANTE': return 'background-color: #e57373'
             elif val == 'INTOLERABLE': return 'background-color: #d32f2f; color: white'
             return ''
-        st.dataframe(df_matriz.style.applymap(highlight_riesgo, subset=['nivel_riesgo']), use_container_width=True)
         
-        with st.expander("✏️ Editar Medidas"):
-            edited_m = st.data_editor(df_matriz[['id', 'peligro_factor', 'medida_control']], key="edit_medidas")
-            if st.button("Guardar Cambios Medidas"):
-                c = conn.cursor()
-                for i, r in edited_m.iterrows(): c.execute("UPDATE matriz_iper SET medida_control=? WHERE id=?", (r['medida_control'], r['id']))
-                conn.commit(); st.success("Actualizado"); st.rerun()
+        # Botón Exportar Matriz Completa
+        buffer_exp = io.BytesIO()
+        with pd.ExcelWriter(buffer_exp, engine='openpyxl') as writer: df_matriz.to_excel(writer, index=False)
+        buffer_exp.seek(0)
+        st.download_button("📥 Descargar Matriz Completa (Excel)", buffer_exp, "matriz_iper_completa.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        
+        st.dataframe(df_matriz.style.applymap(highlight_riesgo, subset=['nivel_riesgo']), use_container_width=True)
 
+    # PESTAÑA 2: CARGA MASIVA (TEMPLATE ISP)
     with tab_carga:
-        st.subheader("Carga Masiva (Formato ISP)")
-        # --- DESCARGA PLANTILLA MATRIZ (FIXED ENGINE) ---
+        st.subheader("Carga Masiva (Formato Anexo 6 ISP)")
+        
+        # Descarga Template ISP
         plantilla_iper = {
-            'Proceso': ['Cosecha'], 'Puesto': ['Operador'], 'Tarea': ['Tala'], 
-            'Peligro': ['Pendiente'], 'Riesgo': ['Volcamiento'], 
-            'Probabilidad': [2], 'Consecuencia': [4], 'Medida': ['Cabina ROPS']
+            'Proceso': ['Cosecha'], 'Tipo': ['Operativo'], 'Puesto': ['Operador Harvester'], 'Tarea': ['Tala'], 
+            'Rutinaria': ['SI'], 'Peligro': ['Pendiente Abrupta (Ambiente)'], 'Riesgo': ['Volcamiento'], 'Tipo Riesgo': ['Seguridad'],
+            'Probabilidad': [2], 'Consecuencia': [4], 'Medida': ['Cabina ROPS'], 'Genero': ['Sin Obs']
         }
-        df_plantilla_iper = pd.DataFrame(plantilla_iper)
-        buffer_iper = io.BytesIO()
-        # ENGINE CAMBIADO A OPENPYXL (CORRECCION SOLICITADA)
-        with pd.ExcelWriter(buffer_iper, engine='openpyxl') as writer: df_plantilla_iper.to_excel(writer, index=False)
-        buffer_iper.seek(0)
-        st.download_button("📥 Descargar Plantilla Matriz", buffer_iper, "plantilla_matriz_isp.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        # -----------------------------------------------
+        df_plt_iper = pd.DataFrame(plantilla_iper)
+        b_iper = io.BytesIO()
+        with pd.ExcelWriter(b_iper, engine='openpyxl') as writer: df_plt_iper.to_excel(writer, index=False)
+        b_iper.seek(0)
+        st.download_button("📥 Descargar Plantilla Matriz ISP", b_iper, "plantilla_matriz_isp.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
         up = st.file_uploader("Subir Excel Matriz", type=['xlsx'])
         if up:
             try:
                 df_up = pd.read_excel(up)
                 st.write("Previsualización:", df_up.head())
-                if st.button("Procesar Matriz"):
+                if st.button("Procesar Matriz ISP"):
                     c = conn.cursor()
                     for i, r in df_up.iterrows():
-                        p = int(r.get('Probabilidad', 1))
-                        cons = int(r.get('Consecuencia', 1))
-                        vep = p * cons
-                        nivel = calcular_nivel_riesgo(vep)
-                        c.execute("""INSERT INTO matriz_iper (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control)
-                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""", (r.get('Proceso',''), "Operativo", r.get('Puesto',''), r.get('Tarea',''), "SI", r.get('Peligro',''), r.get('Riesgo',''), "Seguridad", p, cons, vep, nivel, r.get('Medida','')))
+                        # Cálculo VEP Automático
+                        try:
+                            p = int(r.get('Probabilidad', 1))
+                            cons = int(r.get('Consecuencia', 1))
+                            vep = p * cons
+                            nivel = calcular_nivel_riesgo(vep)
+                            
+                            c.execute("""INSERT INTO matriz_iper 
+                                (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, genero_obs)
+                                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", 
+                                (r.get('Proceso',''), r.get('Tipo','Operativo'), r.get('Puesto',''), r.get('Tarea',''), r.get('Rutinaria','SI'), 
+                                 r.get('Peligro',''), r.get('Riesgo',''), r.get('Tipo Riesgo','Seguridad'), p, cons, vep, nivel, r.get('Medida',''), r.get('Genero','')))
+                        except: pass
                     conn.commit(); st.success("Carga OK"); st.rerun()
             except Exception as e: st.error(f"Error: {e}")
 
+    # PESTAÑA 3: CREAR MANUAL (GUIADO)
     with tab_crear:
-        with st.form("add_risk"):
+        with st.form("add_risk_isp"):
+            st.subheader("Creación de Riesgo - Metodología VEP")
             c1, c2, c3 = st.columns(3)
-            proc = c1.text_input("Proceso"); puesto = c2.text_input("Puesto"); tarea = c3.text_input("Tarea")
-            c4, c5 = st.columns(2)
-            peligro = c4.text_input("Peligro (GEMA)"); riesgo = c5.text_input("Riesgo")
-            c6, c7 = st.columns(2)
-            prob = c6.selectbox("Probabilidad (P)", LISTA_PROBABILIDAD); cons = c7.selectbox("Consecuencia (C)", LISTA_CONSECUENCIA)
-            medida = st.text_area("Medida Control")
-            if st.form_submit_button("Guardar"):
-                vep = prob * cons; nivel = calcular_nivel_riesgo(vep)
-                conn.execute("""INSERT INTO matriz_iper (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""", (proc, "Operativo", puesto, tarea, "SI", peligro, riesgo, "Seguridad", prob, cons, vep, nivel, medida))
-                conn.commit(); st.success("Guardado"); st.rerun()
+            proc = c1.text_input("Proceso (Ej: Cosecha)")
+            tipo_proc = c2.selectbox("Tipo Proceso", ["Operativo", "Apoyo"])
+            puesto = c3.text_input("Puesto de Trabajo")
+            
+            c4, c5, c6 = st.columns(3)
+            tarea = c4.text_input("Tarea")
+            rutinaria = c5.selectbox("¿Es Rutinaria?", ["SI", "NO"])
+            tipo_riesgo = c6.selectbox("Tipo Riesgo", ["Seguridad", "Higiénico", "Psicosocial", "Musculoesquelético", "Emergencia"])
+            
+            st.markdown("---")
+            col_pel, col_ries = st.columns(2)
+            peligro = col_pel.text_input("Peligro / Factor (GEMA)", help="Fuente o Situación (Gente, Equipo, Material, Ambiente)")
+            riesgo = col_ries.text_input("Riesgo / Consecuencia")
+            
+            st.markdown("##### Evaluación del Riesgo (VEP)")
+            cp, cc = st.columns(2)
+            prob = cp.selectbox("Probabilidad (P)", [1, 2, 4], help="1: Baja, 2: Media, 4: Alta")
+            cons = cc.selectbox("Consecuencia (C)", [1, 2, 4], help="1: Leve, 2: Dañino, 4: Extremo")
+            
+            vep_val = prob * cons
+            nivel_val = calcular_nivel_riesgo(vep_val)
+            st.info(f"🛡️ Resultado Evaluación: VEP = {vep_val} -> Nivel: {nivel_val}")
+            
+            medida = st.text_area("Medidas de Control")
+            genero = st.text_input("Observaciones de Género (Opcional)", help="Diferencias por sexo/género según Guía ISP")
+            
+            if st.form_submit_button("Guardar en Matriz"):
+                conn.execute("""INSERT INTO matriz_iper 
+                    (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, genero_obs)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (proc, tipo_proc, puesto, tarea, rutinaria, peligro, riesgo, tipo_riesgo, prob, cons, vep_val, nivel_val, medida, genero))
+                conn.commit(); st.success("Riesgo Agregado Exitosamente"); st.rerun()
     conn.close()
 
-# --- 3. GESTIÓN PERSONAS (CON EMAIL Y PLANTILLA FIXED) ---
+# --- 3. GESTIÓN PERSONAS (COMPLETO) ---
 elif menu == "👥 Gestión Personas":
     st.markdown("<div class='main-header'>Gestión de Personas (RH)</div>", unsafe_allow_html=True)
     tab_list, tab_carga, tab_new, tab_dig = st.tabs(["📋 Nómina & Edición", "📂 Carga Masiva (Excel)", "➕ Nuevo Manual", "🗂️ Carpeta Digital"])
@@ -407,17 +428,13 @@ elif menu == "👥 Gestión Personas":
             conn.commit(); st.success("Guardado")
 
     with tab_carga:
-        st.subheader("Carga Masiva (Plantilla Excel)")
-        
-        # --- DESCARGA PLANTILLA PERSONAL CON EMAIL (FIXED ENGINE) ---
+        # Template descarga
         template_data = {'RUT': ['12.345.678-9'], 'NOMBRE': ['Ejemplo'], 'CARGO': ['OPERADOR'], 'FECHA DE CONTRATO': ['2024-01-01'], 'EMAIL': ['correo@ejemplo.cl']}
         df_template = pd.DataFrame(template_data)
         buffer = io.BytesIO()
-        # ENGINE CAMBIADO A OPENPYXL (CORRECCION SOLICITADA)
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer: df_template.to_excel(writer, index=False)
         buffer.seek(0)
-        st.download_button(label="📥 Descargar Plantilla Personal", data=buffer, file_name="plantilla_carga_personal.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        # ---------------------------
+        st.download_button(label="📥 Descargar Plantilla Personal", data=buffer, file_name="plantilla_personal.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
         up = st.file_uploader("Archivo Excel/CSV", type=['csv','xlsx'])
         if up:
@@ -428,8 +445,7 @@ elif menu == "👥 Gestión Personas":
                     c = conn.cursor()
                     count = 0
                     for i, r in df.iterrows():
-                        rut = str(r.get('RUT','')).strip(); nom = str(r.get('NOMBRE','')).strip(); car = str(r.get('CARGO','')).strip()
-                        mail = str(r.get('EMAIL','')).strip()
+                        rut = str(r.get('RUT','')).strip(); nom = str(r.get('NOMBRE','')).strip(); car = str(r.get('CARGO','')).strip(); mail = str(r.get('EMAIL','')).strip()
                         try: fec = pd.to_datetime(r.get('FECHA DE CONTRATO'), errors='coerce').date()
                         except: fec = date.today()
                         if rut and nom:
@@ -441,8 +457,7 @@ elif menu == "👥 Gestión Personas":
     with tab_new:
         with st.form("newp"):
             c1, c2 = st.columns(2)
-            r = c1.text_input("RUT"); n = c2.text_input("Nombre"); c = c1.selectbox("Cargo", LISTA_CARGOS)
-            em = c2.text_input("Email")
+            r = c1.text_input("RUT"); n = c2.text_input("Nombre"); c = c1.selectbox("Cargo", LISTA_CARGOS); em = c2.text_input("Email")
             if st.form_submit_button("Guardar"): conn.execute("INSERT INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado, email) VALUES (?,?,?,?,?,?,?)", (r, n, c, "FAENA", date.today(), "ACTIVO", em)); conn.commit(); st.success("OK")
 
     with tab_dig:
@@ -523,7 +538,7 @@ elif menu == "🦺 Logística EPP":
                 st.session_state.cart = []; st.success("Listo")
     conn.close()
 
-# --- 6. INCIDENTES & DIAT ---
+# --- 6. INCIDENTES ---
 elif menu == "🚨 Incidentes & DIAT":
     st.markdown("<div class='main-header'>Accidentes (Ley 16.744)</div>", unsafe_allow_html=True)
     conn = get_conn()
@@ -552,23 +567,12 @@ elif menu == "🎓 Capacitaciones":
         if st.form_submit_button("Guardar"):
             c = conn.cursor(); c.execute("INSERT INTO capacitaciones (fecha, tema, tipo_actividad, responsable_rut, estado) VALUES (?,?,?,?,?)", (date.today(), t, tp, "PREVENCIONISTA", "OK")); cid = c.lastrowid
             conn.commit(); st.success("OK")
-    st.dataframe(pd.read_sql("SELECT * FROM capacitaciones", conn))
-    conn.close()
+    st.dataframe(pd.read_sql("SELECT * FROM capacitaciones", conn)); conn.close()
 
-# --- 8. PLAN ANUAL ---
+# --- 8-10 OTROS ---
 elif menu == "📅 Plan Anual":
-    st.title("Plan Anual"); conn = get_conn(); 
-    st.data_editor(pd.read_sql("SELECT * FROM programa_anual", conn), key="plan_ed", num_rows="dynamic")
-    conn.close()
-
-# --- 9. EXTINTORES ---
+    st.title("Plan Anual"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM programa_anual", conn), key="plan_ed", num_rows="dynamic"); conn.close()
 elif menu == "🧯 Extintores":
-    st.title("Extintores"); conn = get_conn(); 
-    st.data_editor(pd.read_sql("SELECT * FROM extintores", conn), key="ext_ed", num_rows="dynamic")
-    conn.close()
-
-# --- 10. CONTRATISTAS ---
+    st.title("Extintores"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM extintores", conn), key="ext_ed", num_rows="dynamic"); conn.close()
 elif menu == "🏗️ Contratistas":
-    st.title("Contratistas"); conn = get_conn(); 
-    st.data_editor(pd.read_sql("SELECT * FROM contratistas", conn), key="cont_ed", num_rows="dynamic")
-    conn.close()
+    st.title("Contratistas"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM contratistas", conn), key="cont_ed", num_rows="dynamic"); conn.close()
