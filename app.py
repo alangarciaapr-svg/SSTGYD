@@ -35,7 +35,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v114_full_master.db'
+DB_NAME = 'sgsst_v116_email.db' # DB Actualizada con campo Email
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
@@ -65,12 +65,21 @@ def init_db():
     conn = get_conn()
     c = conn.cursor()
     
-    # Base y RRHH
+    # Base y RRHH (ACTUALIZADO: CAMPO EMAIL)
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, usuario TEXT, accion TEXT, detalle TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS personal (
+        rut TEXT PRIMARY KEY, 
+        nombre TEXT, 
+        cargo TEXT, 
+        centro_costo TEXT, 
+        fecha_contrato DATE, 
+        estado TEXT, 
+        vigencia_examen_medico DATE,
+        email TEXT 
+    )''')
     
-    # Prevención y Riesgos (MATRIZ ACTUALIZADA ISP 2024)
+    # Prevención y Riesgos (MATRIZ ISP 2024)
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         proceso TEXT,
@@ -116,7 +125,8 @@ def init_db():
             ("Guantes Cabritilla", 200, 20, "Container"),
             ("Zapatos Seguridad", 30, 2, "Bodega Central")
         ])
-        c.execute("INSERT INTO personal VALUES (?,?,?,?,?,?,?)", ("12.345.678-9", "JUAN PEREZ", "OPERADOR DE MAQUINARIA", "FAENA", date.today(), "ACTIVO", None))
+        # Actualizado con Email
+        c.execute("INSERT INTO personal VALUES (?,?,?,?,?,?,?,?)", ("12.345.678-9", "JUAN PEREZ (EJEMPLO)", "OPERADOR DE MAQUINARIA", "FAENA", date.today(), "ACTIVO", None, "juan.perez@empresa.cl"))
         
         # Datos Matriz Ejemplo ISP
         datos_matriz = [
@@ -295,7 +305,7 @@ if not st.session_state['logged_in']:
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V114 - REAL FULL MASTER")
+    st.caption("V116 - MASTER + EMAIL/IPER")
     menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
 
@@ -315,7 +325,7 @@ if menu == "📊 Dashboard":
         st.metric("Incidentes (Mes)", inc_count, "Bajo Control" if inc_count == 0 else "Atención")
         st.metric("Stock Crítico", f"{len([a for a in alertas if 'Stock' in a])} Items", "Logística")
 
-# --- 2. MATRIZ IPER (NUEVA ESTRUCTURA ISP) ---
+# --- 2. MATRIZ IPER (CON PLANTILLA DE CARGA) ---
 elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Riesgos (Guía ISP 2024)</div>", unsafe_allow_html=True)
     tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Ver Matriz", "📂 Carga Masiva Excel", "➕ Crear Riesgo"])
@@ -340,6 +350,20 @@ elif menu == "🛡️ Matriz IPER (ISP)":
 
     with tab_carga:
         st.subheader("Carga Masiva (Formato ISP)")
+        
+        # --- BOTÓN DESCARGA PLANTILLA MATRIZ ---
+        plantilla_iper = {
+            'Proceso': ['Cosecha'], 'Puesto': ['Operador'], 'Tarea': ['Tala'], 
+            'Peligro': ['Pendiente'], 'Riesgo': ['Volcamiento'], 
+            'Probabilidad': [2], 'Consecuencia': [4], 'Medida': ['Cabina ROPS']
+        }
+        df_plantilla_iper = pd.DataFrame(plantilla_iper)
+        buffer_iper = io.BytesIO()
+        with pd.ExcelWriter(buffer_iper, engine='xlsxwriter') as writer: df_plantilla_iper.to_excel(writer, index=False)
+        buffer_iper.seek(0)
+        st.download_button("📥 Descargar Plantilla Matriz", buffer_iper, "plantilla_matriz_isp.xlsx", "application/vnd.ms-excel")
+        # ---------------------------------------
+
         up = st.file_uploader("Subir Excel Matriz", type=['xlsx'])
         if up:
             try:
@@ -373,42 +397,57 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                 conn.commit(); st.success("Guardado"); st.rerun()
     conn.close()
 
-# --- 3. GESTIÓN PERSONAS (COMPLETO) ---
+# --- 3. GESTIÓN PERSONAS (CON CAMPO EMAIL) ---
 elif menu == "👥 Gestión Personas":
     st.markdown("<div class='main-header'>Gestión de Personas (RH)</div>", unsafe_allow_html=True)
-    tab_list, tab_carga, tab_new, tab_dig = st.tabs(["📋 Nómina", "📂 Carga Masiva", "➕ Nuevo", "🗂️ Carpeta"])
+    tab_list, tab_carga, tab_new, tab_dig = st.tabs(["📋 Nómina & Edición", "📂 Carga Masiva (Excel)", "➕ Nuevo Manual", "🗂️ Carpeta Digital"])
     conn = get_conn()
     
     with tab_list:
-        df_p = pd.read_sql("SELECT rut, nombre, cargo, centro_costo, estado FROM personal", conn)
+        df_p = pd.read_sql("SELECT rut, nombre, cargo, centro_costo, email, estado FROM personal", conn)
         edited = st.data_editor(df_p, key="edit_p", use_container_width=True)
         if st.button("💾 Guardar Cambios Nómina"):
             c = conn.cursor()
-            for i, r in edited.iterrows(): c.execute("UPDATE personal SET nombre=?, cargo=?, centro_costo=?, estado=? WHERE rut=?", (r['nombre'], r['cargo'], r['centro_costo'], r['estado'], r['rut']))
+            for i, r in edited.iterrows(): c.execute("UPDATE personal SET nombre=?, cargo=?, centro_costo=?, email=?, estado=? WHERE rut=?", (r['nombre'], r['cargo'], r['centro_costo'], r['email'], r['estado'], r['rut']))
             conn.commit(); st.success("Guardado")
 
     with tab_carga:
+        st.subheader("Carga Masiva (Plantilla Excel)")
+        
+        # --- DESCARGA PLANTILLA PERSONAL CON EMAIL ---
+        template_data = {'RUT': ['12.345.678-9'], 'NOMBRE': ['Ejemplo'], 'CARGO': ['OPERADOR'], 'FECHA DE CONTRATO': ['2024-01-01'], 'EMAIL': ['correo@ejemplo.cl']}
+        df_template = pd.DataFrame(template_data)
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer: df_template.to_excel(writer, index=False)
+        buffer.seek(0)
+        st.download_button(label="📥 Descargar Plantilla Personal", data=buffer, file_name="plantilla_carga_personal.xlsx", mime="application/vnd.ms-excel")
+        # ---------------------------
+
         up = st.file_uploader("Archivo Excel/CSV", type=['csv','xlsx'])
         if up:
             try:
                 df = pd.read_csv(up) if up.name.endswith('.csv') else pd.read_excel(up)
+                st.write("Vista Previa:", df.head())
                 if st.button("Procesar"):
                     c = conn.cursor()
                     count = 0
                     for i, r in df.iterrows():
                         rut = str(r.get('RUT','')).strip(); nom = str(r.get('NOMBRE','')).strip(); car = str(r.get('CARGO','')).strip()
+                        mail = str(r.get('EMAIL','')).strip() # NUEVO CAMPO EMAIL
                         try: fec = pd.to_datetime(r.get('FECHA DE CONTRATO'), errors='coerce').date()
                         except: fec = date.today()
                         if rut and nom:
-                            c.execute("INSERT OR REPLACE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (rut, nom, car, "FAENA", fec, "ACTIVO"))
+                            c.execute("INSERT OR REPLACE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado, email) VALUES (?,?,?,?,?,?,?)", (rut, nom, car, "FAENA", fec, "ACTIVO", mail))
                             count += 1
-                    conn.commit(); st.success(f"Cargados {count}")
+                    conn.commit(); st.success(f"Cargados {count} registros")
             except Exception as e: st.error(f"Error: {e}")
 
     with tab_new:
         with st.form("newp"):
-            r = st.text_input("RUT"); n = st.text_input("Nombre"); c = st.selectbox("Cargo", LISTA_CARGOS)
-            if st.form_submit_button("Guardar"): conn.execute("INSERT INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (r, n, c, "FAENA", date.today(), "ACTIVO")); conn.commit(); st.success("OK")
+            c1, c2 = st.columns(2)
+            r = c1.text_input("RUT"); n = c2.text_input("Nombre"); c = c1.selectbox("Cargo", LISTA_CARGOS)
+            em = c2.text_input("Email") # NUEVO CAMPO MANUAL
+            if st.form_submit_button("Guardar"): conn.execute("INSERT INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado, email) VALUES (?,?,?,?,?,?,?)", (r, n, c, "FAENA", date.today(), "ACTIVO", em)); conn.commit(); st.success("OK")
 
     with tab_dig:
         df_all = pd.read_sql("SELECT rut, nombre FROM personal", conn)
@@ -428,7 +467,6 @@ elif menu == "⚖️ Gestor Documental":
         sel = st.selectbox("Trabajador:", df_p['rut'] + " - " + df_p['nombre'])
         if st.button("Generar IRL (PDF)"):
             rut = sel.split(" - ")[0]; cargo = df_p[df_p['rut']==rut]['cargo'].values[0]
-            # Búsqueda inteligente en Matriz
             riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper WHERE puesto_trabajo LIKE ?", conn, params=(f'%{cargo}%',))
             if riesgos.empty: riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper LIMIT 3", conn)
             pdf = DocumentosLegalesPDF("INFORMACIÓN RIESGOS LABORALES", "RG-GD-04").generar_irl({'nombre': sel.split(" - ")[1], 'rut': rut, 'cargo': cargo}, riesgos.values.tolist())
