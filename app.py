@@ -19,6 +19,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 from streamlit_drawable_canvas import st_canvas
+import openpyxl # Asegura que esté instalado para el excel
 
 # Manejo seguro de librería QR
 try:
@@ -35,7 +36,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v118_isp_pro.db' # DB Actualizada
+DB_NAME = 'sgsst_v119_matriz_visual.db' # DB Actualizada para visualización
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
@@ -52,8 +53,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 LISTA_CARGOS = ["GERENTE GENERAL", "PREVENCIONISTA DE RIESGOS", "JEFE DE PATIO", "OPERADOR DE ASERRADERO", "OPERADOR DE MAQUINARIA", "MOTOSIERRISTA", "ESTROBERO", "MECANICO", "ADMINISTRATIVO"]
-# VALORES ISP VEP (Pág 10 Guía ISP)
-LISTA_PROBABILIDAD = [1, 2, 4] 
+LISTA_PROBABILIDAD = [1, 2, 4]
 LISTA_CONSECUENCIA = [1, 2, 4]
 
 # ==============================================================================
@@ -71,23 +71,23 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, usuario TEXT, accion TEXT, detalle TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     
-    # Prevención y Riesgos (MATRIZ ACTUALIZADA ISP 2024 - ANEXO 6)
+    # Prevención y Riesgos (MATRIZ IPER ESTRUCTURA COMPLETA)
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         proceso TEXT,
-        tipo_proceso TEXT, -- Operativo / Apoyo
+        tipo_proceso TEXT,
         puesto_trabajo TEXT,
         tarea TEXT,
-        es_rutinaria TEXT, -- SI / NO
-        peligro_factor TEXT, -- Fuente GEMA
+        es_rutinaria TEXT,
+        peligro_factor TEXT,
         riesgo_asociado TEXT,
-        tipo_riesgo TEXT, -- Seguridad, Higiene, etc.
-        probabilidad INTEGER, -- 1, 2, 4
-        consecuencia INTEGER, -- 1, 2, 4
-        vep INTEGER, -- P x C
-        nivel_riesgo TEXT, -- Tolerable, Moderado...
+        tipo_riesgo TEXT,
+        probabilidad INTEGER,
+        consecuencia INTEGER,
+        vep INTEGER,
+        nivel_riesgo TEXT,
         medida_control TEXT,
-        genero_obs TEXT -- Observación de Género (Guía ISP Pág 5)
+        genero_obs TEXT
     )''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS incidentes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, tipo TEXT, descripcion TEXT, area TEXT, severidad TEXT, rut_afectado TEXT, nombre_afectado TEXT, parte_cuerpo TEXT, estado TEXT)''')
@@ -118,12 +118,12 @@ def init_db():
             ("Guantes Cabritilla", 200, 20, "Container"),
             ("Zapatos Seguridad", 30, 2, "Bodega Central")
         ])
-        c.execute("INSERT INTO personal VALUES (?,?,?,?,?,?,?,?)", ("12.345.678-9", "JUAN PEREZ", "OPERADOR DE MAQUINARIA", "FAENA", date.today(), "ACTIVO", None, "juan@empresa.cl"))
+        c.execute("INSERT INTO personal VALUES (?,?,?,?,?,?,?,?)", ("12.345.678-9", "JUAN PEREZ (EJEMPLO)", "OPERADOR DE MAQUINARIA", "FAENA", date.today(), "ACTIVO", None, "juan@empresa.cl"))
         
-        # Datos Matriz Ejemplo ISP
+        # Datos Matriz Ejemplo
         datos_matriz = [
-            ("Cosecha", "Operativo", "Operador Harvester", "Tala de árboles", "SI", "Pendiente abrupta (Ambiente)", "Volcamiento", "Seguridad", 2, 4, 8, "IMPORTANTE", "Cabina ROPS/FOPS", ""),
-            ("Mantención", "Apoyo", "Mecánico", "Uso de esmeril", "SI", "Proyección (Equipo)", "Lesión ocular", "Seguridad", 4, 2, 8, "IMPORTANTE", "Careta facial", "")
+            ("Cosecha", "Operativo", "Operador Harvester", "Tala de árboles", "SI", "Pendiente abrupta (Ambiente)", "Volcamiento", "Seguridad", 2, 4, 8, "IMPORTANTE", "Cabina ROPS/FOPS", "Sin obs"),
+            ("Mantención", "Apoyo", "Mecánico", "Uso de esmeril angular", "SI", "Proyección de partículas (Equipo)", "Lesión ocular", "Seguridad", 4, 2, 8, "IMPORTANTE", "Uso de careta facial, Lentes de seguridad", "Sin obs")
         ]
         c.executemany("""INSERT INTO matriz_iper 
             (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, genero_obs) 
@@ -139,7 +139,6 @@ def registrar_auditoria(usuario, accion, detalle):
         conn.commit(); conn.close()
     except: pass
 
-# --- METODOLOGÍA VEP (GUÍA ISP Pág 9) ---
 def calcular_nivel_riesgo(vep):
     if vep <= 2: return "TOLERABLE"
     elif vep == 4: return "MODERADO"
@@ -165,6 +164,13 @@ def get_alertas():
     for i, s in stock.iterrows():
         if s['stock_actual'] <= s['stock_minimo']: alertas.append(f"📦 <b>Stock Crítico:</b> {s['producto']} ({s['stock_actual']})")
     
+    exts = pd.read_sql("SELECT codigo, fecha_vencimiento FROM extintores", conn)
+    for i, e in exts.iterrows():
+        try:
+            fv = datetime.strptime(e['fecha_vencimiento'], '%Y-%m-%d').date()
+            if fv < date.today(): alertas.append(f"🧯 <b>Extintor {e['codigo']}</b> VENCIDO")
+        except: pass
+
     conn.close()
     return alertas
 
@@ -179,7 +185,7 @@ def get_incidentes_mes():
     return count
 
 # ==============================================================================
-# 3. MOTOR DOCUMENTAL ESTANDARIZADO
+# 3. MOTOR DOCUMENTAL ESTANDARIZADO (SGSST)
 # ==============================================================================
 class DocumentosLegalesPDF:
     def __init__(self, titulo_doc, codigo_doc):
@@ -239,7 +245,6 @@ class DocumentosLegalesPDF:
         self._header()
         self.elements.append(Paragraph(f"INFORMACIÓN RIESGOS LABORALES (IRL) - {data['nombre']}", self.styles['Heading3']))
         self.elements.append(Spacer(1, 10))
-        # Formato ISP: Peligro, Riesgo, Medida
         r_data = [["PELIGRO (GEMA)", "RIESGO", "MEDIDA DE CONTROL"]]
         for r in riesgos: r_data.append([Paragraph(r[0], ParagraphStyle('s', fontSize=8)), Paragraph(r[1], ParagraphStyle('s', fontSize=8)), Paragraph(r[2], ParagraphStyle('s', fontSize=8))])
         t = Table(r_data, colWidths=[130, 130, 250])
@@ -288,7 +293,7 @@ if not st.session_state['logged_in']:
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V118 - MATRIZ ISP PRO")
+    st.caption("V119 - MATRIZ VISUAL ISP")
     menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
 
@@ -308,63 +313,111 @@ if menu == "📊 Dashboard":
         st.metric("Incidentes (Mes)", inc_count, "Bajo Control" if inc_count == 0 else "Atención")
         st.metric("Stock Crítico", f"{len([a for a in alertas if 'Stock' in a])} Items", "Logística")
 
-# --- 2. MATRIZ IPER (RENOVADA ISP 2024) ---
+# --- 2. MATRIZ IPER (MEJORADA VISUALMENTE) ---
 elif menu == "🛡️ Matriz IPER (ISP)":
-    st.markdown("<div class='main-header'>Matriz de Riesgos (Guía ISP 2024)</div>", unsafe_allow_html=True)
-    tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Ver / Exportar Matriz", "📂 Importar (Excel ISP)", "➕ Crear Riesgo Manual"])
+    st.markdown("<div class='main-header'>Matriz de Identificación de Peligros (MIPER)</div>", unsafe_allow_html=True)
+    
+    tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Ver Matriz Completa", "📂 Carga Masiva (Excel)", "➕ Crear Riesgo Manual"])
     conn = get_conn()
     
-    # PESTAÑA 1: VER Y EXPORTAR
+    # PESTAÑA 1: VISUALIZACIÓN TIPO ANEXO 6
     with tab_ver:
-        df_matriz = pd.read_sql("SELECT * FROM matriz_iper", conn)
+        # Consulta SQL para ordenar columnas como la MIPER oficial
+        query = """
+            SELECT 
+                id,
+                proceso as 'PROCESO',
+                puesto_trabajo as 'PUESTO TRABAJO',
+                tarea as 'TAREA',
+                es_rutinaria as 'RUTINARIA',
+                peligro_factor as 'PELIGRO (GEMA)',
+                riesgo_asociado as 'RIESGO',
+                tipo_riesgo as 'TIPO',
+                probabilidad as 'P',
+                consecuencia as 'C',
+                vep as 'VEP',
+                nivel_riesgo as 'NIVEL',
+                medida_control as 'MEDIDAS DE CONTROL',
+                genero_obs as 'GENERO'
+            FROM matriz_iper
+        """
+        df_matriz = pd.read_sql(query, conn)
         
-        # Coloreado según nivel VEP (Pág 10 Guía ISP)
+        # Coloreado condicional
         def highlight_riesgo(val):
-            if val == 'TOLERABLE': return 'background-color: #81c784'
-            elif val == 'MODERADO': return 'background-color: #ffb74d'
-            elif val == 'IMPORTANTE': return 'background-color: #e57373'
+            if val == 'TOLERABLE': return 'background-color: #81c784; color: black'
+            elif val == 'MODERADO': return 'background-color: #ffb74d; color: black'
+            elif val == 'IMPORTANTE': return 'background-color: #e57373; color: white'
             elif val == 'INTOLERABLE': return 'background-color: #d32f2f; color: white'
             return ''
         
-        # Botón Exportar Matriz Completa
-        buffer_exp = io.BytesIO()
-        with pd.ExcelWriter(buffer_exp, engine='openpyxl') as writer: df_matriz.to_excel(writer, index=False)
-        buffer_exp.seek(0)
-        st.download_button("📥 Descargar Matriz Completa (Excel)", buffer_exp, "matriz_iper_completa.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        # Configuración de Columnas para Edición Directa
+        edited_df = st.data_editor(
+            df_matriz,
+            use_container_width=True,
+            column_config={
+                "P": st.column_config.NumberColumn("P", help="Probabilidad (1, 2, 4)", min_value=1, max_value=4, step=1),
+                "C": st.column_config.NumberColumn("C", help="Consecuencia (1, 2, 4)", min_value=1, max_value=4, step=1),
+                "VEP": st.column_config.NumberColumn("VEP", disabled=True), # Calculado
+                "NIVEL": st.column_config.TextColumn("NIVEL", disabled=True), # Calculado
+                "MEDIDAS DE CONTROL": st.column_config.TextColumn("MEDIDAS DE CONTROL", width="large")
+            },
+            hide_index=True,
+            key="editor_matriz"
+        )
         
-        st.dataframe(df_matriz.style.applymap(highlight_riesgo, subset=['nivel_riesgo']), use_container_width=True)
+        # Botón de Guardado Inteligente (Recalcula VEP)
+        if st.button("💾 Guardar Cambios en Matriz"):
+            c = conn.cursor()
+            for index, row in edited_df.iterrows():
+                # Recálculo VEP
+                nuevo_p = int(row['P'])
+                nuevo_c = int(row['C'])
+                nuevo_vep = nuevo_p * nuevo_c
+                nuevo_nivel = calcular_nivel_riesgo(nuevo_vep)
+                
+                c.execute("""
+                    UPDATE matriz_iper 
+                    SET probabilidad=?, consecuencia=?, vep=?, nivel_riesgo=?, medida_control=?, peligro_factor=?, riesgo_asociado=?
+                    WHERE id=?
+                """, (nuevo_p, nuevo_c, nuevo_vep, nuevo_nivel, row['MEDIDAS DE CONTROL'], row['PELIGRO (GEMA)'], row['RIESGO'], row['id']))
+            conn.commit()
+            st.success("Matriz actualizada y recalculada exitosamente.")
+            time.sleep(1)
+            st.rerun()
 
-    # PESTAÑA 2: CARGA MASIVA (TEMPLATE ISP)
+        # Exportar a Excel
+        buffer_exp = io.BytesIO()
+        with pd.ExcelWriter(buffer_exp, engine='openpyxl') as writer: edited_df.to_excel(writer, index=False)
+        buffer_exp.seek(0)
+        st.download_button("📥 Descargar Matriz (Excel)", buffer_exp, "MIPER_Oficial.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
     with tab_carga:
-        st.subheader("Carga Masiva (Formato Anexo 6 ISP)")
-        
-        # Descarga Template ISP
+        st.subheader("Carga Masiva (Formato ISP)")
+        # Plantilla
         plantilla_iper = {
-            'Proceso': ['Cosecha'], 'Tipo': ['Operativo'], 'Puesto': ['Operador Harvester'], 'Tarea': ['Tala'], 
-            'Rutinaria': ['SI'], 'Peligro': ['Pendiente Abrupta (Ambiente)'], 'Riesgo': ['Volcamiento'], 'Tipo Riesgo': ['Seguridad'],
+            'Proceso': ['Cosecha'], 'Tipo': ['Operativo'], 'Puesto': ['Operador'], 'Tarea': ['Tala'], 
+            'Rutinaria': ['SI'], 'Peligro': ['Pendiente'], 'Riesgo': ['Volcamiento'], 'Tipo Riesgo': ['Seguridad'],
             'Probabilidad': [2], 'Consecuencia': [4], 'Medida': ['Cabina ROPS'], 'Genero': ['Sin Obs']
         }
         df_plt_iper = pd.DataFrame(plantilla_iper)
         b_iper = io.BytesIO()
         with pd.ExcelWriter(b_iper, engine='openpyxl') as writer: df_plt_iper.to_excel(writer, index=False)
         b_iper.seek(0)
-        st.download_button("📥 Descargar Plantilla Matriz ISP", b_iper, "plantilla_matriz_isp.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button("📥 Descargar Plantilla Matriz", b_iper, "plantilla_matriz_isp.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
         up = st.file_uploader("Subir Excel Matriz", type=['xlsx'])
         if up:
             try:
                 df_up = pd.read_excel(up)
-                st.write("Previsualización:", df_up.head())
                 if st.button("Procesar Matriz ISP"):
                     c = conn.cursor()
                     for i, r in df_up.iterrows():
-                        # Cálculo VEP Automático
                         try:
                             p = int(r.get('Probabilidad', 1))
                             cons = int(r.get('Consecuencia', 1))
                             vep = p * cons
                             nivel = calcular_nivel_riesgo(vep)
-                            
                             c.execute("""INSERT INTO matriz_iper 
                                 (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, genero_obs)
                                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", 
@@ -374,7 +427,6 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                     conn.commit(); st.success("Carga OK"); st.rerun()
             except Exception as e: st.error(f"Error: {e}")
 
-    # PESTAÑA 3: CREAR MANUAL (GUIADO)
     with tab_crear:
         with st.form("add_risk_isp"):
             st.subheader("Creación de Riesgo - Metodología VEP")
@@ -413,7 +465,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                 conn.commit(); st.success("Riesgo Agregado Exitosamente"); st.rerun()
     conn.close()
 
-# --- 3. GESTIÓN PERSONAS (COMPLETO) ---
+# --- 3. GESTIÓN PERSONAS (CON CAMPO EMAIL Y PLANTILLA FIXED) ---
 elif menu == "👥 Gestión Personas":
     st.markdown("<div class='main-header'>Gestión de Personas (RH)</div>", unsafe_allow_html=True)
     tab_list, tab_carga, tab_new, tab_dig = st.tabs(["📋 Nómina & Edición", "📂 Carga Masiva (Excel)", "➕ Nuevo Manual", "🗂️ Carpeta Digital"])
@@ -428,24 +480,24 @@ elif menu == "👥 Gestión Personas":
             conn.commit(); st.success("Guardado")
 
     with tab_carga:
-        # Template descarga
+        st.subheader("Carga Masiva (Plantilla Excel)")
         template_data = {'RUT': ['12.345.678-9'], 'NOMBRE': ['Ejemplo'], 'CARGO': ['OPERADOR'], 'FECHA DE CONTRATO': ['2024-01-01'], 'EMAIL': ['correo@ejemplo.cl']}
         df_template = pd.DataFrame(template_data)
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer: df_template.to_excel(writer, index=False)
         buffer.seek(0)
-        st.download_button(label="📥 Descargar Plantilla Personal", data=buffer, file_name="plantilla_personal.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button(label="📥 Descargar Plantilla Personal", data=buffer, file_name="plantilla_carga_personal.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
         up = st.file_uploader("Archivo Excel/CSV", type=['csv','xlsx'])
         if up:
             try:
                 df = pd.read_csv(up) if up.name.endswith('.csv') else pd.read_excel(up)
-                st.write("Vista Previa:", df.head())
                 if st.button("Procesar"):
                     c = conn.cursor()
                     count = 0
                     for i, r in df.iterrows():
-                        rut = str(r.get('RUT','')).strip(); nom = str(r.get('NOMBRE','')).strip(); car = str(r.get('CARGO','')).strip(); mail = str(r.get('EMAIL','')).strip()
+                        rut = str(r.get('RUT','')).strip(); nom = str(r.get('NOMBRE','')).strip(); car = str(r.get('CARGO','')).strip()
+                        mail = str(r.get('EMAIL','')).strip()
                         try: fec = pd.to_datetime(r.get('FECHA DE CONTRATO'), errors='coerce').date()
                         except: fec = date.today()
                         if rut and nom:
@@ -457,7 +509,8 @@ elif menu == "👥 Gestión Personas":
     with tab_new:
         with st.form("newp"):
             c1, c2 = st.columns(2)
-            r = c1.text_input("RUT"); n = c2.text_input("Nombre"); c = c1.selectbox("Cargo", LISTA_CARGOS); em = c2.text_input("Email")
+            r = c1.text_input("RUT"); n = c2.text_input("Nombre"); c = c1.selectbox("Cargo", LISTA_CARGOS)
+            em = c2.text_input("Email")
             if st.form_submit_button("Guardar"): conn.execute("INSERT INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado, email) VALUES (?,?,?,?,?,?,?)", (r, n, c, "FAENA", date.today(), "ACTIVO", em)); conn.commit(); st.success("OK")
 
     with tab_dig:
@@ -467,7 +520,7 @@ elif menu == "👥 Gestión Personas":
             if QR_AVAILABLE: st.button("🪪 Ver Credencial")
     conn.close()
 
-# --- 4. GESTOR DOCUMENTAL ---
+# --- 4. GESTOR DOCUMENTAL (CONECTADO) ---
 elif menu == "⚖️ Gestor Documental":
     st.markdown("<div class='main-header'>Centro Documental (DS44)</div>", unsafe_allow_html=True)
     tab_irl, tab_riohs, tab_hist = st.tabs(["📄 IRL", "📘 RIOHS", "📂 Historial"])
@@ -478,6 +531,7 @@ elif menu == "⚖️ Gestor Documental":
         sel = st.selectbox("Trabajador:", df_p['rut'] + " - " + df_p['nombre'])
         if st.button("Generar IRL (PDF)"):
             rut = sel.split(" - ")[0]; cargo = df_p[df_p['rut']==rut]['cargo'].values[0]
+            # Búsqueda inteligente en Matriz por PUESTO
             riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper WHERE puesto_trabajo LIKE ?", conn, params=(f'%{cargo}%',))
             if riesgos.empty: riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper LIMIT 3", conn)
             pdf = DocumentosLegalesPDF("INFORMACIÓN RIESGOS LABORALES", "RG-GD-04").generar_irl({'nombre': sel.split(" - ")[1], 'rut': rut, 'cargo': cargo}, riesgos.values.tolist())
@@ -538,7 +592,7 @@ elif menu == "🦺 Logística EPP":
                 st.session_state.cart = []; st.success("Listo")
     conn.close()
 
-# --- 6. INCIDENTES ---
+# --- 6. INCIDENTES & DIAT ---
 elif menu == "🚨 Incidentes & DIAT":
     st.markdown("<div class='main-header'>Accidentes (Ley 16.744)</div>", unsafe_allow_html=True)
     conn = get_conn()
@@ -567,12 +621,23 @@ elif menu == "🎓 Capacitaciones":
         if st.form_submit_button("Guardar"):
             c = conn.cursor(); c.execute("INSERT INTO capacitaciones (fecha, tema, tipo_actividad, responsable_rut, estado) VALUES (?,?,?,?,?)", (date.today(), t, tp, "PREVENCIONISTA", "OK")); cid = c.lastrowid
             conn.commit(); st.success("OK")
-    st.dataframe(pd.read_sql("SELECT * FROM capacitaciones", conn)); conn.close()
+    st.dataframe(pd.read_sql("SELECT * FROM capacitaciones", conn))
+    conn.close()
 
-# --- 8-10 OTROS ---
+# --- 8. PLAN ANUAL ---
 elif menu == "📅 Plan Anual":
-    st.title("Plan Anual"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM programa_anual", conn), key="plan_ed", num_rows="dynamic"); conn.close()
+    st.title("Plan Anual"); conn = get_conn(); 
+    st.data_editor(pd.read_sql("SELECT * FROM programa_anual", conn), key="plan_ed", num_rows="dynamic")
+    conn.close()
+
+# --- 9. EXTINTORES ---
 elif menu == "🧯 Extintores":
-    st.title("Extintores"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM extintores", conn), key="ext_ed", num_rows="dynamic"); conn.close()
+    st.title("Extintores"); conn = get_conn(); 
+    st.data_editor(pd.read_sql("SELECT * FROM extintores", conn), key="ext_ed", num_rows="dynamic")
+    conn.close()
+
+# --- 10. CONTRATISTAS ---
 elif menu == "🏗️ Contratistas":
-    st.title("Contratistas"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM contratistas", conn), key="cont_ed", num_rows="dynamic"); conn.close()
+    st.title("Contratistas"); conn = get_conn(); 
+    st.data_editor(pd.read_sql("SELECT * FROM contratistas", conn), key="cont_ed", num_rows="dynamic")
+    conn.close()
