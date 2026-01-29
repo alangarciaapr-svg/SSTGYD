@@ -346,42 +346,244 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                 conn.commit(); st.success("Guardado"); st.rerun()
     conn.close()
 
-# --- 3. GESTION PERSONAS ---
+# --- MÓDULO 3: GESTIÓN PERSONAS (PROFESIONAL & CORREGIDO) ---
 elif menu == "👥 Gestión Personas":
-    st.markdown("<div class='main-header'>Gestión de Personas</div>", unsafe_allow_html=True)
-    tab1, tab2, tab3, tab4 = st.tabs(["Nómina", "Carga Masiva", "Nuevo", "Carpeta"])
+    st.markdown("<div class='main-header'>Gestión de Talento Humano</div>", unsafe_allow_html=True)
+    
     conn = get_conn()
-    with tab1:
-        df = pd.read_sql("SELECT * FROM personal", conn)
-        ed = st.data_editor(df, key="pers_ed", use_container_width=True)
-        if st.button("Guardar Cambios"):
-            c = conn.cursor()
-            for i, r in ed.iterrows(): c.execute("UPDATE personal SET nombre=?, cargo=?, email=?, estado=? WHERE rut=?", (r['nombre'], r['cargo'], r['email'], r['estado'], r['rut']))
-            conn.commit(); st.success("Guardado")
-    with tab2:
-        p_data = {'RUT':['12.345.678-9'], 'NOMBRE':['Ejemplo'], 'CARGO':['Op'], 'EMAIL':['x@x.cl'], 'FECHA DE CONTRATO':['2024-01-01']}
-        b3 = io.BytesIO(); 
-        with pd.ExcelWriter(b3, engine='openpyxl') as w: pd.DataFrame(p_data).to_excel(w, index=False)
-        st.download_button("📥 Plantilla Personal", b3.getvalue(), "plantilla_personal.xlsx")
+    
+    # KPIs Rápidos al inicio
+    try:
+        total_p = pd.read_sql("SELECT count(*) FROM personal", conn).iloc[0,0]
+        activos_p = pd.read_sql("SELECT count(*) FROM personal WHERE estado='ACTIVO'", conn).iloc[0,0]
+    except:
+        total_p = 0; activos_p = 0
         
-        up = st.file_uploader("Subir", type=['xlsx','csv'])
-        if up:
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Dotación Total", total_p)
+    k2.metric("Personal Activo", activos_p)
+    k3.metric("Personal Inactivo/Baja", total_p - activos_p)
+    
+    st.markdown("---")
+
+    tab_list, tab_carga, tab_new, tab_dig = st.tabs(["📋 Nómina Interactiva", "📂 Carga Masiva (Excel)", "➕ Ficha Nuevo Ingreso", "🗂️ Carpeta Digital"])
+    
+    # --- PESTAÑA 1: NÓMINA ---
+    with tab_list:
+        st.subheader("Base de Datos del Personal")
+        
+        # Filtros
+        col_f1, col_f2 = st.columns(2)
+        filtro_estado = col_f1.selectbox("Filtrar por Estado", ["TODOS", "ACTIVO", "INACTIVO", "LICENCIA"], index=1)
+        
+        # Query dinámica
+        query = "SELECT rut, nombre, cargo, centro_costo, email, fecha_contrato, estado FROM personal"
+        if filtro_estado != "TODOS":
+            query += f" WHERE estado='{filtro_estado}'"
+            
+        df_p = pd.read_sql(query, conn)
+        
+        # Editor profesional
+        edited = st.data_editor(
+            df_p,
+            key="edit_p_pro",
+            use_container_width=True,
+            num_rows="dynamic", # Permite agregar y eliminar filas
+            column_config={
+                "rut": st.column_config.TextColumn("RUT", help="Identificador único", disabled=True),
+                "nombre": st.column_config.TextColumn("Nombre Completo"),
+                "cargo": st.column_config.SelectboxColumn("Cargo", options=LISTA_CARGOS),
+                "centro_costo": st.column_config.SelectboxColumn("Centro Costo", options=["FAENA", "ADMINISTRACION", "PATIO", "TRANSPORTE"]),
+                "estado": st.column_config.SelectboxColumn("Estado", options=["ACTIVO", "INACTIVO", "LICENCIA"]),
+                "email": st.column_config.TextColumn("Email"),
+                "fecha_contrato": st.column_config.DateColumn("Fecha Contrato")
+            }
+        )
+        
+        if st.button("💾 Guardar Cambios en Nómina"):
+            c = conn.cursor()
             try:
-                df = pd.read_excel(up) if up.name.endswith('xlsx') else pd.read_csv(up)
-                if st.button("Procesar"):
-                    c = conn.cursor()
-                    for i, r in df.iterrows():
-                        fec = r.get('FECHA DE CONTRATO'); f = date.today()
-                        if pd.notnull(fec):
-                            try: f = pd.to_datetime(fec).date()
-                            except: f = date.today()
-                        c.execute("INSERT OR REPLACE INTO personal (rut, nombre, cargo, email, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (r.get('RUT'), r.get('NOMBRE'), r.get('CARGO'), r.get('EMAIL'), f, 'ACTIVO'))
-                    conn.commit(); st.success("Cargado")
-            except: st.error("Error archivo")
-    with tab3:
-        with st.form("np"):
-            r = st.text_input("RUT"); n = st.text_input("Nombre"); ca = st.selectbox("Cargo", LISTA_CARGOS); em = st.text_input("Email")
-            if st.form_submit_button("Crear"): conn.execute("INSERT INTO personal (rut, nombre, cargo, email, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (r, n, ca, em, date.today(), 'ACTIVO')); conn.commit(); st.success("OK")
+                # Estrategia: Actualizar registros existentes
+                for i, r in edited.iterrows():
+                    # Validación de fecha para evitar error NaT
+                    fec = r['fecha_contrato']
+                    if pd.isna(fec) or str(fec) == 'NaT': fec = date.today()
+                    
+                    c.execute("""
+                        UPDATE personal 
+                        SET nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=? 
+                        WHERE rut=?""", 
+                        (r['nombre'], r['cargo'], r['centro_costo'], r['email'], r['estado'], fec, r['rut'])
+                    )
+                conn.commit()
+                st.success("✅ Base de datos actualizada correctamente.")
+                time.sleep(1)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error al guardar: {e}")
+
+    # --- PESTAÑA 2: CARGA MASIVA MEJORADA ---
+    with tab_carga:
+        st.subheader("Importación Masiva de Trabajadores")
+        st.markdown("""
+        Use esta opción para cargar listados desde Excel. 
+        **Nota:** Si el RUT ya existe, se actualizarán los datos. Si no existe, se creará uno nuevo.
+        """)
+        
+        c_down, c_up = st.columns([1, 2])
+        
+        with c_down:
+            # Generador de Plantilla Correcta
+            template_data = {
+                'RUT': ['11.222.333-4'], 
+                'NOMBRE': ['Juan Pérez'], 
+                'CARGO': ['OPERADOR DE MAQUINARIA'], 
+                'CENTRO_COSTO': ['FAENA'],
+                'EMAIL': ['juan@empresa.com'],
+                'FECHA DE CONTRATO': ['2024-01-01']
+            }
+            df_template = pd.DataFrame(template_data)
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                df_template.to_excel(writer, index=False)
+            buffer.seek(0)
+            st.download_button("📥 Descargar Plantilla", data=buffer, file_name="plantilla_personal_master.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+        with c_up:
+            up = st.file_uploader("Subir Archivo Excel/CSV", type=['xlsx', 'csv'])
+            
+            # Opción para solucionar el problema de "Reemplazo del primero"
+            limpiar_db = st.checkbox("⚠️ Borrar TODA la base de datos actual antes de cargar (Inicio Limpio)", value=False)
+            
+            if up:
+                try:
+                    df_upload = pd.read_csv(up) if up.name.endswith('.csv') else pd.read_excel(up)
+                    st.write(f"Vista Previa ({len(df_upload)} registros):")
+                    st.dataframe(df_upload.head(3), use_container_width=True)
+                    
+                    if st.button("🚀 Procesar Importación"):
+                        c = conn.cursor()
+                        
+                        # Si el usuario quiere limpiar todo antes (soluciona conflictos de IDs)
+                        if limpiar_db:
+                            c.execute("DELETE FROM personal")
+                            st.warning("Base de datos limpiada. Insertando nuevos registros...")
+                        
+                        count_ok = 0
+                        
+                        progress_text = "Operación en progreso. Por favor espere."
+                        my_bar = st.progress(0, text=progress_text)
+                        
+                        total_rows = len(df_upload)
+                        
+                        for index, row in df_upload.iterrows():
+                            # Mapeo seguro de columnas
+                            rut = str(row.get('RUT', '')).strip()
+                            nom = str(row.get('NOMBRE', '')).strip()
+                            car = str(row.get('CARGO', 'SIN CARGO')).strip()
+                            cc = str(row.get('CENTRO_COSTO', 'FAENA')).strip()
+                            mail = str(row.get('EMAIL', '')).strip()
+                            
+                            # Corrección de Fechas (NaT Error Fix)
+                            raw_fec = row.get('FECHA DE CONTRATO')
+                            try:
+                                val_dt = pd.to_datetime(raw_fec, errors='coerce')
+                                if pd.isna(val_dt): fec = date.today()
+                                else: fec = val_dt.date()
+                            except: fec = date.today()
+
+                            if len(rut) > 3 and len(nom) > 1:
+                                c.execute("""
+                                    INSERT OR REPLACE INTO personal 
+                                    (rut, nombre, cargo, centro_costo, fecha_contrato, estado, email) 
+                                    VALUES (?,?,?,?,?,?,?)
+                                """, (rut, nom, car, cc, fec, "ACTIVO", mail))
+                                count_ok += 1
+                            
+                            # Actualizar barra
+                            my_bar.progress((index + 1) / total_rows, text=progress_text)
+                            
+                        conn.commit()
+                        my_bar.empty()
+                        st.success(f"✅ Proceso Finalizado: {count_ok} trabajadores procesados.")
+                        time.sleep(1.5)
+                        st.rerun()
+                        
+                except Exception as e:
+                    st.error(f"Error al procesar el archivo: {e}")
+
+    # --- PESTAÑA 3: NUEVO MANUAL ---
+    with tab_new:
+        st.subheader("Ingreso Individual")
+        with st.form("new_worker_form"):
+            c1, c2 = st.columns(2)
+            rut = c1.text_input("RUT (Ej: 12.345.678-9)")
+            nombre = c2.text_input("Nombre Completo")
+            
+            c3, c4 = st.columns(2)
+            cargo = c3.selectbox("Cargo", LISTA_CARGOS)
+            centro = c4.selectbox("Centro de Costo", ["FAENA", "ASERRADERO", "OFICINA", "TRANSPORTE"])
+            
+            c5, c6 = st.columns(2)
+            fecha_ing = c5.date_input("Fecha de Contrato")
+            email = c6.text_input("Correo Electrónico")
+            
+            if st.form_submit_button("Registrar Trabajador"):
+                if rut and nombre:
+                    try:
+                        conn.execute("""
+                            INSERT INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado, email) 
+                            VALUES (?,?,?,?,?,?,?)
+                        """, (rut, nombre, cargo, centro, fecha_ing, "ACTIVO", email))
+                        conn.commit()
+                        st.success(f"Trabajador {nombre} creado exitosamente.")
+                    except sqlite3.IntegrityError:
+                        st.error("Error: El RUT ya existe en el sistema.")
+                else:
+                    st.warning("El RUT y Nombre son obligatorios.")
+
+    # --- PESTAÑA 4: CARPETA DIGITAL ---
+    with tab_dig:
+        st.subheader("Carpeta Digital")
+        df_all = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
+        
+        if not df_all.empty:
+            sel_worker = st.selectbox("Seleccionar Trabajador:", df_all['rut'] + " - " + df_all['nombre'])
+            rut_sel = sel_worker.split(" - ")[0]
+            
+            # Mostrar Resumen
+            st.info(f"Visualizando carpeta de: **{sel_worker}**")
+            
+            col_docs1, col_docs2 = st.columns(2)
+            
+            with col_docs1:
+                st.markdown("##### 📜 Documentación Legal")
+                # Verificar ODI/IRL
+                odi = pd.read_sql("SELECT count(*) FROM asistencia_capacitacion WHERE trabajador_rut=?", conn, params=(rut_sel,)).iloc[0,0]
+                if odi > 0: st.success(f"✅ IRL/ODI: {odi} Registros")
+                else: st.error("❌ Falta IRL/ODI")
+                
+                # Verificar RIOHS
+                riohs = pd.read_sql("SELECT fecha_entrega FROM registro_riohs WHERE rut_trabajador=?", conn, params=(rut_sel,))
+                if not riohs.empty: st.success(f"✅ RIOHS Entregado: {riohs.iloc[0,0]}")
+                else: st.error("❌ Falta RIOHS")
+
+            with col_docs2:
+                st.markdown("##### 🦺 Elementos de Protección")
+                epp = pd.read_sql("SELECT fecha_entrega, lista_productos FROM registro_epp WHERE rut_trabajador=? ORDER BY fecha_entrega DESC LIMIT 3", conn, params=(rut_sel,))
+                if not epp.empty:
+                    st.dataframe(epp, use_container_width=True)
+                else:
+                    st.warning("⚠️ No tiene registro de EPP")
+            
+            if QR_AVAILABLE:
+                st.divider()
+                st.caption("Credencial QR Generada:")
+                qr = qrcode.make(f"SGSST|{rut_sel}|{sel_worker}")
+                img_qr = io.BytesIO()
+                qr.save(img_qr, format='PNG')
+                st.image(img_qr.getvalue(), width=150)
+
     conn.close()
 
 # --- 4. GESTOR DOCUMENTAL (IRL DESDE MATRIZ) ---
