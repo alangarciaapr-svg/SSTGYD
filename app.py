@@ -19,7 +19,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 from streamlit_drawable_canvas import st_canvas
-import openpyxl # Asegura que esté instalado para el excel
+import openpyxl 
 
 # Manejo seguro de librería QR
 try:
@@ -36,7 +36,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v119_matriz_visual.db' # DB Actualizada para visualización
+DB_NAME = 'sgsst_v121_cap_pro.db' # DB Actualizada
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
@@ -71,7 +71,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, usuario TEXT, accion TEXT, detalle TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     
-    # Prevención y Riesgos (MATRIZ IPER ESTRUCTURA COMPLETA)
+    # Prevención y Riesgos
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         proceso TEXT,
@@ -92,8 +92,19 @@ def init_db():
     
     c.execute('''CREATE TABLE IF NOT EXISTS incidentes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, tipo TEXT, descripcion TEXT, area TEXT, severidad TEXT, rut_afectado TEXT, nombre_afectado TEXT, parte_cuerpo TEXT, estado TEXT)''')
     
-    # Documental y Operativo
-    c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, tema TEXT, tipo_actividad TEXT, responsable_rut TEXT, estado TEXT)''')
+    # Documental y Operativo (MEJORADO: CAPACITACIONES)
+    c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, 
+        fecha DATE, 
+        tema TEXT, 
+        tipo_actividad TEXT, 
+        responsable_rut TEXT, 
+        estado TEXT,
+        duracion INTEGER, -- Nuevo
+        lugar TEXT,       -- Nuevo
+        metodologia TEXT  -- Nuevo
+    )''')
+    
     c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (id INTEGER PRIMARY KEY AUTOINCREMENT, capacitacion_id INTEGER, trabajador_rut TEXT, nombre_trabajador TEXT, cargo_trabajador TEXT, estado TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_entrega DATE, rut_trabajador TEXT, nombre_trabajador TEXT, cargo TEXT, lista_productos TEXT, firma_b64 TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS registro_riohs (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_entrega DATE, rut_trabajador TEXT, nombre_trabajador TEXT, tipo_entrega TEXT, firma_b64 TEXT)''')
@@ -120,7 +131,6 @@ def init_db():
         ])
         c.execute("INSERT INTO personal VALUES (?,?,?,?,?,?,?,?)", ("12.345.678-9", "JUAN PEREZ (EJEMPLO)", "OPERADOR DE MAQUINARIA", "FAENA", date.today(), "ACTIVO", None, "juan@empresa.cl"))
         
-        # Datos Matriz Ejemplo
         datos_matriz = [
             ("Cosecha", "Operativo", "Operador Harvester", "Tala de árboles", "SI", "Pendiente abrupta (Ambiente)", "Volcamiento", "Seguridad", 2, 4, 8, "IMPORTANTE", "Cabina ROPS/FOPS", "Sin obs"),
             ("Mantención", "Apoyo", "Mecánico", "Uso de esmeril angular", "SI", "Proyección de partículas (Equipo)", "Lesión ocular", "Seguridad", 4, 2, 8, "IMPORTANTE", "Uso de careta facial, Lentes de seguridad", "Sin obs")
@@ -253,16 +263,44 @@ class DocumentosLegalesPDF:
 
     def generar_asistencia_capacitacion(self, data, asis):
         self._header()
-        self.elements.append(Paragraph(f"REGISTRO CAPACITACIÓN: {data['tema']}", self.styles['Heading3']))
-        info = [[f"TEMA: {data['tema']}", f"TIPO: {data['tipo']}"], [f"RELATOR: {data['resp']}", f"FECHA: {data['fecha']}"]]
-        tc = Table(info, colWidths=[260, 260])
-        tc.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black)]))
-        self.elements.append(tc); self.elements.append(Spacer(1, 15))
-        a_data = [["NOMBRE", "RUT", "FIRMA"]]
-        for a in asis: a_data.append([a['nombre'], a['rut'], "_______"])
-        t = Table(a_data, colWidths=[200, 100, 150])
-        t.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (-1,0), HexColor(COLOR_PRIMARY)), ('TEXTCOLOR', (0,0), (-1,0), colors.white)]))
-        self.elements.append(t); self.doc.build(self.elements); self.buffer.seek(0); return self.buffer
+        
+        # Tabla Detalle Capacitación
+        self.elements.append(Paragraph("I. ANTECEDENTES DE LA ACTIVIDAD", self.styles['Heading3']))
+        info_data = [
+            [f"TEMA: {data['tema']}", f"TIPO: {data['tipo']}"],
+            [f"RELATOR: {data['resp']}", f"FECHA: {data['fecha']}"],
+            [f"LUGAR: {data.get('lugar', '-')}", f"DURACIÓN: {data.get('duracion', '-')} HRS"]
+        ]
+        tc = Table(info_data, colWidths=[260, 260])
+        tc.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+            ('BACKGROUND', (0,0), (-1,-1), colors.whitesmoke)
+        ]))
+        self.elements.append(tc)
+        self.elements.append(Spacer(1, 15))
+        
+        # Tabla Asistentes
+        self.elements.append(Paragraph("II. REGISTRO DE ASISTENCIA", self.styles['Heading3']))
+        a_data = [["NOMBRE", "RUT", "CARGO", "FIRMA"]]
+        for a in asis: 
+            a_data.append([a['nombre'], a['rut'], a.get('cargo', '-'), "__________________"])
+            
+        t = Table(a_data, colWidths=[180, 80, 100, 160], repeatRows=1)
+        t.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+            ('BACKGROUND', (0,0), (-1,0), HexColor(COLOR_PRIMARY)),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('ROWHEIGHT', (1,-1), 35) # Más alto para firmar
+        ]))
+        self.elements.append(t)
+        
+        # Firma Instructor
+        self.elements.append(Spacer(1, 40))
+        self.elements.append(Paragraph(f"__________________________<br/>FIRMA RELATOR/INSTRUCTOR<br/>{data['resp']}", ParagraphStyle('C', alignment=TA_CENTER)))
+        
+        self.doc.build(self.elements); self.buffer.seek(0); return self.buffer
 
     def generar_diat(self, data):
         self._header()
@@ -293,7 +331,7 @@ if not st.session_state['logged_in']:
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V119 - MATRIZ VISUAL ISP")
+    st.caption("V121 - CAPACITACIONES PRO")
     menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
 
@@ -313,80 +351,29 @@ if menu == "📊 Dashboard":
         st.metric("Incidentes (Mes)", inc_count, "Bajo Control" if inc_count == 0 else "Atención")
         st.metric("Stock Crítico", f"{len([a for a in alertas if 'Stock' in a])} Items", "Logística")
 
-# --- 2. MATRIZ IPER (MEJORADA VISUALMENTE) ---
+# --- 2. MATRIZ IPER ---
 elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Identificación de Peligros (MIPER)</div>", unsafe_allow_html=True)
     
     tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Ver Matriz Completa", "📂 Carga Masiva (Excel)", "➕ Crear Riesgo Manual"])
     conn = get_conn()
     
-    # PESTAÑA 1: VISUALIZACIÓN TIPO ANEXO 6
     with tab_ver:
-        # Consulta SQL para ordenar columnas como la MIPER oficial
-        query = """
-            SELECT 
-                id,
-                proceso as 'PROCESO',
-                puesto_trabajo as 'PUESTO TRABAJO',
-                tarea as 'TAREA',
-                es_rutinaria as 'RUTINARIA',
-                peligro_factor as 'PELIGRO (GEMA)',
-                riesgo_asociado as 'RIESGO',
-                tipo_riesgo as 'TIPO',
-                probabilidad as 'P',
-                consecuencia as 'C',
-                vep as 'VEP',
-                nivel_riesgo as 'NIVEL',
-                medida_control as 'MEDIDAS DE CONTROL',
-                genero_obs as 'GENERO'
-            FROM matriz_iper
-        """
+        query = """SELECT id, proceso as 'PROCESO', puesto_trabajo as 'PUESTO TRABAJO', tarea as 'TAREA', es_rutinaria as 'RUTINARIA', peligro_factor as 'PELIGRO (GEMA)', riesgo_asociado as 'RIESGO', tipo_riesgo as 'TIPO', probabilidad as 'P', consecuencia as 'C', vep as 'VEP', nivel_riesgo as 'NIVEL', medida_control as 'MEDIDAS DE CONTROL', genero_obs as 'GENERO' FROM matriz_iper"""
         df_matriz = pd.read_sql(query, conn)
-        
-        # Coloreado condicional
         def highlight_riesgo(val):
             if val == 'TOLERABLE': return 'background-color: #81c784; color: black'
             elif val == 'MODERADO': return 'background-color: #ffb74d; color: black'
             elif val == 'IMPORTANTE': return 'background-color: #e57373; color: white'
             elif val == 'INTOLERABLE': return 'background-color: #d32f2f; color: white'
             return ''
-        
-        # Configuración de Columnas para Edición Directa
-        edited_df = st.data_editor(
-            df_matriz,
-            use_container_width=True,
-            column_config={
-                "P": st.column_config.NumberColumn("P", help="Probabilidad (1, 2, 4)", min_value=1, max_value=4, step=1),
-                "C": st.column_config.NumberColumn("C", help="Consecuencia (1, 2, 4)", min_value=1, max_value=4, step=1),
-                "VEP": st.column_config.NumberColumn("VEP", disabled=True), # Calculado
-                "NIVEL": st.column_config.TextColumn("NIVEL", disabled=True), # Calculado
-                "MEDIDAS DE CONTROL": st.column_config.TextColumn("MEDIDAS DE CONTROL", width="large")
-            },
-            hide_index=True,
-            key="editor_matriz"
-        )
-        
-        # Botón de Guardado Inteligente (Recalcula VEP)
+        edited_df = st.data_editor(df_matriz, use_container_width=True, column_config={"P": st.column_config.NumberColumn("P", min_value=1, max_value=4), "C": st.column_config.NumberColumn("C", min_value=1, max_value=4), "VEP": st.column_config.NumberColumn("VEP", disabled=True), "NIVEL": st.column_config.TextColumn("NIVEL", disabled=True)}, hide_index=True, key="editor_matriz")
         if st.button("💾 Guardar Cambios en Matriz"):
             c = conn.cursor()
             for index, row in edited_df.iterrows():
-                # Recálculo VEP
-                nuevo_p = int(row['P'])
-                nuevo_c = int(row['C'])
-                nuevo_vep = nuevo_p * nuevo_c
-                nuevo_nivel = calcular_nivel_riesgo(nuevo_vep)
-                
-                c.execute("""
-                    UPDATE matriz_iper 
-                    SET probabilidad=?, consecuencia=?, vep=?, nivel_riesgo=?, medida_control=?, peligro_factor=?, riesgo_asociado=?
-                    WHERE id=?
-                """, (nuevo_p, nuevo_c, nuevo_vep, nuevo_nivel, row['MEDIDAS DE CONTROL'], row['PELIGRO (GEMA)'], row['RIESGO'], row['id']))
-            conn.commit()
-            st.success("Matriz actualizada y recalculada exitosamente.")
-            time.sleep(1)
-            st.rerun()
-
-        # Exportar a Excel
+                nuevo_p = int(row['P']); nuevo_c = int(row['C']); nuevo_vep = nuevo_p * nuevo_c; nuevo_nivel = calcular_nivel_riesgo(nuevo_vep)
+                c.execute("""UPDATE matriz_iper SET probabilidad=?, consecuencia=?, vep=?, nivel_riesgo=?, medida_control=?, peligro_factor=?, riesgo_asociado=? WHERE id=?""", (nuevo_p, nuevo_c, nuevo_vep, nuevo_nivel, row['MEDIDAS DE CONTROL'], row['PELIGRO (GEMA)'], row['RIESGO'], row['id']))
+            conn.commit(); st.success("Matriz actualizada."); time.sleep(1); st.rerun()
         buffer_exp = io.BytesIO()
         with pd.ExcelWriter(buffer_exp, engine='openpyxl') as writer: edited_df.to_excel(writer, index=False)
         buffer_exp.seek(0)
@@ -394,18 +381,12 @@ elif menu == "🛡️ Matriz IPER (ISP)":
 
     with tab_carga:
         st.subheader("Carga Masiva (Formato ISP)")
-        # Plantilla
-        plantilla_iper = {
-            'Proceso': ['Cosecha'], 'Tipo': ['Operativo'], 'Puesto': ['Operador'], 'Tarea': ['Tala'], 
-            'Rutinaria': ['SI'], 'Peligro': ['Pendiente'], 'Riesgo': ['Volcamiento'], 'Tipo Riesgo': ['Seguridad'],
-            'Probabilidad': [2], 'Consecuencia': [4], 'Medida': ['Cabina ROPS'], 'Genero': ['Sin Obs']
-        }
+        plantilla_iper = {'Proceso': ['Cosecha'], 'Tipo': ['Operativo'], 'Puesto': ['Operador'], 'Tarea': ['Tala'], 'Rutinaria': ['SI'], 'Peligro': ['Pendiente'], 'Riesgo': ['Volcamiento'], 'Tipo Riesgo': ['Seguridad'], 'Probabilidad': [2], 'Consecuencia': [4], 'Medida': ['Cabina ROPS'], 'Genero': ['Sin Obs']}
         df_plt_iper = pd.DataFrame(plantilla_iper)
         b_iper = io.BytesIO()
         with pd.ExcelWriter(b_iper, engine='openpyxl') as writer: df_plt_iper.to_excel(writer, index=False)
         b_iper.seek(0)
         st.download_button("📥 Descargar Plantilla Matriz", b_iper, "plantilla_matriz_isp.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
         up = st.file_uploader("Subir Excel Matriz", type=['xlsx'])
         if up:
             try:
@@ -414,15 +395,8 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                     c = conn.cursor()
                     for i, r in df_up.iterrows():
                         try:
-                            p = int(r.get('Probabilidad', 1))
-                            cons = int(r.get('Consecuencia', 1))
-                            vep = p * cons
-                            nivel = calcular_nivel_riesgo(vep)
-                            c.execute("""INSERT INTO matriz_iper 
-                                (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, genero_obs)
-                                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", 
-                                (r.get('Proceso',''), r.get('Tipo','Operativo'), r.get('Puesto',''), r.get('Tarea',''), r.get('Rutinaria','SI'), 
-                                 r.get('Peligro',''), r.get('Riesgo',''), r.get('Tipo Riesgo','Seguridad'), p, cons, vep, nivel, r.get('Medida',''), r.get('Genero','')))
+                            p = int(r.get('Probabilidad', 1)); cons = int(r.get('Consecuencia', 1)); vep = p * cons; nivel = calcular_nivel_riesgo(vep)
+                            c.execute("""INSERT INTO matriz_iper (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, genero_obs) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (r.get('Proceso',''), r.get('Tipo','Operativo'), r.get('Puesto',''), r.get('Tarea',''), r.get('Rutinaria','SI'), r.get('Peligro',''), r.get('Riesgo',''), r.get('Tipo Riesgo','Seguridad'), p, cons, vep, nivel, r.get('Medida',''), r.get('Genero','')))
                         except: pass
                     conn.commit(); st.success("Carga OK"); st.rerun()
             except Exception as e: st.error(f"Error: {e}")
@@ -431,46 +405,28 @@ elif menu == "🛡️ Matriz IPER (ISP)":
         with st.form("add_risk_isp"):
             st.subheader("Creación de Riesgo - Metodología VEP")
             c1, c2, c3 = st.columns(3)
-            proc = c1.text_input("Proceso (Ej: Cosecha)")
-            tipo_proc = c2.selectbox("Tipo Proceso", ["Operativo", "Apoyo"])
-            puesto = c3.text_input("Puesto de Trabajo")
-            
+            proc = c1.text_input("Proceso (Ej: Cosecha)"); tipo_proc = c2.selectbox("Tipo Proceso", ["Operativo", "Apoyo"]); puesto = c3.text_input("Puesto de Trabajo")
             c4, c5, c6 = st.columns(3)
-            tarea = c4.text_input("Tarea")
-            rutinaria = c5.selectbox("¿Es Rutinaria?", ["SI", "NO"])
-            tipo_riesgo = c6.selectbox("Tipo Riesgo", ["Seguridad", "Higiénico", "Psicosocial", "Musculoesquelético", "Emergencia"])
-            
+            tarea = c4.text_input("Tarea"); rutinaria = c5.selectbox("¿Es Rutinaria?", ["SI", "NO"]); tipo_riesgo = c6.selectbox("Tipo Riesgo", ["Seguridad", "Higiénico", "Psicosocial", "Musculoesquelético", "Emergencia"])
             st.markdown("---")
             col_pel, col_ries = st.columns(2)
-            peligro = col_pel.text_input("Peligro / Factor (GEMA)", help="Fuente o Situación (Gente, Equipo, Material, Ambiente)")
-            riesgo = col_ries.text_input("Riesgo / Consecuencia")
-            
+            peligro = col_pel.text_input("Peligro / Factor (GEMA)"); riesgo = col_ries.text_input("Riesgo / Consecuencia")
             st.markdown("##### Evaluación del Riesgo (VEP)")
             cp, cc = st.columns(2)
-            prob = cp.selectbox("Probabilidad (P)", [1, 2, 4], help="1: Baja, 2: Media, 4: Alta")
-            cons = cc.selectbox("Consecuencia (C)", [1, 2, 4], help="1: Leve, 2: Dañino, 4: Extremo")
-            
-            vep_val = prob * cons
-            nivel_val = calcular_nivel_riesgo(vep_val)
+            prob = cp.selectbox("Probabilidad (P)", [1, 2, 4]); cons = cc.selectbox("Consecuencia (C)", [1, 2, 4])
+            vep_val = prob * cons; nivel_val = calcular_nivel_riesgo(vep_val)
             st.info(f"🛡️ Resultado Evaluación: VEP = {vep_val} -> Nivel: {nivel_val}")
-            
-            medida = st.text_area("Medidas de Control")
-            genero = st.text_input("Observaciones de Género (Opcional)", help="Diferencias por sexo/género según Guía ISP")
-            
+            medida = st.text_area("Medidas de Control"); genero = st.text_input("Observaciones de Género (Opcional)")
             if st.form_submit_button("Guardar en Matriz"):
-                conn.execute("""INSERT INTO matriz_iper 
-                    (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, genero_obs)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (proc, tipo_proc, puesto, tarea, rutinaria, peligro, riesgo, tipo_riesgo, prob, cons, vep_val, nivel_val, medida, genero))
-                conn.commit(); st.success("Riesgo Agregado Exitosamente"); st.rerun()
+                conn.execute("""INSERT INTO matriz_iper (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, genero_obs) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (proc, tipo_proc, puesto, tarea, rutinaria, peligro, riesgo, tipo_riesgo, prob, cons, vep_val, nivel_val, medida, genero))
+                conn.commit(); st.success("Riesgo Agregado"); st.rerun()
     conn.close()
 
-# --- 3. GESTIÓN PERSONAS (CON CAMPO EMAIL Y PLANTILLA FIXED) ---
+# --- 3. GESTIÓN PERSONAS ---
 elif menu == "👥 Gestión Personas":
     st.markdown("<div class='main-header'>Gestión de Personas (RH)</div>", unsafe_allow_html=True)
     tab_list, tab_carga, tab_new, tab_dig = st.tabs(["📋 Nómina & Edición", "📂 Carga Masiva (Excel)", "➕ Nuevo Manual", "🗂️ Carpeta Digital"])
     conn = get_conn()
-    
     with tab_list:
         df_p = pd.read_sql("SELECT rut, nombre, cargo, centro_costo, email, estado FROM personal", conn)
         edited = st.data_editor(df_p, key="edit_p", use_container_width=True)
@@ -478,7 +434,6 @@ elif menu == "👥 Gestión Personas":
             c = conn.cursor()
             for i, r in edited.iterrows(): c.execute("UPDATE personal SET nombre=?, cargo=?, centro_costo=?, email=?, estado=? WHERE rut=?", (r['nombre'], r['cargo'], r['centro_costo'], r['email'], r['estado'], r['rut']))
             conn.commit(); st.success("Guardado")
-
     with tab_carga:
         st.subheader("Carga Masiva (Plantilla Excel)")
         template_data = {'RUT': ['12.345.678-9'], 'NOMBRE': ['Ejemplo'], 'CARGO': ['OPERADOR'], 'FECHA DE CONTRATO': ['2024-01-01'], 'EMAIL': ['correo@ejemplo.cl']}
@@ -487,32 +442,29 @@ elif menu == "👥 Gestión Personas":
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer: df_template.to_excel(writer, index=False)
         buffer.seek(0)
         st.download_button(label="📥 Descargar Plantilla Personal", data=buffer, file_name="plantilla_carga_personal.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
         up = st.file_uploader("Archivo Excel/CSV", type=['csv','xlsx'])
         if up:
             try:
                 df = pd.read_csv(up) if up.name.endswith('.csv') else pd.read_excel(up)
+                st.write("Vista Previa:", df.head())
                 if st.button("Procesar"):
                     c = conn.cursor()
                     count = 0
                     for i, r in df.iterrows():
-                        rut = str(r.get('RUT','')).strip(); nom = str(r.get('NOMBRE','')).strip(); car = str(r.get('CARGO','')).strip()
-                        mail = str(r.get('EMAIL','')).strip()
+                        rut = str(r.get('RUT','')).strip(); nom = str(r.get('NOMBRE','')).strip(); car = str(r.get('CARGO','')).strip(); mail = str(r.get('EMAIL','')).strip()
                         try: fec = pd.to_datetime(r.get('FECHA DE CONTRATO'), errors='coerce').date()
                         except: fec = date.today()
+                        if pd.isna(fec): fec = date.today() # FIX NaT
                         if rut and nom:
                             c.execute("INSERT OR REPLACE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado, email) VALUES (?,?,?,?,?,?,?)", (rut, nom, car, "FAENA", fec, "ACTIVO", mail))
                             count += 1
                     conn.commit(); st.success(f"Cargados {count} registros")
             except Exception as e: st.error(f"Error: {e}")
-
     with tab_new:
         with st.form("newp"):
             c1, c2 = st.columns(2)
-            r = c1.text_input("RUT"); n = c2.text_input("Nombre"); c = c1.selectbox("Cargo", LISTA_CARGOS)
-            em = c2.text_input("Email")
+            r = c1.text_input("RUT"); n = c2.text_input("Nombre"); c = c1.selectbox("Cargo", LISTA_CARGOS); em = c2.text_input("Email")
             if st.form_submit_button("Guardar"): conn.execute("INSERT INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado, email) VALUES (?,?,?,?,?,?,?)", (r, n, c, "FAENA", date.today(), "ACTIVO", em)); conn.commit(); st.success("OK")
-
     with tab_dig:
         df_all = pd.read_sql("SELECT rut, nombre FROM personal", conn)
         if not df_all.empty:
@@ -520,23 +472,20 @@ elif menu == "👥 Gestión Personas":
             if QR_AVAILABLE: st.button("🪪 Ver Credencial")
     conn.close()
 
-# --- 4. GESTOR DOCUMENTAL (CONECTADO) ---
+# --- 4. GESTOR DOCUMENTAL ---
 elif menu == "⚖️ Gestor Documental":
     st.markdown("<div class='main-header'>Centro Documental (DS44)</div>", unsafe_allow_html=True)
     tab_irl, tab_riohs, tab_hist = st.tabs(["📄 IRL", "📘 RIOHS", "📂 Historial"])
     conn = get_conn()
     df_p = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
-    
     with tab_irl:
         sel = st.selectbox("Trabajador:", df_p['rut'] + " - " + df_p['nombre'])
         if st.button("Generar IRL (PDF)"):
             rut = sel.split(" - ")[0]; cargo = df_p[df_p['rut']==rut]['cargo'].values[0]
-            # Búsqueda inteligente en Matriz por PUESTO
             riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper WHERE puesto_trabajo LIKE ?", conn, params=(f'%{cargo}%',))
             if riesgos.empty: riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper LIMIT 3", conn)
             pdf = DocumentosLegalesPDF("INFORMACIÓN RIESGOS LABORALES", "RG-GD-04").generar_irl({'nombre': sel.split(" - ")[1], 'rut': rut, 'cargo': cargo}, riesgos.values.tolist())
             st.download_button("Descargar PDF", pdf, f"IRL_{rut}.pdf", "application/pdf")
-
     with tab_riohs:
         sel_r = st.selectbox("Trabajador RIOHS:", df_p['rut'] + " | " + df_p['nombre'])
         tipo = st.selectbox("Formato", ["Físico", "Digital"])
@@ -548,7 +497,6 @@ elif menu == "⚖️ Gestor Documental":
                 conn.commit()
                 pdf = DocumentosLegalesPDF("RECEPCIÓN RIOHS", "RG-GD-03").generar_riohs({'nombre': sel_r.split(" | ")[1], 'rut': sel_r.split(" | ")[0], 'tipo': tipo, 'firma_b64': ib64})
                 st.download_button("Descargar Acta", pdf, "RIOHS.pdf")
-
     with tab_hist:
         st.dataframe(pd.read_sql("SELECT * FROM registro_riohs", conn), use_container_width=True)
     conn.close()
@@ -558,26 +506,21 @@ elif menu == "🦺 Logística EPP":
     st.markdown("<div class='main-header'>Gestión de EPP</div>", unsafe_allow_html=True)
     conn = get_conn()
     tab_ent, tab_inv = st.tabs(["Entrega", "Inventario"])
-    
     with tab_inv:
         edited = st.data_editor(pd.read_sql("SELECT * FROM inventario_epp", conn), key="inv_ed", use_container_width=True)
         if st.button("Actualizar Stock"):
             c = conn.cursor(); c.execute("DELETE FROM inventario_epp")
             for i, r in edited.iterrows(): c.execute("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion) VALUES (?,?,?,?)", (r['producto'], r['stock_actual'], r['stock_minimo'], r['ubicacion']))
             conn.commit(); st.success("OK"); st.rerun()
-
     with tab_ent:
         df_p = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
         sel = st.selectbox("Trabajador:", df_p['rut'] + " | " + df_p['nombre'])
         inv = pd.read_sql("SELECT producto, stock_actual FROM inventario_epp WHERE stock_actual > 0", conn)
-        
         if 'cart' not in st.session_state: st.session_state.cart = []
         c1, c2, c3 = st.columns(3)
         p = c1.selectbox("Producto", inv['producto']); q = c2.number_input("Cant", 1); m = c3.selectbox("Motivo", ["Nuevo", "Reposición", "Pérdida"])
-        
         if st.button("Agregar"): st.session_state.cart.append({'prod': p, 'cant': q, 'mot': m})
         st.table(st.session_state.cart)
-        
         canvas = st_canvas(stroke_width=2, height=150, key="epp_s")
         if st.button("Confirmar Entrega"):
             if canvas.image_data is not None:
@@ -592,7 +535,7 @@ elif menu == "🦺 Logística EPP":
                 st.session_state.cart = []; st.success("Listo")
     conn.close()
 
-# --- 6. INCIDENTES & DIAT ---
+# --- 6. INCIDENTES ---
 elif menu == "🚨 Incidentes & DIAT":
     st.markdown("<div class='main-header'>Accidentes (Ley 16.744)</div>", unsafe_allow_html=True)
     conn = get_conn()
@@ -613,31 +556,75 @@ elif menu == "🚨 Incidentes & DIAT":
             st.download_button("Descargar DIAT", pdf, "DIAT.pdf")
     conn.close()
 
-# --- 7. CAPACITACIONES ---
+# --- 7. CAPACITACIONES (MEJORADO V121) ---
 elif menu == "🎓 Capacitaciones":
-    st.title("Capacitaciones"); conn = get_conn(); 
-    with st.form("cap"):
-        t = st.text_input("Tema"); tp = st.selectbox("Tipo", ["Inducción", "Charla"]); a = st.multiselect("Asistentes", pd.read_sql("SELECT rut, nombre FROM personal", conn)['nombre'])
-        if st.form_submit_button("Guardar"):
-            c = conn.cursor(); c.execute("INSERT INTO capacitaciones (fecha, tema, tipo_actividad, responsable_rut, estado) VALUES (?,?,?,?,?)", (date.today(), t, tp, "PREVENCIONISTA", "OK")); cid = c.lastrowid
-            conn.commit(); st.success("OK")
-    st.dataframe(pd.read_sql("SELECT * FROM capacitaciones", conn))
+    st.markdown("<div class='main-header'>Plan de Capacitación (RG-GD-02)</div>", unsafe_allow_html=True)
+    conn = get_conn()
+    
+    tab_new, tab_hist = st.tabs(["➕ Nueva Capacitación", "📂 Historial y Certificados"])
+    
+    with tab_new:
+        with st.form("cap_form"):
+            c1, c2 = st.columns(2)
+            tema = c1.text_input("Tema de Capacitación")
+            tipo = c2.selectbox("Tipo Actividad", ["Inducción", "Charla 5 Min", "Capacitación Específica", "Entrenamiento"])
+            
+            c3, c4 = st.columns(2)
+            lugar = c3.text_input("Lugar (Sala/Terreno)")
+            duracion = c4.number_input("Duración (Horas)", 1, 8, 1)
+            
+            metodologia = st.selectbox("Metodología", ["Teórico - Presencial", "Práctico - Terreno", "E-Learning"])
+            resp = st.text_input("Relator / Instructor")
+            
+            st.divider()
+            df_p = pd.read_sql("SELECT rut, nombre, cargo FROM personal WHERE estado='ACTIVO'", conn)
+            asistentes = st.multiselect("Seleccionar Asistentes", df_p['rut'] + " | " + df_p['nombre'])
+            
+            if st.form_submit_button("Registrar Capacitación"):
+                # 1. Guardar Cabecera
+                c = conn.cursor()
+                c.execute("""INSERT INTO capacitaciones (fecha, tema, tipo_actividad, responsable_rut, estado, duracion, lugar, metodologia) 
+                             VALUES (?,?,?,?,?,?,?,?)""", (date.today(), tema, tipo, resp, "EJECUTADA", duracion, lugar, metodologia))
+                cid = c.lastrowid
+                
+                # 2. Guardar Asistentes
+                for a in asistentes:
+                    rut_t = a.split(" | ")[0]
+                    nom_t = a.split(" | ")[1]
+                    cargo_t = df_p[df_p['rut']==rut_t]['cargo'].values[0]
+                    c.execute("INSERT INTO asistencia_capacitacion (capacitacion_id, trabajador_rut, nombre_trabajador, cargo_trabajador, estado) VALUES (?,?,?,?,?)", (cid, rut_t, nom_t, cargo_t, "ASISTIÓ"))
+                
+                conn.commit()
+                st.success("Capacitación Registrada Correctamente")
+                
+    with tab_hist:
+        caps = pd.read_sql("SELECT id, fecha, tema, tipo_actividad, lugar, duracion FROM capacitaciones ORDER BY id DESC", conn)
+        st.dataframe(caps, use_container_width=True)
+        
+        st.divider()
+        st.subheader("Descargar Lista de Asistencia")
+        sel_cap = st.selectbox("Seleccione Capacitación para PDF:", caps['id'].astype(str) + " - " + caps['tema'])
+        
+        if st.button("📄 Generar Lista Asistencia (PDF)"):
+            cid = int(sel_cap.split(" - ")[0])
+            # Datos Cabecera
+            cap_data = pd.read_sql("SELECT * FROM capacitaciones WHERE id=?", conn, params=(cid,)).iloc[0]
+            # Datos Asistentes
+            asis_data = pd.read_sql("SELECT nombre_trabajador as nombre, trabajador_rut as rut, cargo_trabajador as cargo FROM asistencia_capacitacion WHERE capacitacion_id=?", conn, params=(cid,)).to_dict('records')
+            
+            pdf = DocumentosLegalesPDF("REGISTRO DE CAPACITACIÓN", "RG-GD-02").generar_asistencia_capacitacion(
+                {'tema': cap_data['tema'], 'tipo': cap_data['tipo_actividad'], 'resp': cap_data['responsable_rut'], 
+                 'fecha': cap_data['fecha'], 'lugar': cap_data['lugar'], 'duracion': cap_data['duracion']}, 
+                asis_data
+            )
+            st.download_button("📥 Descargar PDF Asistencia", pdf, f"Asistencia_{cid}.pdf", "application/pdf")
+            
     conn.close()
 
-# --- 8. PLAN ANUAL ---
+# --- 8-10 OTROS ---
 elif menu == "📅 Plan Anual":
-    st.title("Plan Anual"); conn = get_conn(); 
-    st.data_editor(pd.read_sql("SELECT * FROM programa_anual", conn), key="plan_ed", num_rows="dynamic")
-    conn.close()
-
-# --- 9. EXTINTORES ---
+    st.title("Plan Anual"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM programa_anual", conn), key="plan_ed", num_rows="dynamic"); conn.close()
 elif menu == "🧯 Extintores":
-    st.title("Extintores"); conn = get_conn(); 
-    st.data_editor(pd.read_sql("SELECT * FROM extintores", conn), key="ext_ed", num_rows="dynamic")
-    conn.close()
-
-# --- 10. CONTRATISTAS ---
+    st.title("Extintores"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM extintores", conn), key="ext_ed", num_rows="dynamic"); conn.close()
 elif menu == "🏗️ Contratistas":
-    st.title("Contratistas"); conn = get_conn(); 
-    st.data_editor(pd.read_sql("SELECT * FROM contratistas", conn), key="cont_ed", num_rows="dynamic")
-    conn.close()
+    st.title("Contratistas"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM contratistas", conn), key="cont_ed", num_rows="dynamic"); conn.close()
