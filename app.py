@@ -36,7 +36,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v127_qr_fixed.db'
+DB_NAME = 'sgsst_v128_final_syntax.db'
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -55,7 +55,6 @@ if "mobile_sign" in query_params and query_params["mobile_sign"] == "true":
                 with st.form("mobile_sign_form"):
                     rut_input = st.text_input("Ingresa tu RUT (con guión)", placeholder="12345678-9")
                     st.write("Firma aquí:")
-                    # Canvas optimizado para móvil
                     canvas_mobile = st_canvas(
                         stroke_width=2, 
                         stroke_color="black", 
@@ -261,7 +260,7 @@ if not st.session_state['logged_in']:
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V127 - QR FIXED")
+    st.caption("V128 - FIXED SYNTAX")
     menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
 
@@ -290,6 +289,11 @@ elif menu == "🛡️ Matriz IPER (ISP)":
         # Consulta para Visualización Tipo "Sábana" (Anexo 6)
         query = """SELECT id, proceso as 'PROCESO', puesto_trabajo as 'PUESTO', tarea as 'TAREA', es_rutinaria as 'RUTINARIA', peligro_factor as 'PELIGRO (GEMA)', riesgo_asociado as 'RIESGO', probabilidad as 'P', consecuencia as 'C', vep as 'VEP', nivel_riesgo as 'NIVEL', medida_control as 'MEDIDAS DE CONTROL' FROM matriz_iper"""
         df_matriz = pd.read_sql(query, conn)
+        def h_risk(val):
+            if val=='INTOLERABLE': return 'background-color: #d32f2f; color: white'
+            elif val=='IMPORTANTE': return 'background-color: #e57373'
+            elif val=='MODERADO': return 'background-color: #ffb74d'
+            return 'background-color: #81c784'
         
         # Edición de P y C Directa en Tabla
         edited_df = st.data_editor(df_matriz, use_container_width=True, 
@@ -410,11 +414,102 @@ elif menu == "🦺 Logística EPP":
     st.markdown("<div class='main-header'>EPP</div>", unsafe_allow_html=True)
     t1, t2 = st.tabs(["Entrega", "Inventario"])
     conn = get_conn()
+    
     with t2:
         ed = st.data_editor(pd.read_sql("SELECT * FROM inventario_epp", conn), key="inv", num_rows="dynamic")
-        if st.button("Actualizar"):
-            conn.execute("DELETE FROM inventario_epp"); 
+        if st.button("Actualizar Stock"):
+            conn.execute("DELETE FROM inventario_epp") 
             for i,r in ed.iterrows(): conn.execute("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion) VALUES (?,?,?,?)", (r['producto'], r['stock_actual'], r['stock_minimo'], r['ubicacion']))
             conn.commit(); st.success("OK"); st.rerun()
+            
     with t1:
-        sel = st.selectbox("Trabajador", pd.read_sql("SELECT rut,
+        # CORRECCIÓN DE LA LÍNEA DEL SELECTBOX (Syntax Error Fixed)
+        df_workers = pd.read_sql("SELECT rut, nombre FROM personal", conn)
+        worker_options = df_workers['rut'] + " | " + df_workers['nombre']
+        sel = st.selectbox("Trabajador", worker_options)
+        
+        inv = pd.read_sql("SELECT producto FROM inventario_epp WHERE stock_actual > 0", conn)
+        
+        if 'cart' not in st.session_state: st.session_state.cart = []
+        c1, c2 = st.columns(2); p = c1.selectbox("Prod", inv['producto']); q = c2.number_input("Cant", 1)
+        if st.button("Agregar"): st.session_state.cart.append({'prod': p, 'cant': q})
+        st.table(st.session_state.cart)
+        
+        can = st_canvas(stroke_width=2, height=150, key="epp")
+        if st.button("Confirmar"):
+            if can.image_data is not None:
+                img = PILImage.fromarray(can.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); ib64 = base64.b64encode(b.getvalue()).decode()
+                rut = sel.split(" | ")[0]; nom = sel.split(" | ")[1]
+                conn.execute("INSERT INTO registro_epp (fecha_entrega, rut_trabajador, nombre_trabajador, lista_productos, firma_b64) VALUES (?,?,?,?,?)", (date.today(), rut, nom, str(st.session_state.cart), ib64))
+                for i in st.session_state.cart: conn.execute("UPDATE inventario_epp SET stock_actual = stock_actual - ? WHERE producto=?", (i['cant'], i['prod']))
+                conn.commit()
+                pdf = DocumentosLegalesPDF("EPP", "RG-GD-01").generar_epp({'nombre': nom, 'rut': rut, 'cargo': 'OP', 'fecha': date.today(), 'lista': str(st.session_state.cart), 'firma_b64': ib64})
+                st.download_button("PDF", pdf.getvalue(), "EPP.pdf"); st.session_state.cart = []
+    conn.close()
+
+# --- 6. CAPACITACIONES (CON QR FIXED) ---
+elif menu == "🎓 Capacitaciones":
+    st.markdown("<div class='main-header'>Capacitaciones</div>", unsafe_allow_html=True)
+    t1, t2, t3 = st.tabs(["Nueva", "QR Firma", "Historial"])
+    conn = get_conn()
+    with t1:
+        with st.form("cap"):
+            t = st.text_input("Tema"); tp = st.selectbox("Tipo", ["Inducción", "Charla"]); lug = st.text_input("Lugar"); dur = st.number_input("Horas", 1); rel = st.text_input("Relator")
+            asis = st.multiselect("Asistentes", pd.read_sql("SELECT rut, nombre FROM personal", conn)['rut'] + " | " + pd.read_sql("SELECT rut, nombre FROM personal", conn)['nombre'])
+            if st.form_submit_button("Guardar"):
+                c = conn.cursor(); c.execute("INSERT INTO capacitaciones (fecha, tema, tipo_actividad, responsable_rut, lugar, duracion) VALUES (?,?,?,?,?,?)", (date.today(), t, tp, rel, lug, dur)); cid = c.lastrowid
+                for a in asis: c.execute("INSERT INTO asistencia_capacitacion (capacitacion_id, trabajador_rut, nombre_trabajador, estado) VALUES (?,?,?,?)", (cid, a.split(" | ")[0], a.split(" | ")[1], "PENDIENTE"))
+                conn.commit(); st.success("OK")
+    with t2:
+        caps = pd.read_sql("SELECT id, tema FROM capacitaciones ORDER BY id DESC", conn)
+        if not caps.empty:
+            sel_qr = st.selectbox("Seleccionar:", caps['id'].astype(str) + " - " + caps['tema'])
+            cap_id = sel_qr.split(" - ")[0]
+            
+            # --- FIX QR URL ---
+            try:
+                # Detectar IP local para facilitar pruebas
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("8.8.8.8", 80))
+                ip_local = s.getsockname()[0]
+                s.close()
+                default_url = f"http://{ip_local}:8501"
+            except:
+                default_url = "https://tu-app-en-la-nube.streamlit.app"
+
+            st.warning("⚠️ Importante: Si estás en la nube (Streamlit Cloud), borra la dirección de abajo y pega la URL de tu navegador.")
+            url_base = st.text_input("URL Base de la App", value=default_url)
+            
+            link = f"{url_base}/?mobile_sign=true&cap_id={cap_id}"
+            if QR_AVAILABLE:
+                qr = qrcode.make(link); b = io.BytesIO(); qr.save(b, format='PNG')
+                st.image(b.getvalue(), width=250)
+            st.write(f"Link directo: {link}")
+
+    with t3:
+        caps = pd.read_sql("SELECT * FROM capacitaciones", conn); st.dataframe(caps)
+        sel_pdf = st.selectbox("PDF:", caps['id'].astype(str) + " - " + caps['tema'])
+        if st.button("Generar Lista"):
+            cid = int(sel_pdf.split(" - ")[0])
+            c_data = pd.read_sql("SELECT * FROM capacitaciones WHERE id=?", conn, params=(cid,)).iloc[0]
+            a_data = pd.read_sql("SELECT * FROM asistencia_capacitacion WHERE capacitacion_id=?", conn, params=(cid,)).to_dict('records')
+            pdf = DocumentosLegalesPDF("CAPACITACION", "RG-GD-02").generar_asistencia_capacitacion({'tema':c_data['tema'], 'tipo':c_data['tipo_actividad'], 'resp':c_data['responsable_rut'], 'fecha':c_data['fecha'], 'lugar':c_data['lugar'], 'duracion':c_data['duracion']}, a_data)
+            st.download_button("PDF", pdf.getvalue(), "Lista.pdf")
+    conn.close()
+
+# --- 7. OTROS ---
+elif menu == "🚨 Incidentes & DIAT":
+    st.title("Incidentes"); conn = get_conn()
+    with st.form("inc"):
+        f = st.date_input("Fecha"); d = st.text_area("Descripción"); a = st.text_input("Afectado")
+        if st.form_submit_button("Guardar"): conn.execute("INSERT INTO incidentes (fecha, descripcion, nombre_afectado) VALUES (?,?,?)", (f, d, a)); conn.commit(); st.success("OK")
+    if st.button("Generar DIAT"):
+        pdf = DocumentosLegalesPDF("DIAT", "LEGAL").generar_diat({'nombre': 'Ejemplo', 'rut': '1-9', 'fecha': str(date.today()), 'tipo': 'Accidente', 'descripcion': 'Detalle...'})
+        st.download_button("DIAT", pdf.getvalue(), "DIAT.pdf")
+    conn.close()
+elif menu == "📅 Plan Anual":
+    st.title("Plan Anual"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM programa_anual", conn), key="plan", num_rows="dynamic"); conn.close()
+elif menu == "🧯 Extintores":
+    st.title("Extintores"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM extintores", conn), key="ext", num_rows="dynamic"); conn.close()
+elif menu == "🏗️ Contratistas":
+    st.title("Contratistas"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM contratistas", conn), key="con", num_rows="dynamic"); conn.close()
