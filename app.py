@@ -36,7 +36,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v121_cap_pro.db' # DB Actualizada
+DB_NAME = 'sgsst_v122_fixed_cap.db' # DB Actualizada
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
@@ -92,7 +92,7 @@ def init_db():
     
     c.execute('''CREATE TABLE IF NOT EXISTS incidentes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, tipo TEXT, descripcion TEXT, area TEXT, severidad TEXT, rut_afectado TEXT, nombre_afectado TEXT, parte_cuerpo TEXT, estado TEXT)''')
     
-    # Documental y Operativo (MEJORADO: CAPACITACIONES)
+    # Documental y Operativo
     c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         fecha DATE, 
@@ -100,9 +100,9 @@ def init_db():
         tipo_actividad TEXT, 
         responsable_rut TEXT, 
         estado TEXT,
-        duracion INTEGER, -- Nuevo
-        lugar TEXT,       -- Nuevo
-        metodologia TEXT  -- Nuevo
+        duracion INTEGER,
+        lugar TEXT,
+        metodologia TEXT
     )''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (id INTEGER PRIMARY KEY AUTOINCREMENT, capacitacion_id INTEGER, trabajador_rut TEXT, nombre_trabajador TEXT, cargo_trabajador TEXT, estado TEXT)''')
@@ -213,7 +213,7 @@ class DocumentosLegalesPDF:
             try: logo = RLImage(self.logo_path, width=80, height=35)
             except: pass
         data = [[logo, Paragraph(f"SISTEMA DE GESTIÓN SST - DS44<br/><b>{self.titulo}</b>", ParagraphStyle('T', alignment=TA_CENTER, fontSize=11, fontName='Helvetica-Bold')), 
-                 Paragraph(f"CÓDIGO: {self.codigo}<br/>VER: 06<br/>FECHA: {datetime.now().strftime('%d/%m/%Y')}", ParagraphStyle('C', alignment=TA_CENTER, fontSize=7))]]
+                 Paragraph(f"CÓDIGO: {self.codigo}<br/>VER: 07<br/>FECHA: {datetime.now().strftime('%d/%m/%Y')}", ParagraphStyle('C', alignment=TA_CENTER, fontSize=7))]]
         t = Table(data, colWidths=[90, 340, 90])
         t.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER')]))
         self.elements.append(t); self.elements.append(Spacer(1, 20))
@@ -264,7 +264,7 @@ class DocumentosLegalesPDF:
     def generar_asistencia_capacitacion(self, data, asis):
         self._header()
         
-        # Tabla Detalle Capacitación
+        # 1. Información Actividad
         self.elements.append(Paragraph("I. ANTECEDENTES DE LA ACTIVIDAD", self.styles['Heading3']))
         info_data = [
             [f"TEMA: {data['tema']}", f"TIPO: {data['tipo']}"],
@@ -279,24 +279,29 @@ class DocumentosLegalesPDF:
         self.elements.append(tc)
         self.elements.append(Spacer(1, 15))
         
-        # Tabla Asistentes
+        # 2. Lista Asistentes (CORREGIDA)
         self.elements.append(Paragraph("II. REGISTRO DE ASISTENCIA", self.styles['Heading3']))
         a_data = [["NOMBRE", "RUT", "CARGO", "FIRMA"]]
+        
+        # Calcular alturas de fila: 20 para encabezado, 50 para cada firma
+        row_heights = [20] 
+        
         for a in asis: 
-            a_data.append([a['nombre'], a['rut'], a.get('cargo', '-'), "__________________"])
+            a_data.append([a['nombre'], a['rut'], a.get('cargo', '-'), ""]) # Campo firma vacío para firmar a mano
+            row_heights.append(50) # 50 puntos de altura para firmar
             
-        t = Table(a_data, colWidths=[180, 80, 100, 160], repeatRows=1)
+        t = Table(a_data, colWidths=[170, 70, 110, 170], rowHeights=row_heights, repeatRows=1)
+        
         t.setStyle(TableStyle([
             ('GRID', (0,0), (-1,-1), 0.5, colors.black),
             ('BACKGROUND', (0,0), (-1,0), HexColor(COLOR_PRIMARY)),
             ('TEXTCOLOR', (0,0), (-1,0), colors.white),
             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('ROWHEIGHT', (1,-1), 35) # Más alto para firmar
+            ('FONTSIZE', (0,0), (-1,-1), 8),
         ]))
         self.elements.append(t)
         
-        # Firma Instructor
         self.elements.append(Spacer(1, 40))
         self.elements.append(Paragraph(f"__________________________<br/>FIRMA RELATOR/INSTRUCTOR<br/>{data['resp']}", ParagraphStyle('C', alignment=TA_CENTER)))
         
@@ -331,7 +336,7 @@ if not st.session_state['logged_in']:
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V121 - CAPACITACIONES PRO")
+    st.caption("V122 - FIXED CAP PDF")
     menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
 
@@ -454,7 +459,7 @@ elif menu == "👥 Gestión Personas":
                         rut = str(r.get('RUT','')).strip(); nom = str(r.get('NOMBRE','')).strip(); car = str(r.get('CARGO','')).strip(); mail = str(r.get('EMAIL','')).strip()
                         try: fec = pd.to_datetime(r.get('FECHA DE CONTRATO'), errors='coerce').date()
                         except: fec = date.today()
-                        if pd.isna(fec): fec = date.today() # FIX NaT
+                        if pd.isna(fec): fec = date.today()
                         if rut and nom:
                             c.execute("INSERT OR REPLACE INTO personal (rut, nombre, cargo, centro_costo, fecha_contrato, estado, email) VALUES (?,?,?,?,?,?,?)", (rut, nom, car, "FAENA", fec, "ACTIVO", mail))
                             count += 1
@@ -556,7 +561,7 @@ elif menu == "🚨 Incidentes & DIAT":
             st.download_button("Descargar DIAT", pdf, "DIAT.pdf")
     conn.close()
 
-# --- 7. CAPACITACIONES (MEJORADO V121) ---
+# --- 7. CAPACITACIONES (MEJORADO V122) ---
 elif menu == "🎓 Capacitaciones":
     st.markdown("<div class='main-header'>Plan de Capacitación (RG-GD-02)</div>", unsafe_allow_html=True)
     conn = get_conn()
@@ -568,57 +573,33 @@ elif menu == "🎓 Capacitaciones":
             c1, c2 = st.columns(2)
             tema = c1.text_input("Tema de Capacitación")
             tipo = c2.selectbox("Tipo Actividad", ["Inducción", "Charla 5 Min", "Capacitación Específica", "Entrenamiento"])
-            
             c3, c4 = st.columns(2)
-            lugar = c3.text_input("Lugar (Sala/Terreno)")
-            duracion = c4.number_input("Duración (Horas)", 1, 8, 1)
-            
-            metodologia = st.selectbox("Metodología", ["Teórico - Presencial", "Práctico - Terreno", "E-Learning"])
-            resp = st.text_input("Relator / Instructor")
-            
+            lugar = c3.text_input("Lugar (Sala/Terreno)"); duracion = c4.number_input("Duración (Horas)", 1, 8, 1)
+            metodologia = st.selectbox("Metodología", ["Teórico - Presencial", "Práctico - Terreno", "E-Learning"]); resp = st.text_input("Relator / Instructor")
             st.divider()
             df_p = pd.read_sql("SELECT rut, nombre, cargo FROM personal WHERE estado='ACTIVO'", conn)
             asistentes = st.multiselect("Seleccionar Asistentes", df_p['rut'] + " | " + df_p['nombre'])
-            
             if st.form_submit_button("Registrar Capacitación"):
-                # 1. Guardar Cabecera
                 c = conn.cursor()
-                c.execute("""INSERT INTO capacitaciones (fecha, tema, tipo_actividad, responsable_rut, estado, duracion, lugar, metodologia) 
-                             VALUES (?,?,?,?,?,?,?,?)""", (date.today(), tema, tipo, resp, "EJECUTADA", duracion, lugar, metodologia))
+                c.execute("""INSERT INTO capacitaciones (fecha, tema, tipo_actividad, responsable_rut, estado, duracion, lugar, metodologia) VALUES (?,?,?,?,?,?,?,?)""", (date.today(), tema, tipo, resp, "EJECUTADA", duracion, lugar, metodologia))
                 cid = c.lastrowid
-                
-                # 2. Guardar Asistentes
                 for a in asistentes:
-                    rut_t = a.split(" | ")[0]
-                    nom_t = a.split(" | ")[1]
-                    cargo_t = df_p[df_p['rut']==rut_t]['cargo'].values[0]
+                    rut_t = a.split(" | ")[0]; nom_t = a.split(" | ")[1]; cargo_t = df_p[df_p['rut']==rut_t]['cargo'].values[0]
                     c.execute("INSERT INTO asistencia_capacitacion (capacitacion_id, trabajador_rut, nombre_trabajador, cargo_trabajador, estado) VALUES (?,?,?,?,?)", (cid, rut_t, nom_t, cargo_t, "ASISTIÓ"))
-                
-                conn.commit()
-                st.success("Capacitación Registrada Correctamente")
+                conn.commit(); st.success("Capacitación Registrada Correctamente")
                 
     with tab_hist:
         caps = pd.read_sql("SELECT id, fecha, tema, tipo_actividad, lugar, duracion FROM capacitaciones ORDER BY id DESC", conn)
         st.dataframe(caps, use_container_width=True)
-        
         st.divider()
         st.subheader("Descargar Lista de Asistencia")
         sel_cap = st.selectbox("Seleccione Capacitación para PDF:", caps['id'].astype(str) + " - " + caps['tema'])
-        
         if st.button("📄 Generar Lista Asistencia (PDF)"):
             cid = int(sel_cap.split(" - ")[0])
-            # Datos Cabecera
             cap_data = pd.read_sql("SELECT * FROM capacitaciones WHERE id=?", conn, params=(cid,)).iloc[0]
-            # Datos Asistentes
             asis_data = pd.read_sql("SELECT nombre_trabajador as nombre, trabajador_rut as rut, cargo_trabajador as cargo FROM asistencia_capacitacion WHERE capacitacion_id=?", conn, params=(cid,)).to_dict('records')
-            
-            pdf = DocumentosLegalesPDF("REGISTRO DE CAPACITACIÓN", "RG-GD-02").generar_asistencia_capacitacion(
-                {'tema': cap_data['tema'], 'tipo': cap_data['tipo_actividad'], 'resp': cap_data['responsable_rut'], 
-                 'fecha': cap_data['fecha'], 'lugar': cap_data['lugar'], 'duracion': cap_data['duracion']}, 
-                asis_data
-            )
+            pdf = DocumentosLegalesPDF("REGISTRO DE CAPACITACIÓN", "RG-GD-02").generar_asistencia_capacitacion({'tema': cap_data['tema'], 'tipo': cap_data['tipo_actividad'], 'resp': cap_data['responsable_rut'], 'fecha': cap_data['fecha'], 'lugar': cap_data['lugar'], 'duracion': cap_data['duracion']}, asis_data)
             st.download_button("📥 Descargar PDF Asistencia", pdf, f"Asistencia_{cid}.pdf", "application/pdf")
-            
     conn.close()
 
 # --- 8-10 OTROS ---
