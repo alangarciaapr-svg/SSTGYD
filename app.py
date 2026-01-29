@@ -356,8 +356,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                 conn.execute("INSERT INTO matriz_iper (proceso, puesto_trabajo, peligro_factor, riesgo_asociado, probabilidad, consecuencia, vep, nivel_riesgo, medida_control) VALUES (?,?,?,?,?,?,?,?,?)", (pro, pue, pel, rie, pr, co, v, ni, med))
                 conn.commit(); st.success("Guardado"); st.rerun()
     conn.close()
-
-# --- MÓDULO GESTIÓN PERSONAS PROFESIONAL ---
+# --- MÓDULO GESTIÓN PERSONAS PROFESIONAL (CORREGIDO) ---
 elif menu == "👥 Gestión Personas":
     st.markdown("<div class='main-header'>Gestión de Capital Humano</div>", unsafe_allow_html=True)
     conn = get_conn()
@@ -381,6 +380,11 @@ elif menu == "👥 Gestión Personas":
         st.info("💡 Puedes editar directamente en la tabla. Recuerda guardar los cambios.")
         df_p = pd.read_sql("SELECT rut, nombre, cargo, centro_costo, email, fecha_contrato, estado FROM personal", conn)
         
+        # --- CORRECCIÓN DEL ERROR DE TIPO DE FECHA ---
+        # Convertimos la columna texto a formato fecha real para que st.data_editor no falle
+        df_p['fecha_contrato'] = pd.to_datetime(df_p['fecha_contrato'], errors='coerce')
+        # ---------------------------------------------
+        
         edited = st.data_editor(
             df_p,
             key="pro_editor",
@@ -391,7 +395,7 @@ elif menu == "👥 Gestión Personas":
                 "nombre": st.column_config.TextColumn("Nombre Completo"),
                 "cargo": st.column_config.SelectboxColumn("Cargo", options=LISTA_CARGOS, required=True),
                 "estado": st.column_config.SelectboxColumn("Estado", options=["ACTIVO", "INACTIVO", "LICENCIA"], required=True),
-                "fecha_contrato": st.column_config.DateColumn("Fecha Contrato"),
+                "fecha_contrato": st.column_config.DateColumn("Fecha Contrato", format="DD/MM/YYYY"),
                 "email": st.column_config.TextColumn("Email")
             }
         )
@@ -399,7 +403,7 @@ elif menu == "👥 Gestión Personas":
         if st.button("💾 Guardar Cambios en Nómina"):
             c = conn.cursor()
             for i, r in edited.iterrows():
-                # Corrección de fecha para evitar error NaT
+                # Corrección de fecha para evitar error NaT al guardar
                 fec = r['fecha_contrato']
                 if pd.isna(fec) or str(fec) == 'NaT': fec = date.today()
                 
@@ -493,31 +497,6 @@ elif menu == "👥 Gestión Personas":
                     b_qr = io.BytesIO(); qr.save(b_qr, format='PNG')
                     st.image(b_qr.getvalue(), width=120)
     
-    conn.close()
-
-# --- 4. GESTOR DOCUMENTAL (IRL DESDE MATRIZ) ---
-elif menu == "⚖️ Gestor Documental":
-    st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
-    t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
-    conn = get_conn(); df_p = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
-    with t1:
-        sel = st.selectbox("Trabajador:", df_p['rut'] + " - " + df_p['nombre'])
-        if st.button("Generar IRL"):
-            rut = sel.split(" - ")[0]; cargo = df_p[df_p['rut']==rut]['cargo'].values[0]
-            # Busca riesgos del puesto en la Matriz
-            riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper WHERE puesto_trabajo LIKE ?", conn, params=(f'%{cargo}%',))
-            if riesgos.empty: riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper LIMIT 3", conn)
-            pdf = DocumentosLegalesPDF("IRL", "RG-GD-04").generar_irl({'nombre': sel.split(" - ")[1]}, riesgos.values.tolist())
-            st.download_button("Descargar IRL", pdf.getvalue(), "IRL.pdf")
-    with t2:
-        sel_r = st.selectbox("Trabajador RIOHS:", df_p['rut'] + " | " + df_p['nombre'])
-        c_riohs = st_canvas(stroke_width=2, height=150, key="riohs")
-        if st.button("Registrar Entrega"):
-            if c_riohs.image_data is not None:
-                img = PILImage.fromarray(c_riohs.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); ib64 = base64.b64encode(b.getvalue()).decode()
-                conn.execute("INSERT INTO registro_riohs (fecha_entrega, rut_trabajador, nombre_trabajador, firma_b64) VALUES (?,?,?,?)", (date.today(), sel_r.split(" | ")[0], sel_r.split(" | ")[1], ib64)); conn.commit()
-                pdf = DocumentosLegalesPDF("RIOHS", "RG-GD-03").generar_riohs({'nombre': sel_r.split(" | ")[1], 'firma_b64': ib64})
-                st.download_button("Descargar", pdf.getvalue(), "RIOHS.pdf")
     conn.close()
 
 # --- 5. LOGISTICA EPP ---
