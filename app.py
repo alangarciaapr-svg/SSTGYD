@@ -100,46 +100,54 @@ LISTA_CONSECUENCIA = [1, 2, 4]
 def get_conn(): return sqlite3.connect(DB_NAME, check_same_thread=False)
 
 def init_db():
-    conn = get_conn(); c = conn.cursor()
+    conn = get_conn()
+    c = conn.cursor()
     
-    # RRHH
+    # --- 1. CREACIÓN DE TABLAS (Mantenemos todo lo que tenías) ---
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
-    
-    # Matriz IPER (Estructura ISP Completa)
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (id INTEGER PRIMARY KEY AUTOINCREMENT, proceso TEXT, tipo_proceso TEXT, puesto_trabajo TEXT, tarea TEXT, es_rutinaria TEXT, peligro_factor TEXT, riesgo_asociado TEXT, tipo_riesgo TEXT, probabilidad INTEGER, consecuencia INTEGER, vep INTEGER, nivel_riesgo TEXT, medida_control TEXT, genero_obs TEXT)''')
-    
-    # Documental y Capacitación (Con soporte QR/Firma)
     c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, tema TEXT, tipo_actividad TEXT, responsable_rut TEXT, estado TEXT, duracion INTEGER, lugar TEXT, metodologia TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (id INTEGER PRIMARY KEY AUTOINCREMENT, capacitacion_id INTEGER, trabajador_rut TEXT, nombre_trabajador TEXT, cargo_trabajador TEXT, estado TEXT, firma_b64 TEXT)''')
-    
-    # Registros Legales
     c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_entrega DATE, rut_trabajador TEXT, nombre_trabajador TEXT, cargo TEXT, lista_productos TEXT, firma_b64 TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS registro_riohs (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_entrega DATE, rut_trabajador TEXT, nombre_trabajador TEXT, tipo_entrega TEXT, firma_b64 TEXT)''')
-    
-    # Operativo
     c.execute('''CREATE TABLE IF NOT EXISTS incidentes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, tipo TEXT, descripcion TEXT, area TEXT, severidad TEXT, rut_afectado TEXT, nombre_afectado TEXT, parte_cuerpo TEXT, estado TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS inventario_epp (id INTEGER PRIMARY KEY AUTOINCREMENT, producto TEXT, stock_actual INTEGER, stock_minimo INTEGER, ubicacion TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS extintores (id INTEGER PRIMARY KEY AUTOINCREMENT, codigo TEXT, tipo TEXT, capacidad TEXT, ubicacion TEXT, fecha_vencimiento DATE, estado_inspeccion TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS programa_anual (id INTEGER PRIMARY KEY AUTOINCREMENT, actividad TEXT, responsable TEXT, fecha_programada DATE, estado TEXT, fecha_ejecucion DATE)''')
     c.execute('''CREATE TABLE IF NOT EXISTS contratistas (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_empresa TEXT, razon_social TEXT, estado_documental TEXT, fecha_vencimiento_f30 DATE)''')
-    
-    # Auditoria y Usuarios
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, usuario TEXT, accion TEXT, detalle TEXT)''')
 
-    # Seed Inicial
+    # --- 2. CARGA DE DATOS INICIAL (AQUÍ ESTABA EL ERROR, CORREGIDO) ---
+    
+    # Verificación segura de Usuarios
     c.execute("SELECT count(*) FROM usuarios")
-    if c.fetchone()[0] == 0:
+    data_u = c.fetchone()
+    if data_u is None or data_u[0] == 0:
         c.execute("INSERT INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
+
+    # Verificación segura de Inventario
+    c.execute("SELECT count(*) FROM inventario_epp")
+    data_i = c.fetchone()
+    if data_i is None or data_i[0] == 0:
         c.executemany("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion) VALUES (?,?,?,?)", [("Casco", 50, 5, "Bodega"), ("Lentes", 100, 10, "Bodega")])
-        c.execute("SELECT count(*) FROM personal")
-    if c.fetchone()[0] == 0:  # <--- ESTA LINEA ES LA CLAVE. Solo inserta si está vacío.
-        c.execute("INSERT INTO personal VALUES (?,?,?,?,?,?,?,?)", 
-                 ("12.345.678-9", "JUAN PEREZ", "OPERADOR", "FAENA", date.today(), "ACTIVO", None, "juan@empresa.cl"))
-        # Matriz Ejemplo ISP
+
+    # Verificación segura de Personal (SOLUCIÓN DEL PROBLEMA DE REEMPLAZO)
+    c.execute("SELECT count(*) FROM personal")
+    data_p = c.fetchone()
+    # Solo insertamos a Juan Perez si la tabla está TOTALMENTE VACÍA (0 registros) o devuelve error (None)
+    if data_p is None or data_p[0] == 0:
+        c.execute("INSERT INTO personal VALUES (?,?,?,?,?,?,?,?)", ("12.345.678-9", "JUAN PEREZ", "OPERADOR DE MAQUINARIA", "FAENA", date.today(), "ACTIVO", None, "juan@empresa.cl"))
+
+    # Verificación segura de Matriz
+    c.execute("SELECT count(*) FROM matriz_iper")
+    data_m = c.fetchone()
+    if data_m is None or data_m[0] == 0:
         c.execute("INSERT INTO matriz_iper (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, genero_obs) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  ("Cosecha", "Operativo", "Operador", "Tala", "SI", "Pendiente", "Volcamiento", "Seguridad", 2, 4, 8, "IMPORTANTE", "Cabina ROPS", "Sin Obs"))
-    conn.commit(); conn.close()
+
+    conn.commit()
+    conn.close()
 
 def registrar_auditoria(usuario, accion, detalle):
     try: conn = get_conn(); conn.execute("INSERT INTO auditoria (fecha, usuario, accion, detalle) VALUES (?,?,?,?)", (datetime.now(), usuario, accion, detalle)); conn.commit(); conn.close()
