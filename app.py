@@ -3,6 +3,9 @@ import pandas as pd
 import sqlite3
 from datetime import datetime, date
 import io
+import hashlib  # <--- AGREGADO PARA CORREGIR EL ERROR
+import os       # <--- AGREGADO PARA EL MANEJO DE ARCHIVOS/LOGO
+import time
 import base64
 import ast
 import socket
@@ -33,7 +36,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v125_final_restored.db'
+DB_NAME = 'sgsst_v126_final_fixed.db'
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -45,7 +48,6 @@ if "mobile_sign" in query_params and query_params["mobile_sign"] == "true":
     
     if cap_id_mobile:
         conn = sqlite3.connect(DB_NAME)
-        # Verificar si la tabla existe antes de consultar (por si es primera ejecución)
         try:
             cap_data = pd.read_sql("SELECT tema, fecha FROM capacitaciones WHERE id=?", conn, params=(cap_id_mobile,))
             if not cap_data.empty:
@@ -250,7 +252,7 @@ if not st.session_state['logged_in']:
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V125 - FULL RESTORED")
+    st.caption("V126 - FIXED FINAL")
     menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
 
@@ -406,7 +408,7 @@ elif menu == "🦺 Logística EPP":
     conn = get_conn()
     with t2:
         ed = st.data_editor(pd.read_sql("SELECT * FROM inventario_epp", conn), key="inv", num_rows="dynamic")
-        if st.button("Actualizar Stock"):
+        if st.button("Actualizar"):
             conn.execute("DELETE FROM inventario_epp"); 
             for i,r in ed.iterrows(): conn.execute("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion) VALUES (?,?,?,?)", (r['producto'], r['stock_actual'], r['stock_minimo'], r['ubicacion']))
             conn.commit(); st.success("OK"); st.rerun()
