@@ -37,7 +37,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v141_login_final.db' # Mismo nombre para mantener datos
+DB_NAME = 'sgsst_v141_login_final.db'
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -73,7 +73,7 @@ if "mobile_sign" in query_params and query_params["mobile_sign"] == "true":
         conn.close()
     st.stop() 
 
-# --- ESTILOS CSS GENERALES (APP INTERNA) ---
+# --- ESTILOS CSS GENERALES ---
 st.markdown(f"""
     <style>
     .main-header {{font-size: 2.2rem; font-weight: 800; color: {COLOR_SECONDARY}; margin-bottom: 0px;}}
@@ -238,10 +238,11 @@ class DocumentosLegalesPDF:
         self.elements.append(Spacer(1, 20)); self.elements.append(Paragraph(data['descripcion'], self.styles['Normal'])); self.doc.build(self.elements); self.buffer.seek(0); return self.buffer
 
 # ==============================================================================
-# 4. FRONTEND (LOGIN V143 - MASTER)
+# 4. FRONTEND
 # ==============================================================================
 init_db()
 
+# --- LOGIN (CORREGIDO V143 - SCROLL & CARD) ---
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'user' not in st.session_state: st.session_state['user'] = "Invitado"
 
@@ -252,11 +253,14 @@ if not st.session_state['logged_in']:
     # CSS AVANZADO: Bloqueo de Scroll + Tarjeta Global
     st.markdown(f"""
         <style>
-            /* 1. SCROLL LOCK */
+            /* 1. SCROLL LOCK + PADDING REMOVAL */
             html, body, [data-testid="stAppViewContainer"] {{
                 overflow: hidden !important;
                 height: 100vh !important;
                 margin: 0;
+            }}
+            .block-container {{
+                padding-top: 5rem !important;
             }}
             
             [data-testid="stSidebar"], [data-testid="stHeader"] {{display: none !important;}}
@@ -270,11 +274,10 @@ if not st.session_state['logged_in']:
             }}
             
             /* 3. CARD CONTAINER (Columna Central) */
-            /* Apuntamos al div que contiene los inputs y botones */
             div[data-testid="column"]:nth-of-type(2) {{
                 background-color: rgba(255, 255, 255, 0.95);
                 border-radius: 20px;
-                padding: 40px !important;
+                padding: 30px !important;
                 box-shadow: 0 15px 40px rgba(0,0,0,0.6);
                 border-top: 8px solid {COLOR_PRIMARY};
                 backdrop-filter: blur(5px);
@@ -323,7 +326,7 @@ if not st.session_state['logged_in']:
             <h4 style='text-align: center; color: #444; margin-bottom: 20px; font-weight:600;'>INICIAR SESIÓN</h4>
         """, unsafe_allow_html=True)
         
-        # INPUTS (Quedan dentro de la tarjeta automáticamente por el CSS)
+        # INPUTS
         u = st.text_input("Usuario", placeholder="Ingrese usuario", label_visibility="collapsed")
         p = st.text_input("Contraseña", type="password", placeholder="Ingrese contraseña", label_visibility="collapsed")
         
@@ -581,7 +584,7 @@ elif menu == "👥 Gestión Personas":
                 st.image(b_qr.getvalue(), width=100, caption="Credencial QR")
     conn.close()
 
-# --- 4. GESTOR DOCUMENTAL (CORREGIDO) ---
+# --- 4. GESTOR DOCUMENTAL ---
 elif menu == "⚖️ Gestor Documental":
     st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
