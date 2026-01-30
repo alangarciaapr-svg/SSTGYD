@@ -33,11 +33,11 @@ except ImportError:
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CONFIGURACIÓN E INTERCEPTOR MÓVIL (QR)
+# 1. CONFIGURACIÓN GLOBAL
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v136_pro_dash.db'
+DB_NAME = 'sgsst_v139_final_fixed.db'
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -73,7 +73,7 @@ if "mobile_sign" in query_params and query_params["mobile_sign"] == "true":
         conn.close()
     st.stop() 
 
-# --- ESTILOS CSS PRO ---
+# --- ESTILOS CSS ---
 st.markdown(f"""
     <style>
     .main-header {{font-size: 2.2rem; font-weight: 800; color: {COLOR_SECONDARY}; margin-bottom: 0px;}}
@@ -88,8 +88,6 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 LISTA_CARGOS = ["GERENTE GENERAL", "PREVENCIONISTA DE RIESGOS", "JEFE DE PATIO", "OPERADOR DE ASERRADERO", "OPERADOR DE MAQUINARIA", "MOTOSIERRISTA", "ESTROBERO", "MECANICO", "ADMINISTRATIVO"]
-LISTA_PROBABILIDAD = [1, 2, 4]
-LISTA_CONSECUENCIA = [1, 2, 4]
 
 # ==============================================================================
 # 2. CAPA DE DATOS (SQL)
@@ -104,6 +102,8 @@ def check_and_add_column(cursor, table_name, column_name, column_type):
 
 def init_db():
     conn = get_conn(); c = conn.cursor()
+    
+    # 1. Crear Tablas Base
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (id INTEGER PRIMARY KEY AUTOINCREMENT, proceso TEXT, tipo_proceso TEXT, puesto_trabajo TEXT, tarea TEXT, es_rutinaria TEXT, peligro_factor TEXT, riesgo_asociado TEXT, tipo_riesgo TEXT, probabilidad INTEGER, consecuencia INTEGER, vep INTEGER, nivel_riesgo TEXT, medida_control TEXT, genero_obs TEXT)''')
@@ -119,20 +119,20 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, usuario TEXT, accion TEXT, detalle TEXT)''')
 
+    # 2. AUTO-REPARACIÓN
     check_and_add_column(c, "personal", "contacto_emergencia", "TEXT")
     check_and_add_column(c, "personal", "fono_emergencia", "TEXT")
     check_and_add_column(c, "personal", "obs_medica", "TEXT")
     check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE")
 
+    # 3. Seed Controlado
     c.execute("SELECT count(*) FROM usuarios")
-    data_u = c.fetchone()
-    if data_u is None or data_u[0] == 0:
+    if c.fetchone()[0] == 0:
         c.execute("INSERT INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
         c.executemany("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion) VALUES (?,?,?,?)", [("Casco", 50, 5, "Bodega"), ("Lentes", 100, 10, "Bodega")])
         
         c.execute("SELECT count(*) FROM matriz_iper")
-        data_m = c.fetchone()
-        if data_m is None or data_m[0] == 0:
+        if c.fetchone()[0] == 0:
             c.execute("INSERT INTO matriz_iper (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, genero_obs) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  ("Cosecha", "Operativo", "Operador", "Tala", "SI", "Pendiente", "Volcamiento", "Seguridad", 2, 4, 8, "IMPORTANTE", "Cabina ROPS", "Sin Obs"))
     conn.commit(); conn.close()
@@ -246,7 +246,7 @@ class DocumentosLegalesPDF:
 # ==============================================================================
 init_db()
 
-# --- LOGIN (DISEÑO V138 - LOGO DENTRO Y SIN SCROLL) ---
+# --- LOGIN (CORREGIDO V139) ---
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'user' not in st.session_state: st.session_state['user'] = "Invitado"
 
@@ -256,20 +256,24 @@ if not st.session_state['logged_in']:
     
     st.markdown(f"""
         <style>
-            /* BLOQUEAR SCROLL GLOBAL */
-            .stApp {{
-                background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.7)), url("{BG_IMAGE}");
-                background-size: cover;
-                background-position: center;
-                background-attachment: fixed;
-                overflow: hidden; /* NO SCROLL */
-                height: 100vh;
+            /* BLOQUEAR SCROLL */
+            html, body, [data-testid="stAppViewContainer"] {{
+                overflow: hidden !important;
+                height: 100vh !important;
             }}
             
             [data-testid="stSidebar"] {{display: none;}}
             [data-testid="stHeader"] {{visibility: hidden;}}
             
-            /* Tarjeta de Login */
+            /* FONDO */
+            .stApp {{
+                background-image: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.8)), url("{BG_IMAGE}");
+                background-size: cover;
+                background-position: center;
+                background-attachment: fixed;
+            }}
+            
+            /* TARJETA */
             .login-card {{
                 background-color: rgba(255, 255, 255, 0.95);
                 backdrop-filter: blur(10px);
@@ -277,56 +281,48 @@ if not st.session_state['logged_in']:
                 border-radius: 20px;
                 box-shadow: 0 20px 50px rgba(0,0,0,0.5);
                 text-align: center;
-                margin-top: 60px; /* Ajuste para centrar mejor en pantalla fija */
+                margin-top: 60px;
                 border-top: 8px solid {COLOR_PRIMARY};
             }}
             
-            /* Inputs Estilizados */
+            /* INPUTS */
             div[data-testid="stTextInput"] input {{
                 border-radius: 10px;
                 border: 1px solid #ccc;
                 padding: 12px;
                 font-size: 1rem;
-                background-color: #f9f9f9;
             }}
             div[data-testid="stTextInput"] input:focus {{
                 border-color: {COLOR_PRIMARY};
                 box-shadow: 0 0 5px rgba(139, 0, 0, 0.3);
-                background-color: #fff;
             }}
         </style>
     """, unsafe_allow_html=True)
 
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
-        # APERTURA DE TARJETA
         st.markdown('<div class="login-card">', unsafe_allow_html=True)
-        
-        # LOGO (DENTRO DEL CUADRO BLANCO)
+        # LOGO DENTRO DE LA TARJETA
         st.markdown(f'<img src="{LOGO_URL}" style="width: 80%; max-width: 250px; margin-bottom: 30px; display: block; margin-left: auto; margin-right: auto;">', unsafe_allow_html=True)
+        st.markdown("<h4 style='color:#555; margin-bottom:20px; text-transform:uppercase; letter-spacing:1px;'>Acceso Seguro</h4>", unsafe_allow_html=True)
         
-        st.markdown("<h4 style='color:#555; margin-bottom:20px;'>ACCESO PLATAFORMA SGSST</h4>", unsafe_allow_html=True)
+        u = st.text_input("Usuario", placeholder="Usuario", label_visibility="collapsed")
+        p = st.text_input("Contraseña", type="password", placeholder="Contraseña", label_visibility="collapsed")
         
-        # INPUTS
-        u = st.text_input("Usuario", placeholder="Ingrese usuario", label_visibility="collapsed")
-        p = st.text_input("Contraseña", type="password", placeholder="Ingrese contraseña", label_visibility="collapsed")
-        
-        st.write("") # Espacio
+        st.write("")
         
         if st.button("INGRESAR AL SISTEMA", type="primary", use_container_width=True):
             if u == "admin" and p == "1234": 
                 st.session_state['logged_in'] = True; st.session_state['user'] = u; registrar_auditoria(u, "LOGIN", "OK"); st.rerun()
             else: st.error("🔒 Credenciales incorrectas")
             
-        # FOOTER (DENTRO DEL CUADRO)
         st.markdown('<br><hr style="margin:10px 0;"><small style="color:#999; font-weight:bold;">© 2026 SEGAV</small>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True) # CIERRE TARJETA
-        
+        st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V138 - LOGIN FIXED")
+    st.caption("V139 - MASTER FINAL")
     with open(DB_NAME, "rb") as fp: st.download_button(label="💾 Respaldar BD", data=fp, file_name=f"backup_{date.today()}.db")
     menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
@@ -567,6 +563,35 @@ elif menu == "👥 Gestión Personas":
                 st.image(b_qr.getvalue(), width=100, caption="Credencial QR")
     conn.close()
 
+# --- 4. GESTOR DOCUMENTAL (CORREGIDO V139) ---
+elif menu == "⚖️ Gestor Documental":
+    st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
+    t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
+    conn = get_conn(); df_p = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
+    
+    # Check simple para evitar errores si está vacío
+    if df_p.empty:
+        st.warning("⚠️ No hay trabajadores registrados. Vaya a 'Gestión Personas' para agregar.")
+    else:
+        with t1:
+            sel = st.selectbox("Trabajador:", df_p['rut'] + " - " + df_p['nombre'])
+            if st.button("Generar IRL"):
+                rut = sel.split(" - ")[0]; cargo = df_p[df_p['rut']==rut]['cargo'].values[0]
+                riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper WHERE puesto_trabajo LIKE ?", conn, params=(f'%{cargo}%',))
+                if riesgos.empty: riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper LIMIT 3", conn)
+                pdf = DocumentosLegalesPDF("IRL", "RG-GD-04").generar_irl({'nombre': sel.split(" - ")[1]}, riesgos.values.tolist())
+                st.download_button("Descargar IRL", pdf.getvalue(), "IRL.pdf")
+        with t2:
+            sel_r = st.selectbox("Trabajador RIOHS:", df_p['rut'] + " | " + df_p['nombre'])
+            c_riohs = st_canvas(stroke_width=2, height=150, key="riohs")
+            if st.button("Registrar Entrega"):
+                if c_riohs.image_data is not None:
+                    img = PILImage.fromarray(c_riohs.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); ib64 = base64.b64encode(b.getvalue()).decode()
+                    conn.execute("INSERT INTO registro_riohs (fecha_entrega, rut_trabajador, nombre_trabajador, firma_b64) VALUES (?,?,?,?)", (date.today(), sel_r.split(" | ")[0], sel_r.split(" | ")[1], ib64)); conn.commit()
+                    pdf = DocumentosLegalesPDF("RIOHS", "RG-GD-03").generar_riohs({'nombre': sel_r.split(" | ")[1], 'firma_b64': ib64})
+                    st.download_button("Descargar", pdf.getvalue(), "RIOHS.pdf")
+    conn.close()
+
 # --- 5. LOGISTICA EPP ---
 elif menu == "🦺 Logística EPP":
     st.markdown("<div class='main-header'>EPP</div>", unsafe_allow_html=True)
@@ -580,23 +605,26 @@ elif menu == "🦺 Logística EPP":
             conn.commit(); st.success("OK"); st.rerun()
     with t1:
         df_workers = pd.read_sql("SELECT rut, nombre FROM personal", conn)
-        worker_options = df_workers['rut'] + " | " + df_workers['nombre']
-        sel = st.selectbox("Trabajador", worker_options)
-        inv = pd.read_sql("SELECT producto FROM inventario_epp WHERE stock_actual > 0", conn)
-        if 'cart' not in st.session_state: st.session_state.cart = []
-        c1, c2 = st.columns(2); p = c1.selectbox("Prod", inv['producto']); q = c2.number_input("Cant", 1)
-        if st.button("Agregar"): st.session_state.cart.append({'prod': p, 'cant': q})
-        st.table(st.session_state.cart)
-        can = st_canvas(stroke_width=2, height=150, key="epp")
-        if st.button("Confirmar"):
-            if can.image_data is not None:
-                img = PILImage.fromarray(can.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); ib64 = base64.b64encode(b.getvalue()).decode()
-                rut = sel.split(" | ")[0]; nom = sel.split(" | ")[1]
-                conn.execute("INSERT INTO registro_epp (fecha_entrega, rut_trabajador, nombre_trabajador, lista_productos, firma_b64) VALUES (?,?,?,?,?)", (date.today(), rut, nom, str(st.session_state.cart), ib64))
-                for i in st.session_state.cart: conn.execute("UPDATE inventario_epp SET stock_actual = stock_actual - ? WHERE producto=?", (i['cant'], i['prod']))
-                conn.commit()
-                pdf = DocumentosLegalesPDF("EPP", "RG-GD-01").generar_epp({'nombre': nom, 'rut': rut, 'cargo': 'OP', 'fecha': date.today(), 'lista': str(st.session_state.cart), 'firma_b64': ib64})
-                st.download_button("PDF", pdf.getvalue(), "EPP.pdf"); st.session_state.cart = []
+        if df_workers.empty:
+            st.warning("No hay trabajadores para asignar EPP.")
+        else:
+            worker_options = df_workers['rut'] + " | " + df_workers['nombre']
+            sel = st.selectbox("Trabajador", worker_options)
+            inv = pd.read_sql("SELECT producto FROM inventario_epp WHERE stock_actual > 0", conn)
+            if 'cart' not in st.session_state: st.session_state.cart = []
+            c1, c2 = st.columns(2); p = c1.selectbox("Prod", inv['producto']); q = c2.number_input("Cant", 1)
+            if st.button("Agregar"): st.session_state.cart.append({'prod': p, 'cant': q})
+            st.table(st.session_state.cart)
+            can = st_canvas(stroke_width=2, height=150, key="epp")
+            if st.button("Confirmar"):
+                if can.image_data is not None:
+                    img = PILImage.fromarray(can.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); ib64 = base64.b64encode(b.getvalue()).decode()
+                    rut = sel.split(" | ")[0]; nom = sel.split(" | ")[1]
+                    conn.execute("INSERT INTO registro_epp (fecha_entrega, rut_trabajador, nombre_trabajador, lista_productos, firma_b64) VALUES (?,?,?,?,?)", (date.today(), rut, nom, str(st.session_state.cart), ib64))
+                    for i in st.session_state.cart: conn.execute("UPDATE inventario_epp SET stock_actual = stock_actual - ? WHERE producto=?", (i['cant'], i['prod']))
+                    conn.commit()
+                    pdf = DocumentosLegalesPDF("EPP", "RG-GD-01").generar_epp({'nombre': nom, 'rut': rut, 'cargo': 'OP', 'fecha': date.today(), 'lista': str(st.session_state.cart), 'firma_b64': ib64})
+                    st.download_button("PDF", pdf.getvalue(), "EPP.pdf"); st.session_state.cart = []
     conn.close()
 
 # --- 6. CAPACITACIONES (CON QR FIXED) ---
@@ -607,7 +635,8 @@ elif menu == "🎓 Capacitaciones":
     with t1:
         with st.form("cap"):
             t = st.text_input("Tema"); tp = st.selectbox("Tipo", ["Inducción", "Charla"]); lug = st.text_input("Lugar"); dur = st.number_input("Horas", 1); rel = st.text_input("Relator")
-            asis = st.multiselect("Asistentes", pd.read_sql("SELECT rut, nombre FROM personal", conn)['rut'] + " | " + pd.read_sql("SELECT rut, nombre FROM personal", conn)['nombre'])
+            df_p = pd.read_sql("SELECT rut, nombre FROM personal", conn)
+            asis = st.multiselect("Asistentes", df_p['rut'] + " | " + df_p['nombre'])
             if st.form_submit_button("Guardar"):
                 c = conn.cursor(); c.execute("INSERT INTO capacitaciones (fecha, tema, tipo_actividad, responsable_rut, lugar, duracion) VALUES (?,?,?,?,?,?)", (date.today(), t, tp, rel, lug, dur)); cid = c.lastrowid
                 for a in asis: c.execute("INSERT INTO asistencia_capacitacion (capacitacion_id, trabajador_rut, nombre_trabajador, estado) VALUES (?,?,?,?)", (cid, a.split(" | ")[0], a.split(" | ")[1], "PENDIENTE"))
