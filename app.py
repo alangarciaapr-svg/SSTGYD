@@ -37,7 +37,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v141_login_final.db'
+DB_NAME = 'sgsst_v141_login_final.db' # Mismo nombre para mantener datos
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -73,7 +73,7 @@ if "mobile_sign" in query_params and query_params["mobile_sign"] == "true":
         conn.close()
     st.stop() 
 
-# --- ESTILOS CSS GENERALES ---
+# --- ESTILOS CSS GENERALES (APP INTERNA) ---
 st.markdown(f"""
     <style>
     .main-header {{font-size: 2.2rem; font-weight: 800; color: {COLOR_SECONDARY}; margin-bottom: 0px;}}
@@ -238,11 +238,10 @@ class DocumentosLegalesPDF:
         self.elements.append(Spacer(1, 20)); self.elements.append(Paragraph(data['descripcion'], self.styles['Normal'])); self.doc.build(self.elements); self.buffer.seek(0); return self.buffer
 
 # ==============================================================================
-# 4. FRONTEND
+# 4. FRONTEND (LOGIN V143 - MASTER)
 # ==============================================================================
 init_db()
 
-# --- LOGIN (DISEÑO V142: COLUMNA COMO TARJETA) ---
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'user' not in st.session_state: st.session_state['user'] = "Invitado"
 
@@ -250,89 +249,98 @@ if not st.session_state['logged_in']:
     BG_IMAGE = "https://i.imgur.com/aHPH6U6.jpeg"
     LOGO_URL = "https://www.maderasgyd.cl/wp-content/uploads/2024/02/logo-maderas-gd-1.png"
     
+    # CSS AVANZADO: Bloqueo de Scroll + Tarjeta Global
     st.markdown(f"""
         <style>
-            /* 1. BLOQUEAR SCROLL GLOBAL */
+            /* 1. SCROLL LOCK */
             html, body, [data-testid="stAppViewContainer"] {{
                 overflow: hidden !important;
                 height: 100vh !important;
                 margin: 0;
             }}
             
-            [data-testid="stHeader"], [data-testid="stSidebar"] {{display: none !important;}}
+            [data-testid="stSidebar"], [data-testid="stHeader"] {{display: none !important;}}
             
-            /* 2. FONDO DE PANTALLA */
+            /* 2. BACKGROUND */
             .stApp {{
-                background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.8)), url("{BG_IMAGE}");
+                background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.7)), url("{BG_IMAGE}");
                 background-size: cover;
                 background-position: center;
                 background-attachment: fixed;
             }}
             
-            /* 3. ESTILO DE LA COLUMNA CENTRAL (TARJETA) */
-            /* Esto envuelve a todos los widgets de la columna del medio en una caja blanca */
+            /* 3. CARD CONTAINER (Columna Central) */
+            /* Apuntamos al div que contiene los inputs y botones */
             div[data-testid="column"]:nth-of-type(2) {{
                 background-color: rgba(255, 255, 255, 0.95);
-                padding: 3rem !important;
                 border-radius: 20px;
-                box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
-                backdrop-filter: blur(5px);
+                padding: 40px !important;
+                box-shadow: 0 15px 40px rgba(0,0,0,0.6);
                 border-top: 8px solid {COLOR_PRIMARY};
+                backdrop-filter: blur(5px);
             }}
             
-            /* 4. LOGO CENTRADO */
-            .login-logo-img {{
-                display: block;
-                margin-left: auto;
-                margin-right: auto;
-                width: 100%;
-                max-width: 250px;
-                margin-bottom: 20px;
+            /* 4. LOGO BOX (Para contraste) */
+            .logo-box {{
+                background-color: #ffffff;
+                border-radius: 10px;
+                padding: 15px;
+                margin-bottom: 25px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                display: flex;
+                justify-content: center;
             }}
             
-            /* 5. INPUTS */
-            div[data-testid="stTextInput"] input {{
-                background-color: #f9f9f9;
-                border: 1px solid #ddd;
-                border-radius: 8px;
-            }}
-            
-            /* 6. FOOTER */
-            .footer-text {{
+            .login-footer {{
                 text-align: center;
                 color: #888;
                 font-size: 0.8rem;
-                margin-top: 20px;
+                margin-top: 30px;
                 font-weight: bold;
+                border-top: 1px solid #ddd;
+                padding-top: 15px;
+            }}
+            
+            /* Inputs */
+            div[data-testid="stTextInput"] input {{
+                background-color: #f8f9fa;
+                border: 1px solid #ccc;
+                border-radius: 8px;
+                padding: 10px;
             }}
         </style>
     """, unsafe_allow_html=True)
 
-    # LAYOUT DE 3 COLUMNAS PARA CENTRAR LA TARJETA
+    # LAYOUT 3 COLUMNAS
     c1, c2, c3 = st.columns([1, 1.2, 1])
     
     with c2:
-        # TODO ESTO QUEDA DENTRO DE LA TARJETA BLANCA GRACIAS AL CSS
-        st.markdown(f'<img src="{LOGO_URL}" class="login-logo-img">', unsafe_allow_html=True)
-        st.markdown("<h4 style='text-align: center; color: #444; margin-bottom: 20px;'>ACCESO PLATAFORMA</h4>", unsafe_allow_html=True)
+        # LOGO CON FONDO (HTML/CSS)
+        st.markdown(f"""
+            <div class="logo-box">
+                <img src="{LOGO_URL}" style="width: 100%; max-width: 220px;">
+            </div>
+            <h4 style='text-align: center; color: #444; margin-bottom: 20px; font-weight:600;'>INICIAR SESIÓN</h4>
+        """, unsafe_allow_html=True)
         
-        u = st.text_input("Usuario", placeholder="Usuario", label_visibility="collapsed")
-        p = st.text_input("Contraseña", type="password", placeholder="Contraseña", label_visibility="collapsed")
+        # INPUTS (Quedan dentro de la tarjeta automáticamente por el CSS)
+        u = st.text_input("Usuario", placeholder="Ingrese usuario", label_visibility="collapsed")
+        p = st.text_input("Contraseña", type="password", placeholder="Ingrese contraseña", label_visibility="collapsed")
         
-        st.write("") # Espaciador
+        st.write("") # Espacio
         
-        if st.button("INGRESAR AL SISTEMA", type="primary", use_container_width=True):
+        if st.button("INGRESAR", type="primary", use_container_width=True):
             if u == "admin" and p == "1234": 
                 st.session_state['logged_in'] = True; st.session_state['user'] = u; registrar_auditoria(u, "LOGIN", "OK"); st.rerun()
-            else: st.error("🔒 Credenciales incorrectas")
+            else: st.error("🚫 Credenciales incorrectas")
             
-        st.markdown('<div class="footer-text">© 2026 SEGAV</div>', unsafe_allow_html=True)
+        st.markdown('<div class="login-footer">© 2026 SEGAV<br>Seguridad & Gestión Avanzada</div>', unsafe_allow_html=True)
 
     st.stop()
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V142 - FINAL FIXED LOGIN")
+    st.caption("V143 - MASTER FINAL")
     with open(DB_NAME, "rb") as fp: st.download_button(label="💾 Respaldar BD", data=fp, file_name=f"backup_{date.today()}.db")
     menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
@@ -573,7 +581,7 @@ elif menu == "👥 Gestión Personas":
                 st.image(b_qr.getvalue(), width=100, caption="Credencial QR")
     conn.close()
 
-# --- 4. GESTOR DOCUMENTAL (CORREGIDO V139) ---
+# --- 4. GESTOR DOCUMENTAL (CORREGIDO) ---
 elif menu == "⚖️ Gestor Documental":
     st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
@@ -599,6 +607,8 @@ elif menu == "⚖️ Gestor Documental":
                     conn.execute("INSERT INTO registro_riohs (fecha_entrega, rut_trabajador, nombre_trabajador, firma_b64) VALUES (?,?,?,?)", (date.today(), sel_r.split(" | ")[0], sel_r.split(" | ")[1], ib64)); conn.commit()
                     pdf = DocumentosLegalesPDF("RIOHS", "RG-GD-03").generar_riohs({'nombre': sel_r.split(" | ")[1], 'firma_b64': ib64})
                     st.download_button("Descargar", pdf.getvalue(), "RIOHS.pdf")
+        with t3:
+            st.dataframe(pd.read_sql("SELECT * FROM registro_riohs", conn))
     conn.close()
 
 # --- 5. LOGISTICA EPP ---
