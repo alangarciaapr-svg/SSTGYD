@@ -338,87 +338,132 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                 conn.commit(); st.success("Guardado"); st.rerun()
     conn.close()
 
-# --- 3. GESTION PERSONAS (CORREGIDO RUT UPDATE + NAT FIX) ---
+# --- MÓDULO 3: GESTIÓN PERSONAS (OPTIMIZADO) ---
 elif menu == "👥 Gestión Personas":
-    st.markdown("<div class='main-header'>Gestión de Personas</div>", unsafe_allow_html=True)
-    tab1, tab2, tab3, tab4 = st.tabs(["Nómina", "Carga Masiva", "Nuevo", "Carpeta"])
+    st.markdown("<div class='main-header'>Gestión de Capital Humano</div>", unsafe_allow_html=True)
     conn = get_conn()
     
-    with tab1:
-        # TRUCO PARA EDITAR RUT: Traemos rut como 'rut' y 'rut_old' (oculta)
-        df = pd.read_sql("SELECT rut, rut as rut_old, nombre, cargo, centro_costo, email, fecha_contrato, estado FROM personal", conn)
-        
-        # FIX FECHAS (NaT Error)
-        df['fecha_contrato'] = pd.to_datetime(df['fecha_contrato'], errors='coerce')
+    # KPIs
+    try:
+        total = pd.read_sql("SELECT count(*) FROM personal", conn).iloc[0,0]
+        activos = pd.read_sql("SELECT count(*) FROM personal WHERE estado='ACTIVO'", conn).iloc[0,0]
+    except: total=0; activos=0
+    
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Dotación Total", total)
+    k2.metric("Personal Activo", activos)
+    k3.metric("Bajas / Inactivos", total - activos)
+    st.markdown("---")
+
+    tab_list, tab_carga, tab_new, tab_dig = st.tabs(["📋 Nómina Interactiva", "📂 Carga Masiva (Excel)", "➕ Ingreso Manual", "🗂️ Carpeta Digital"])
+    
+    # PESTAÑA 1: EDICIÓN
+    with tab_list:
+        st.info("💡 Edición directa habilitada. Modifica y pulsa 'Guardar'.")
+        df_p = pd.read_sql("SELECT rut, nombre, cargo, centro_costo, email, fecha_contrato, estado FROM personal", conn)
+        df_p['fecha_contrato'] = pd.to_datetime(df_p['fecha_contrato'], errors='coerce')
         
         edited = st.data_editor(
-            df, 
-            key="pers_ed", 
+            df_p,
+            key="pro_editor",
             use_container_width=True,
+            num_rows="dynamic",
             column_config={
-                "rut_old": None, # Ocultar columna auxiliar
-                "rut": st.column_config.TextColumn("RUT (Editable)"),
-                "fecha_contrato": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY")
+                "rut": st.column_config.TextColumn("RUT", disabled=True),
+                "estado": st.column_config.SelectboxColumn("Estado", options=["ACTIVO", "INACTIVO", "LICENCIA"]),
+                "cargo": st.column_config.SelectboxColumn("Cargo", options=LISTA_CARGOS),
+                "fecha_contrato": st.column_config.DateColumn("Fecha Contrato", format="DD/MM/YYYY")
             }
         )
         
         if st.button("💾 Guardar Cambios"):
             c = conn.cursor()
-            try:
-                for i, r in edited.iterrows():
-                    fec = r['fecha_contrato']
-                    if pd.isna(fec) or str(fec) == 'NaT': fec = date.today() # FIX NaT
-                    
-                    # LOGICA UPDATE RUT
-                    if r['rut'] != r['rut_old']:
-                        # Si cambió el RUT, actualizamos en cascada (simple)
-                        c.execute("UPDATE personal SET rut=?, nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=? WHERE rut=?", 
-                                 (r['rut'], r['nombre'], r['cargo'], r['centro_costo'], r['email'], r['estado'], fec, r['rut_old']))
-                        # Actualizar tablas hijas
-                        c.execute("UPDATE asistencia_capacitacion SET trabajador_rut=? WHERE trabajador_rut=?", (r['rut'], r['rut_old']))
-                        c.execute("UPDATE registro_epp SET rut_trabajador=? WHERE rut_trabajador=?", (r['rut'], r['rut_old']))
-                        c.execute("UPDATE registro_riohs SET rut_trabajador=? WHERE rut_trabajador=?", (r['rut'], r['rut_old']))
-                    else:
-                        # Update normal
-                        c.execute("UPDATE personal SET nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=? WHERE rut=?", 
-                                 (r['nombre'], r['cargo'], r['centro_costo'], r['email'], r['estado'], fec, r['rut']))
-                
-                conn.commit(); st.success("Guardado Exitosamente"); time.sleep(1); st.rerun()
-            except Exception as e: st.error(f"Error: {e}")
+            for i, r in edited.iterrows():
+                fec = r['fecha_contrato']
+                if pd.isna(fec) or str(fec) == 'NaT': fec = date.today()
+                c.execute("""UPDATE personal SET nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=? WHERE rut=?""", 
+                          (r['nombre'], r['cargo'], r['centro_costo'], r['email'], r['estado'], fec, r['rut']))
+            conn.commit(); st.success("✅ Guardado"); time.sleep(1); st.rerun()
 
-    with tab2:
-        p_data = {'RUT':['12.345.678-9'], 'NOMBRE':['Ejemplo'], 'CARGO':['Op'], 'EMAIL':['x@x.cl'], 'FECHA DE CONTRATO':['2024-01-01']}
-        b3 = io.BytesIO(); 
-        with pd.ExcelWriter(b3, engine='openpyxl') as w: pd.DataFrame(p_data).to_excel(w, index=False)
-        st.download_button("📥 Plantilla Personal", b3.getvalue(), "plantilla_personal.xlsx")
-        
-        up = st.file_uploader("Subir", type=['xlsx','csv'])
-        if up:
-            try:
-                df = pd.read_excel(up) if up.name.endswith('xlsx') else pd.read_csv(up)
-                if st.button("Procesar"):
-                    c = conn.cursor()
-                    for i, r in df.iterrows():
-                        fec_raw = r.get('FECHA DE CONTRATO')
-                        try: f = pd.to_datetime(fec_raw, errors='coerce').date()
-                        except: f = date.today()
-                        if pd.isna(f): f = date.today() # Fix NaT
+    # PESTAÑA 2: CARGA MASIVA (SOLUCIÓN DEL PROBLEMA)
+    with tab_carga:
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            st.markdown("##### Plantilla")
+            df_t = pd.DataFrame({'RUT':['11.111.111-1'], 'NOMBRE':['Oscar Tiviño'], 'CARGO':['OPERADOR'], 'EMAIL':['correo@x.cl'], 'FECHA DE CONTRATO':['2024-01-01']})
+            b = io.BytesIO()
+            with pd.ExcelWriter(b, engine='openpyxl') as w: df_t.to_excel(w, index=False)
+            st.download_button("📥 Descargar Ejemplo", b.getvalue(), "plantilla_personal.xlsx")
+            
+        with c2:
+            st.markdown("##### Cargar Datos")
+            up = st.file_uploader("Seleccione archivo", type=['xlsx','csv'])
+            
+            # CHECKBOX CRÍTICO: Permite borrar a "Juan Perez" antes de cargar los reales
+            limpiar = st.toggle("🗑️ Eliminar datos existentes antes de cargar (Borrar ejemplo)", value=True)
+            
+            if up:
+                if st.button("🚀 Procesar Carga"):
+                    try:
+                        df = pd.read_excel(up) if up.name.endswith('xlsx') else pd.read_csv(up)
+                        c = conn.cursor()
                         
-                        c.execute("INSERT OR REPLACE INTO personal (rut, nombre, cargo, email, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (r.get('RUT'), r.get('NOMBRE'), r.get('CARGO'), r.get('EMAIL'), f, 'ACTIVO'))
-                    conn.commit(); st.success("Cargado")
-            except: st.error("Error archivo")
-    with tab3:
-        with st.form("np"):
-            r = st.text_input("RUT"); n = st.text_input("Nombre"); ca = st.selectbox("Cargo", LISTA_CARGOS); em = st.text_input("Email")
-            if st.form_submit_button("Crear"): conn.execute("INSERT INTO personal (rut, nombre, cargo, email, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (r, n, ca, em, date.today(), 'ACTIVO')); conn.commit(); st.success("OK")
-    with tab4:
+                        if limpiar:
+                            c.execute("DELETE FROM personal") # Esto borra a Juan Perez
+                            conn.commit()
+                        
+                        count = 0
+                        for i, r in df.iterrows():
+                            rut = str(r.get('RUT','')).strip()
+                            # Validación simple de RUT
+                            if len(rut) > 3: 
+                                fec_raw = r.get('FECHA DE CONTRATO')
+                                try: f = pd.to_datetime(fec_raw, errors='coerce').date()
+                                except: f = date.today()
+                                if pd.isna(f): f = date.today()
+                                
+                                c.execute("INSERT OR REPLACE INTO personal (rut, nombre, cargo, email, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", 
+                                         (rut, r.get('NOMBRE'), r.get('CARGO'), r.get('EMAIL'), f, 'ACTIVO'))
+                                count += 1
+                        conn.commit()
+                        st.success(f"✅ Carga Exitosa: {count} trabajadores ingresados.")
+                        time.sleep(1.5); st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+
+    # PESTAÑA 3: INGRESO MANUAL
+    with tab_new:
+        with st.form("new_p"):
+            c1, c2 = st.columns(2)
+            r = c1.text_input("RUT"); n = c2.text_input("Nombre")
+            c3, c4 = st.columns(2)
+            ca = c3.selectbox("Cargo", LISTA_CARGOS); em = c4.text_input("Email")
+            if st.form_submit_button("Crear"): 
+                conn.execute("INSERT INTO personal (rut, nombre, cargo, email, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (r, n, ca, em, date.today(), 'ACTIVO'))
+                conn.commit(); st.success("OK")
+
+    # PESTAÑA 4: CARPETA DIGITAL (VISOR)
+    with tab_dig:
         df_all = pd.read_sql("SELECT rut, nombre FROM personal", conn)
         if not df_all.empty:
-            sel_w = st.selectbox("Trabajador:", df_all['rut'] + " - " + df_all['nombre'])
+            sel = st.selectbox("Trabajador:", df_all['rut'] + " - " + df_all['nombre'])
+            rut_sel = sel.split(" - ")[0]
+            
+            # Estado Documental Visual
+            col_a, col_b, col_c = st.columns(3)
+            odi = pd.read_sql("SELECT count(*) FROM asistencia_capacitacion WHERE trabajador_rut=?", conn, params=(rut_sel,)).iloc[0,0]
+            riohs = pd.read_sql("SELECT count(*) FROM registro_riohs WHERE rut_trabajador=?", conn, params=(rut_sel,)).iloc[0,0]
+            epp = pd.read_sql("SELECT count(*) FROM registro_epp WHERE rut_trabajador=?", conn, params=(rut_sel,)).iloc[0,0]
+            
+            col_a.metric("ODI/IRL", "Vigente" if odi > 0 else "Pendiente", delta_color="normal" if odi > 0 else "inverse")
+            col_b.metric("RIOHS", "Entregado" if riohs > 0 else "Pendiente", delta_color="normal" if riohs > 0 else "inverse")
+            col_c.metric("EPP", "Al día" if epp > 0 else "Sin Registro", delta_color="normal" if epp > 0 else "inverse")
+            
             if QR_AVAILABLE:
-                qr = qrcode.make(f"SGSST|{sel_w.split(' - ')[0]}")
-                b = io.BytesIO(); qr.save(b, format='PNG')
-                st.image(b.getvalue(), width=150)
+                qr = qrcode.make(f"SGSST|{rut_sel}")
+                b_qr = io.BytesIO(); qr.save(b_qr, format='PNG')
+                st.image(b_qr.getvalue(), width=150, caption="Credencial Digital")
+
     conn.close()
 
 # --- 4. GESTOR DOCUMENTAL ---
