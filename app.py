@@ -271,7 +271,7 @@ if 'user' not in st.session_state: st.session_state['user'] = "Invitado"
 if not st.session_state['logged_in']:
     # --- CONFIGURACIÓN VISUAL DEL LOGIN ---
     # Imagen de fondo temática (Bosque/Madera industrial)
-    BG_IMAGE = "https://imgur.com/a/HwKEIOW"
+    BG_IMAGE = "https://i.imgur.com/aHPH6U6.jpeg"
     
     st.markdown(f"""
         <style>
