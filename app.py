@@ -33,7 +33,7 @@ except ImportError:
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CONFIGURACIÓN GLOBAL
+# 1. CONFIGURACIÓN E INTERCEPTOR MÓVIL (QR)
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
@@ -102,8 +102,6 @@ def check_and_add_column(cursor, table_name, column_name, column_type):
 
 def init_db():
     conn = get_conn(); c = conn.cursor()
-    
-    # 1. Crear Tablas Base
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (id INTEGER PRIMARY KEY AUTOINCREMENT, proceso TEXT, tipo_proceso TEXT, puesto_trabajo TEXT, tarea TEXT, es_rutinaria TEXT, peligro_factor TEXT, riesgo_asociado TEXT, tipo_riesgo TEXT, probabilidad INTEGER, consecuencia INTEGER, vep INTEGER, nivel_riesgo TEXT, medida_control TEXT, genero_obs TEXT)''')
@@ -119,13 +117,11 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, usuario TEXT, accion TEXT, detalle TEXT)''')
 
-    # 2. AUTO-REPARACIÓN
     check_and_add_column(c, "personal", "contacto_emergencia", "TEXT")
     check_and_add_column(c, "personal", "fono_emergencia", "TEXT")
     check_and_add_column(c, "personal", "obs_medica", "TEXT")
     check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE")
 
-    # 3. Seed Controlado
     c.execute("SELECT count(*) FROM usuarios")
     if c.fetchone()[0] == 0:
         c.execute("INSERT INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
@@ -246,7 +242,7 @@ class DocumentosLegalesPDF:
 # ==============================================================================
 init_db()
 
-# --- LOGIN (CORREGIDO V139) ---
+# --- LOGIN (CORREGIDO V140: CARD STYLE) ---
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'user' not in st.session_state: st.session_state['user'] = "Invitado"
 
@@ -256,16 +252,16 @@ if not st.session_state['logged_in']:
     
     st.markdown(f"""
         <style>
-            /* BLOQUEAR SCROLL */
+            /* 1. BLOQUEAR SCROLL GLOBALMENTE */
             html, body, [data-testid="stAppViewContainer"] {{
                 overflow: hidden !important;
                 height: 100vh !important;
+                margin: 0;
             }}
-            
-            [data-testid="stSidebar"] {{display: none;}}
             [data-testid="stHeader"] {{visibility: hidden;}}
+            [data-testid="stSidebar"] {{display: none;}}
             
-            /* FONDO */
+            /* 2. FONDO DE PANTALLA */
             .stApp {{
                 background-image: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.8)), url("{BG_IMAGE}");
                 background-size: cover;
@@ -273,56 +269,61 @@ if not st.session_state['logged_in']:
                 background-attachment: fixed;
             }}
             
-            /* TARJETA */
-            .login-card {{
+            /* 3. ESTILO DE LA COLUMNA CENTRAL PARA PARECER TARJETA */
+            /* Selector específico para la columna del medio donde están los inputs */
+            div[data-testid="column"]:nth-of-type(2) > div {{
                 background-color: rgba(255, 255, 255, 0.95);
-                backdrop-filter: blur(10px);
-                padding: 40px;
                 border-radius: 20px;
-                box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-                text-align: center;
-                margin-top: 60px;
+                padding: 40px;
+                box-shadow: 0 15px 40px rgba(0,0,0,0.5);
                 border-top: 8px solid {COLOR_PRIMARY};
+                backdrop-filter: blur(5px);
             }}
             
-            /* INPUTS */
+            /* 4. ESTILIZAR INPUTS */
             div[data-testid="stTextInput"] input {{
-                border-radius: 10px;
-                border: 1px solid #ccc;
-                padding: 12px;
-                font-size: 1rem;
+                border-radius: 8px;
+                border: 1px solid #ddd;
+                padding: 10px;
             }}
-            div[data-testid="stTextInput"] input:focus {{
-                border-color: {COLOR_PRIMARY};
-                box-shadow: 0 0 5px rgba(139, 0, 0, 0.3);
+            
+            /* 5. TEXTO DEL FOOTER */
+            .footer-text {{
+                text-align: center;
+                color: #888;
+                font-size: 0.8rem;
+                margin-top: 20px;
+                font-weight: bold;
             }}
         </style>
     """, unsafe_allow_html=True)
 
+    # LAYOUT CENTRADO
     c1, c2, c3 = st.columns([1, 1.5, 1])
+    
     with c2:
-        st.markdown('<div class="login-card">', unsafe_allow_html=True)
-        # LOGO DENTRO DE LA TARJETA
-        st.markdown(f'<img src="{LOGO_URL}" style="width: 80%; max-width: 250px; margin-bottom: 30px; display: block; margin-left: auto; margin-right: auto;">', unsafe_allow_html=True)
-        st.markdown("<h4 style='color:#555; margin-bottom:20px; text-transform:uppercase; letter-spacing:1px;'>Acceso Seguro</h4>", unsafe_allow_html=True)
+        # LOGO (Ahora está dentro de la columna estilizada por CSS)
+        st.image(LOGO_URL, width=250)
         
-        u = st.text_input("Usuario", placeholder="Usuario", label_visibility="collapsed")
-        p = st.text_input("Contraseña", type="password", placeholder="Contraseña", label_visibility="collapsed")
+        st.markdown("<h3 style='text-align: center; color: #444; margin-bottom: 20px;'>ACCESO PLATAFORMA</h3>", unsafe_allow_html=True)
         
-        st.write("")
+        u = st.text_input("Usuario", placeholder="Ingrese su usuario", label_visibility="collapsed")
+        p = st.text_input("Contraseña", type="password", placeholder="Ingrese su contraseña", label_visibility="collapsed")
+        
+        st.write("") # Espacio
         
         if st.button("INGRESAR AL SISTEMA", type="primary", use_container_width=True):
             if u == "admin" and p == "1234": 
                 st.session_state['logged_in'] = True; st.session_state['user'] = u; registrar_auditoria(u, "LOGIN", "OK"); st.rerun()
-            else: st.error("🔒 Credenciales incorrectas")
+            else: st.error("🚫 Acceso Denegado")
             
-        st.markdown('<br><hr style="margin:10px 0;"><small style="color:#999; font-weight:bold;">© 2026 SEGAV</small>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="footer-text">© 2026 SEGAV<br>Departamento de Prevención</div>', unsafe_allow_html=True)
+
     st.stop()
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V139 - MASTER FINAL")
+    st.caption("V140 - FIXED LOGIN")
     with open(DB_NAME, "rb") as fp: st.download_button(label="💾 Respaldar BD", data=fp, file_name=f"backup_{date.today()}.db")
     menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
@@ -569,7 +570,6 @@ elif menu == "⚖️ Gestor Documental":
     t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
     conn = get_conn(); df_p = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
     
-    # Check simple para evitar errores si está vacío
     if df_p.empty:
         st.warning("⚠️ No hay trabajadores registrados. Vaya a 'Gestión Personas' para agregar.")
     else:
