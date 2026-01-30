@@ -33,11 +33,11 @@ except ImportError:
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CONFIGURACIÓN E INTERCEPTOR MÓVIL (QR)
+# 1. CONFIGURACIÓN GLOBAL
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v139_final_fixed.db'
+DB_NAME = 'sgsst_v141_login_final.db'
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -73,7 +73,7 @@ if "mobile_sign" in query_params and query_params["mobile_sign"] == "true":
         conn.close()
     st.stop() 
 
-# --- ESTILOS CSS ---
+# --- ESTILOS CSS GENERALES ---
 st.markdown(f"""
     <style>
     .main-header {{font-size: 2.2rem; font-weight: 800; color: {COLOR_SECONDARY}; margin-bottom: 0px;}}
@@ -242,7 +242,7 @@ class DocumentosLegalesPDF:
 # ==============================================================================
 init_db()
 
-# --- LOGIN (CORREGIDO V140: CARD STYLE) ---
+# --- LOGIN (CORREGIDO V141: CARD CONTAINER + LOGO INSIDE + NO SCROLL) ---
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'user' not in st.session_state: st.session_state['user'] = "Invitado"
 
@@ -250,80 +250,94 @@ if not st.session_state['logged_in']:
     BG_IMAGE = "https://i.imgur.com/aHPH6U6.jpeg"
     LOGO_URL = "https://www.maderasgyd.cl/wp-content/uploads/2024/02/logo-maderas-gd-1.png"
     
+    # CSS AVANZADO: Forzar estilo en el contenedor padre de los widgets
     st.markdown(f"""
         <style>
-            /* 1. BLOQUEAR SCROLL GLOBALMENTE */
+            /* 1. BLOQUEAR SCROLL GLOBAL */
             html, body, [data-testid="stAppViewContainer"] {{
                 overflow: hidden !important;
                 height: 100vh !important;
                 margin: 0;
             }}
-            [data-testid="stHeader"] {{visibility: hidden;}}
-            [data-testid="stSidebar"] {{display: none;}}
+            
+            [data-testid="stSidebar"], [data-testid="stHeader"] {{display: none !important; visibility: hidden !important;}}
             
             /* 2. FONDO DE PANTALLA */
             .stApp {{
-                background-image: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.8)), url("{BG_IMAGE}");
+                background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.7)), url("{BG_IMAGE}");
                 background-size: cover;
                 background-position: center;
                 background-attachment: fixed;
             }}
             
-            /* 3. ESTILO DE LA COLUMNA CENTRAL PARA PARECER TARJETA */
-            /* Selector específico para la columna del medio donde están los inputs */
-            div[data-testid="column"]:nth-of-type(2) > div {{
+            /* 3. TARJETA BLANCA (CONTENEDOR CENTRAL) */
+            /* Apuntamos al contenedor vertical de la columna del medio */
+            div[data-testid="stVerticalBlock"] > div:has(div[data-testid="stTextInput"]) {{
                 background-color: rgba(255, 255, 255, 0.95);
                 border-radius: 20px;
                 padding: 40px;
-                box-shadow: 0 15px 40px rgba(0,0,0,0.5);
+                box-shadow: 0 20px 50px rgba(0,0,0,0.5);
                 border-top: 8px solid {COLOR_PRIMARY};
                 backdrop-filter: blur(5px);
+                max-width: 450px;
+                margin: auto;
             }}
             
-            /* 4. ESTILIZAR INPUTS */
-            div[data-testid="stTextInput"] input {{
-                border-radius: 8px;
-                border: 1px solid #ddd;
-                padding: 10px;
+            /* Logo centrado */
+            .login-logo-img {{
+                display: block;
+                margin-left: auto;
+                margin-right: auto;
+                width: 80%;
+                margin-bottom: 30px;
             }}
             
-            /* 5. TEXTO DEL FOOTER */
-            .footer-text {{
+            /* Footer */
+            .login-footer {{
                 text-align: center;
                 color: #888;
                 font-size: 0.8rem;
-                margin-top: 20px;
+                margin-top: 25px;
                 font-weight: bold;
+                border-top: 1px solid #eee;
+                padding-top: 15px;
+            }}
+            
+            /* Inputs */
+            div[data-testid="stTextInput"] input {{
+                border-radius: 8px;
+                border: 1px solid #ccc;
+                padding: 10px;
             }}
         </style>
     """, unsafe_allow_html=True)
 
-    # LAYOUT CENTRADO
+    # ESTRUCTURA
     c1, c2, c3 = st.columns([1, 1.5, 1])
     
     with c2:
-        # LOGO (Ahora está dentro de la columna estilizada por CSS)
-        st.image(LOGO_URL, width=250)
+        # CONTENIDO DE LA TARJETA
+        # El CSS de arriba detectará este bloque y le pondrá el fondo blanco
+        st.markdown(f'<img src="{LOGO_URL}" class="login-logo-img">', unsafe_allow_html=True)
+        st.markdown("<h4 style='text-align: center; color: #444; margin-bottom: 20px;'>ACCESO PLATAFORMA</h4>", unsafe_allow_html=True)
         
-        st.markdown("<h3 style='text-align: center; color: #444; margin-bottom: 20px;'>ACCESO PLATAFORMA</h3>", unsafe_allow_html=True)
+        u = st.text_input("Usuario", placeholder="Usuario", label_visibility="collapsed")
+        p = st.text_input("Contraseña", type="password", placeholder="Contraseña", label_visibility="collapsed")
         
-        u = st.text_input("Usuario", placeholder="Ingrese su usuario", label_visibility="collapsed")
-        p = st.text_input("Contraseña", type="password", placeholder="Ingrese su contraseña", label_visibility="collapsed")
-        
-        st.write("") # Espacio
+        st.write("") # Espaciador
         
         if st.button("INGRESAR AL SISTEMA", type="primary", use_container_width=True):
             if u == "admin" and p == "1234": 
                 st.session_state['logged_in'] = True; st.session_state['user'] = u; registrar_auditoria(u, "LOGIN", "OK"); st.rerun()
-            else: st.error("🚫 Acceso Denegado")
+            else: st.error("🔒 Credenciales incorrectas")
             
-        st.markdown('<div class="footer-text">© 2026 SEGAV<br>Departamento de Prevención</div>', unsafe_allow_html=True)
+        st.markdown('<div class="login-footer">© 2026 SEGAV<br>Departamento de Prevención</div>', unsafe_allow_html=True)
 
     st.stop()
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V140 - FIXED LOGIN")
+    st.caption("V141 - FINAL FIXED")
     with open(DB_NAME, "rb") as fp: st.download_button(label="💾 Respaldar BD", data=fp, file_name=f"backup_{date.today()}.db")
     menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
@@ -564,7 +578,7 @@ elif menu == "👥 Gestión Personas":
                 st.image(b_qr.getvalue(), width=100, caption="Credencial QR")
     conn.close()
 
-# --- 4. GESTOR DOCUMENTAL (CORREGIDO V139) ---
+# --- 4. GESTOR DOCUMENTAL (CORREGIDO) ---
 elif menu == "⚖️ Gestor Documental":
     st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
@@ -590,6 +604,8 @@ elif menu == "⚖️ Gestor Documental":
                     conn.execute("INSERT INTO registro_riohs (fecha_entrega, rut_trabajador, nombre_trabajador, firma_b64) VALUES (?,?,?,?)", (date.today(), sel_r.split(" | ")[0], sel_r.split(" | ")[1], ib64)); conn.commit()
                     pdf = DocumentosLegalesPDF("RIOHS", "RG-GD-03").generar_riohs({'nombre': sel_r.split(" | ")[1], 'firma_b64': ib64})
                     st.download_button("Descargar", pdf.getvalue(), "RIOHS.pdf")
+        with t3:
+            st.dataframe(pd.read_sql("SELECT * FROM registro_riohs", conn))
     conn.close()
 
 # --- 5. LOGISTICA EPP ---
