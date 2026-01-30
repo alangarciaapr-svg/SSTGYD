@@ -262,19 +262,85 @@ class DocumentosLegalesPDF:
 # ==============================================================================
 init_db()
 
+# ==============================================================================
+# BLOQUE DE INICIO DE SESIÓN (MEJORADO V137)
+# ==============================================================================
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'user' not in st.session_state: st.session_state['user'] = "Invitado"
 
 if not st.session_state['logged_in']:
-    c1, c2, c3 = st.columns([1, 2, 1])
+    # 1. CSS Específico para el Login (Centrado, Sombra, Ocultar Sidebar)
+    st.markdown("""
+        <style>
+            [data-testid="stSidebar"] {display: none;} /* Oculta la barra lateral en el login */
+            .stApp {
+                background-color: #f0f2f6; /* Fondo gris suave para contraste */
+            }
+            .login-container {
+                background-color: white;
+                padding: 3rem;
+                border-radius: 15px;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.1); /* Sombra elegante */
+                text-align: center;
+                border-top: 6px solid #8B0000; /* Línea de color corporativo */
+                margin-top: 50px;
+            }
+            .login-logo {
+                font-size: 3.5rem;
+                margin-bottom: 10px;
+            }
+            .login-title {
+                font-size: 1.8rem;
+                font-weight: 700;
+                color: #2C3E50;
+                margin-bottom: 5px;
+            }
+            .login-subtitle {
+                font-size: 1rem;
+                color: #7f8c8d;
+                margin-bottom: 25px;
+            }
+            .footer-text {
+                font-size: 0.8rem;
+                color: #bdc3c7;
+                margin-top: 20px;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # 2. Estructura Centrada
+    c1, c2, c3 = st.columns([1, 1.2, 1]) # Columnas para centrar la tarjeta
+    
     with c2:
-        st.title("🔐 SGSST ERP")
-        u = st.text_input("Usuario"); p = st.text_input("Contraseña", type="password")
-        if st.button("Ingresar", use_container_width=True):
+        # Inicio de la tarjeta HTML
+        st.markdown('<div class="login-container">', unsafe_allow_html=True)
+        
+        # Encabezado
+        st.markdown('<div class="login-logo">🏗️</div>', unsafe_allow_html=True)
+        st.markdown('<div class="login-title">MADERAS GÁLVEZ</div>', unsafe_allow_html=True)
+        st.markdown('<div class="login-subtitle">ERP de Gestión SST | Acceso Seguro</div>', unsafe_allow_html=True)
+        
+        # Formulario
+        u = st.text_input("Usuario", placeholder="Ej: admin", label_visibility="collapsed")
+        p = st.text_input("Contraseña", type="password", placeholder="••••••••", label_visibility="collapsed")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Botón con estilo primario
+        if st.button("🔒 INICIAR SESIÓN", type="primary", use_container_width=True):
             if u == "admin" and p == "1234": 
-                st.session_state['logged_in'] = True; st.session_state['user'] = u; registrar_auditoria(u, "LOGIN", "Acceso OK"); st.rerun()
-            else: st.error("Error")
-    st.stop()
+                st.session_state['logged_in'] = True
+                st.session_state['user'] = u
+                registrar_auditoria(u, "LOGIN", "Acceso Exitoso al Sistema")
+                st.rerun()
+            else:
+                st.error("🚫 Credenciales incorrectas. Intente nuevamente.")
+        
+        # Pie de la tarjeta
+        st.markdown('<div class="footer-text">© 2024 Departamento de Prevención de Riesgos</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True) # Fin de la tarjeta
+
+    st.stop() # Detiene la ejecución para no mostrar el resto de la app
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
