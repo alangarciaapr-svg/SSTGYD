@@ -37,7 +37,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v141_login_final.db'
+DB_NAME = 'sgsst_v145_users_final.db' # Actualizado para soportar usuarios
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -124,6 +124,7 @@ def init_db():
 
     c.execute("SELECT count(*) FROM usuarios")
     if c.fetchone()[0] == 0:
+        # USUARIO ADMIN POR DEFECTO (CLAVE 1234 HASHEADA)
         c.execute("INSERT INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
         c.executemany("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion) VALUES (?,?,?,?)", [("Casco", 50, 5, "Bodega"), ("Lentes", 100, 10, "Bodega")])
         
@@ -242,38 +243,29 @@ class DocumentosLegalesPDF:
 # ==============================================================================
 init_db()
 
-# --- LOGIN (CORREGIDO V143 - SCROLL & CARD) ---
+# --- LOGIN (V145: LOGIC REAL CON DB) ---
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'user' not in st.session_state: st.session_state['user'] = "Invitado"
+if 'rol' not in st.session_state: st.session_state['rol'] = "VISITOR"
 
 if not st.session_state['logged_in']:
     BG_IMAGE = "https://i.imgur.com/aHPH6U6.jpeg"
     LOGO_URL = "https://www.maderasgyd.cl/wp-content/uploads/2024/02/logo-maderas-gd-1.png"
     
-    # CSS AVANZADO: Bloqueo de Scroll + Tarjeta Global
     st.markdown(f"""
         <style>
-            /* 1. SCROLL LOCK + PADDING REMOVAL */
             html, body, [data-testid="stAppViewContainer"] {{
                 overflow: hidden !important;
                 height: 100vh !important;
                 margin: 0;
             }}
-            .block-container {{
-                padding-top: 5rem !important;
-            }}
-            
             [data-testid="stSidebar"], [data-testid="stHeader"] {{display: none !important;}}
-            
-            /* 2. BACKGROUND */
             .stApp {{
                 background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.7)), url("{BG_IMAGE}");
                 background-size: cover;
                 background-position: center;
                 background-attachment: fixed;
             }}
-            
-            /* 3. CARD CONTAINER (Columna Central) */
             div[data-testid="column"]:nth-of-type(2) {{
                 background-color: rgba(255, 255, 255, 0.95);
                 border-radius: 20px;
@@ -282,8 +274,6 @@ if not st.session_state['logged_in']:
                 border-top: 8px solid {COLOR_PRIMARY};
                 backdrop-filter: blur(5px);
             }}
-            
-            /* 4. LOGO BOX (Para contraste) */
             .logo-box {{
                 background-color: #ffffff;
                 border-radius: 10px;
@@ -293,7 +283,6 @@ if not st.session_state['logged_in']:
                 display: flex;
                 justify-content: center;
             }}
-            
             .login-footer {{
                 text-align: center;
                 color: #888;
@@ -303,8 +292,6 @@ if not st.session_state['logged_in']:
                 border-top: 1px solid #ddd;
                 padding-top: 15px;
             }}
-            
-            /* Inputs */
             div[data-testid="stTextInput"] input {{
                 background-color: #f8f9fa;
                 border: 1px solid #ccc;
@@ -314,39 +301,49 @@ if not st.session_state['logged_in']:
         </style>
     """, unsafe_allow_html=True)
 
-    # LAYOUT 3 COLUMNAS
     c1, c2, c3 = st.columns([1, 1.2, 1])
-    
     with c2:
-        # LOGO CON FONDO (HTML/CSS)
-        st.markdown(f"""
-            <div class="logo-box">
-                <img src="{LOGO_URL}" style="width: 100%; max-width: 220px;">
-            </div>
-            <h4 style='text-align: center; color: #444; margin-bottom: 20px; font-weight:600;'>INICIAR SESIÓN</h4>
-        """, unsafe_allow_html=True)
-        
-        # INPUTS
+        st.markdown(f"""<div class="logo-box"><img src="{LOGO_URL}" style="width: 100%; max-width: 220px;"></div><h4 style='text-align: center; color: #444; margin-bottom: 20px; font-weight:600;'>INICIAR SESIÓN</h4>""", unsafe_allow_html=True)
         u = st.text_input("Usuario", placeholder="Ingrese usuario", label_visibility="collapsed")
         p = st.text_input("Contraseña", type="password", placeholder="Ingrese contraseña", label_visibility="collapsed")
-        
-        st.write("") # Espacio
+        st.write("") 
         
         if st.button("INGRESAR", type="primary", use_container_width=True):
-            if u == "admin" and p == "1234": 
-                st.session_state['logged_in'] = True; st.session_state['user'] = u; registrar_auditoria(u, "LOGIN", "OK"); st.rerun()
-            else: st.error("🚫 Credenciales incorrectas")
+            # LÓGICA DE LOGIN REAL CON DB
+            conn_l = sqlite3.connect(DB_NAME)
+            pass_hash = hashlib.sha256(p.encode()).hexdigest()
+            user_data = pd.read_sql("SELECT * FROM usuarios WHERE username=? AND password=?", conn_l, params=(u, pass_hash))
+            conn_l.close()
+            
+            if not user_data.empty:
+                st.session_state['logged_in'] = True
+                st.session_state['user'] = u
+                st.session_state['rol'] = user_data.iloc[0]['rol'] # Guardamos el rol
+                registrar_auditoria(u, "LOGIN", "OK")
+                st.rerun()
+            else:
+                st.error("🚫 Credenciales incorrectas")
             
         st.markdown('<div class="login-footer">© 2026 SEGAV<br>Seguridad & Gestión Avanzada</div>', unsafe_allow_html=True)
-
     st.stop()
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V143 - MASTER FINAL")
+    st.caption(f"Usuario: {st.session_state['user']} | Rol: {st.session_state['rol']}")
     with open(DB_NAME, "rb") as fp: st.download_button(label="💾 Respaldar BD", data=fp, file_name=f"backup_{date.today()}.db")
-    menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
-    if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
+    
+    # MENÚ DINÁMICO
+    menu_options = ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"]
+    
+    # SOLO ADMIN VE GESTION DE USUARIOS
+    if st.session_state['rol'] == "ADMINISTRADOR":
+        menu_options.append("🔐 Gestión Usuarios")
+        
+    menu = st.radio("MENÚ", menu_options)
+    
+    if st.button("Cerrar Sesión"): 
+        st.session_state['logged_in'] = False
+        st.rerun()
 
 # --- 1. DASHBOARD ---
 if menu == "📊 Dashboard":
@@ -705,3 +702,39 @@ elif menu == "🧯 Extintores":
     st.title("Extintores"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM extintores", conn), key="ext", num_rows="dynamic"); conn.close()
 elif menu == "🏗️ Contratistas":
     st.title("Contratistas"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM contratistas", conn), key="con", num_rows="dynamic"); conn.close()
+
+# --- 8. GESTIÓN DE USUARIOS (NUEVO) ---
+elif menu == "🔐 Gestión Usuarios":
+    st.markdown("<div class='main-header'>Gestión de Usuarios y Accesos</div>", unsafe_allow_html=True)
+    
+    conn = get_conn()
+    tab1, tab2 = st.tabs(["Listado Usuarios", "Crear Nuevo"])
+    
+    with tab1:
+        st.info("Lista de usuarios con acceso al sistema")
+        users = pd.read_sql("SELECT username, rol FROM usuarios", conn)
+        st.dataframe(users, use_container_width=True)
+        
+    with tab2:
+        st.subheader("Registrar Nuevo Usuario")
+        with st.form("new_user_form"):
+            new_u = st.text_input("Nombre de Usuario")
+            new_p = st.text_input("Contraseña", type="password")
+            new_r = st.selectbox("Rol", ["ADMINISTRADOR", "VISOR", "PREVENCIONISTA"])
+            
+            if st.form_submit_button("Crear Usuario"):
+                if new_u and new_p:
+                    try:
+                        # Hash simple para seguridad básica (SHA256)
+                        hashed_pw = hashlib.sha256(new_p.encode()).hexdigest()
+                        conn.execute("INSERT INTO usuarios (username, password, rol) VALUES (?,?,?)", (new_u, hashed_pw, new_r))
+                        conn.commit()
+                        st.success(f"Usuario {new_u} creado correctamente.")
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: El usuario ya existe o hubo un problema. {e}")
+                else:
+                    st.warning("Complete todos los campos.")
+    
+    conn.close()
