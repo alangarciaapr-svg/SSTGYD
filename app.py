@@ -242,7 +242,7 @@ class DocumentosLegalesPDF:
 # ==============================================================================
 init_db()
 
-# --- LOGIN (CORREGIDO V141: CARD CONTAINER + LOGO INSIDE + NO SCROLL) ---
+# --- LOGIN (DISEÑO V142: COLUMNA COMO TARJETA) ---
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'user' not in st.session_state: st.session_state['user'] = "Invitado"
 
@@ -250,7 +250,6 @@ if not st.session_state['logged_in']:
     BG_IMAGE = "https://i.imgur.com/aHPH6U6.jpeg"
     LOGO_URL = "https://www.maderasgyd.cl/wp-content/uploads/2024/02/logo-maderas-gd-1.png"
     
-    # CSS AVANZADO: Forzar estilo en el contenedor padre de los widgets
     st.markdown(f"""
         <style>
             /* 1. BLOQUEAR SCROLL GLOBAL */
@@ -260,64 +259,60 @@ if not st.session_state['logged_in']:
                 margin: 0;
             }}
             
-            [data-testid="stSidebar"], [data-testid="stHeader"] {{display: none !important; visibility: hidden !important;}}
+            [data-testid="stHeader"], [data-testid="stSidebar"] {{display: none !important;}}
             
             /* 2. FONDO DE PANTALLA */
             .stApp {{
-                background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.7)), url("{BG_IMAGE}");
+                background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.8)), url("{BG_IMAGE}");
                 background-size: cover;
                 background-position: center;
                 background-attachment: fixed;
             }}
             
-            /* 3. TARJETA BLANCA (CONTENEDOR CENTRAL) */
-            /* Apuntamos al contenedor vertical de la columna del medio */
-            div[data-testid="stVerticalBlock"] > div:has(div[data-testid="stTextInput"]) {{
+            /* 3. ESTILO DE LA COLUMNA CENTRAL (TARJETA) */
+            /* Esto envuelve a todos los widgets de la columna del medio en una caja blanca */
+            div[data-testid="column"]:nth-of-type(2) {{
                 background-color: rgba(255, 255, 255, 0.95);
+                padding: 3rem !important;
                 border-radius: 20px;
-                padding: 40px;
-                box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-                border-top: 8px solid {COLOR_PRIMARY};
+                box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
                 backdrop-filter: blur(5px);
-                max-width: 450px;
-                margin: auto;
+                border-top: 8px solid {COLOR_PRIMARY};
             }}
             
-            /* Logo centrado */
+            /* 4. LOGO CENTRADO */
             .login-logo-img {{
                 display: block;
                 margin-left: auto;
                 margin-right: auto;
-                width: 80%;
-                margin-bottom: 30px;
+                width: 100%;
+                max-width: 250px;
+                margin-bottom: 20px;
             }}
             
-            /* Footer */
-            .login-footer {{
+            /* 5. INPUTS */
+            div[data-testid="stTextInput"] input {{
+                background-color: #f9f9f9;
+                border: 1px solid #ddd;
+                border-radius: 8px;
+            }}
+            
+            /* 6. FOOTER */
+            .footer-text {{
                 text-align: center;
                 color: #888;
                 font-size: 0.8rem;
-                margin-top: 25px;
+                margin-top: 20px;
                 font-weight: bold;
-                border-top: 1px solid #eee;
-                padding-top: 15px;
-            }}
-            
-            /* Inputs */
-            div[data-testid="stTextInput"] input {{
-                border-radius: 8px;
-                border: 1px solid #ccc;
-                padding: 10px;
             }}
         </style>
     """, unsafe_allow_html=True)
 
-    # ESTRUCTURA
-    c1, c2, c3 = st.columns([1, 1.5, 1])
+    # LAYOUT DE 3 COLUMNAS PARA CENTRAR LA TARJETA
+    c1, c2, c3 = st.columns([1, 1.2, 1])
     
     with c2:
-        # CONTENIDO DE LA TARJETA
-        # El CSS de arriba detectará este bloque y le pondrá el fondo blanco
+        # TODO ESTO QUEDA DENTRO DE LA TARJETA BLANCA GRACIAS AL CSS
         st.markdown(f'<img src="{LOGO_URL}" class="login-logo-img">', unsafe_allow_html=True)
         st.markdown("<h4 style='text-align: center; color: #444; margin-bottom: 20px;'>ACCESO PLATAFORMA</h4>", unsafe_allow_html=True)
         
@@ -331,13 +326,13 @@ if not st.session_state['logged_in']:
                 st.session_state['logged_in'] = True; st.session_state['user'] = u; registrar_auditoria(u, "LOGIN", "OK"); st.rerun()
             else: st.error("🔒 Credenciales incorrectas")
             
-        st.markdown('<div class="login-footer">© 2026 SEGAV<br>Departamento de Prevención</div>', unsafe_allow_html=True)
+        st.markdown('<div class="footer-text">© 2026 SEGAV</div>', unsafe_allow_html=True)
 
     st.stop()
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V141 - FINAL FIXED")
+    st.caption("V142 - FINAL FIXED LOGIN")
     with open(DB_NAME, "rb") as fp: st.download_button(label="💾 Respaldar BD", data=fp, file_name=f"backup_{date.today()}.db")
     menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
@@ -578,7 +573,7 @@ elif menu == "👥 Gestión Personas":
                 st.image(b_qr.getvalue(), width=100, caption="Credencial QR")
     conn.close()
 
-# --- 4. GESTOR DOCUMENTAL (CORREGIDO) ---
+# --- 4. GESTOR DOCUMENTAL (CORREGIDO V139) ---
 elif menu == "⚖️ Gestor Documental":
     st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
@@ -604,8 +599,6 @@ elif menu == "⚖️ Gestor Documental":
                     conn.execute("INSERT INTO registro_riohs (fecha_entrega, rut_trabajador, nombre_trabajador, firma_b64) VALUES (?,?,?,?)", (date.today(), sel_r.split(" | ")[0], sel_r.split(" | ")[1], ib64)); conn.commit()
                     pdf = DocumentosLegalesPDF("RIOHS", "RG-GD-03").generar_riohs({'nombre': sel_r.split(" | ")[1], 'firma_b64': ib64})
                     st.download_button("Descargar", pdf.getvalue(), "RIOHS.pdf")
-        with t3:
-            st.dataframe(pd.read_sql("SELECT * FROM registro_riohs", conn))
     conn.close()
 
 # --- 5. LOGISTICA EPP ---
