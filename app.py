@@ -37,7 +37,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v136_pro_dash.db'
+DB_NAME = 'sgsst_v136_pro_dash.db' # Mantenemos la misma DB para no perder datos
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -97,7 +97,7 @@ LISTA_CONSECUENCIA = [1, 2, 4]
 def get_conn(): return sqlite3.connect(DB_NAME, check_same_thread=False)
 
 def check_and_add_column(cursor, table_name, column_name, column_type):
-    """Función de Auto-Reparación de Base de Datos para evitar errores de columnas faltantes"""
+    """Función de Auto-Reparación de Base de Datos"""
     try:
         cursor.execute(f"SELECT {column_name} FROM {table_name} LIMIT 1")
     except sqlite3.OperationalError:
@@ -124,7 +124,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, usuario TEXT, accion TEXT, detalle TEXT)''')
 
-    # 2. AUTO-REPARACIÓN DE COLUMNAS (SOLUCIÓN DEL ERROR REPORTADO)
+    # 2. AUTO-REPARACIÓN DE COLUMNAS
     check_and_add_column(c, "personal", "contacto_emergencia", "TEXT")
     check_and_add_column(c, "personal", "fono_emergencia", "TEXT")
     check_and_add_column(c, "personal", "obs_medica", "TEXT")
@@ -137,8 +137,6 @@ def init_db():
         c.execute("INSERT INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
         c.executemany("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion) VALUES (?,?,?,?)", [("Casco", 50, 5, "Bodega"), ("Lentes", 100, 10, "Bodega")])
         
-        # Validación: Si la tabla personal está vacía, NO insertamos nada (para no ensuciar carga masiva)
-        # Validación: Si la matriz está vacía, insertamos ejemplo
         c.execute("SELECT count(*) FROM matriz_iper")
         data_m = c.fetchone()
         if data_m is None or data_m[0] == 0:
@@ -159,8 +157,6 @@ def calcular_nivel_riesgo(vep):
 
 def get_alertas():
     conn = get_conn(); alertas = []; hoy = date.today()
-    
-    # Alertas Personal (Exámenes)
     try:
         trabs = pd.read_sql("SELECT rut, nombre, vigencia_examen_medico FROM personal WHERE estado='ACTIVO'", conn)
         for i, t in trabs.iterrows():
@@ -171,13 +167,10 @@ def get_alertas():
                     elif fv < hoy + timedelta(days=30): alertas.append(f"🟡 {t['nombre']}: Examen vence pronto")
                 except: pass
     except: pass
-    
-    # Alertas Stock
     try:
         stock = pd.read_sql("SELECT producto FROM inventario_epp WHERE stock_actual <= stock_minimo", conn)
         for i, s in stock.iterrows(): alertas.append(f"📦 Stock Bajo: {s['producto']}")
     except: pass
-    
     conn.close(); return alertas
 
 def get_incidentes_mes():
@@ -260,40 +253,72 @@ class DocumentosLegalesPDF:
 # ==============================================================================
 init_db()
 
-# --- LOGIN ---
+# --- LOGIN (DISEÑO PERSONALIZADO V137) ---
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'user' not in st.session_state: st.session_state['user'] = "Invitado"
 
 if not st.session_state['logged_in']:
-    BG_IMAGE = "https://i.imgur.com/HwKEIOW.jpeg"
+    BG_IMAGE = "https://i.imgur.com/aHPH6U6.jpeg"
+    LOGO_URL = "https://www.maderasgyd.cl/wp-content/uploads/2024/02/logo-maderas-gd-1.png"
+    
     st.markdown(f"""
         <style>
             [data-testid="stSidebar"] {{display: none;}}
             [data-testid="stHeader"] {{visibility: hidden;}}
-            .stApp {{background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.7)), url("{BG_IMAGE}"); background-size: cover; background-position: center;}}
-            .login-card {{background-color: rgba(255, 255, 255, 0.90); backdrop-filter: blur(10px); padding: 40px; border-radius: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); text-align: center; margin-top: 80px; border-top: 8px solid {COLOR_PRIMARY};}}
-            .company-name {{font-size: 2.2rem; font-weight: 900; color: {COLOR_SECONDARY}; margin-bottom: 0px;}}
-            .system-name {{font-size: 0.9rem; font-weight: 600; color: #888; margin-bottom: 30px; letter-spacing: 2px;}}
-            .icon-container {{font-size: 4rem; margin-bottom: 10px;}}
-            div[data-testid="stTextInput"] input {{border-radius: 10px; border: 1px solid #e0e0e0; padding: 12px; font-size: 1rem;}}
+            .stApp {{
+                background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.7)), url("{BG_IMAGE}");
+                background-size: cover;
+                background-position: center;
+                background-attachment: fixed;
+            }}
+            .login-card {{
+                background-color: rgba(255, 255, 255, 0.95);
+                backdrop-filter: blur(10px);
+                padding: 40px;
+                border-radius: 20px;
+                box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+                text-align: center;
+                margin-top: 80px;
+                border-top: 8px solid {COLOR_PRIMARY};
+            }}
+            div[data-testid="stTextInput"] input {{
+                border-radius: 10px;
+                border: 1px solid #e0e0e0;
+                padding: 12px;
+                font-size: 1rem;
+            }}
+            div[data-testid="stTextInput"] input:focus {{
+                border-color: {COLOR_PRIMARY};
+                box-shadow: 0 0 0 2px rgba(139, 0, 0, 0.2);
+            }}
         </style>
     """, unsafe_allow_html=True)
+
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
-        st.markdown('<div class="login-card"><div class="icon-container">🌲</div><div class="company-name">MADERAS GÁLVEZ</div><div class="system-name">ERP S.G.S.S.T.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="login-card">', unsafe_allow_html=True)
+        # LOGO SEPARADO
+        st.markdown(f'<img src="{LOGO_URL}" style="width: 80%; margin-bottom: 40px; display: block; margin-left: auto; margin-right: auto;">', unsafe_allow_html=True)
+        
+        st.markdown("**ACCESO PLATAFORMA SGSST**")
+        
+        # INPUTS
         u = st.text_input("Usuario", placeholder="Usuario", label_visibility="collapsed")
         p = st.text_input("Contraseña", type="password", placeholder="Contraseña", label_visibility="collapsed")
-        st.write("")
-        if st.button("INGRESAR", type="primary", use_container_width=True):
+        st.write("") # Espaciador visual
+        
+        if st.button("INGRESAR AL SISTEMA", type="primary", use_container_width=True):
             if u == "admin" and p == "1234": 
                 st.session_state['logged_in'] = True; st.session_state['user'] = u; registrar_auditoria(u, "LOGIN", "OK"); st.rerun()
-            else: st.error("Acceso Denegado")
+            else: st.error("🔒 Credenciales incorrectas")
+            
+        st.markdown('<br><small style="color:#999;">© 2024 Departamento de Prevención</small>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V136 - PRO DASHBOARD")
+    st.caption("V137 - VISUAL UPDATE")
     with open(DB_NAME, "rb") as fp: st.download_button(label="💾 Respaldar BD", data=fp, file_name=f"backup_{date.today()}.db")
     menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
@@ -427,7 +452,6 @@ elif menu == "👥 Gestión Personas":
                 if pd.isna(fec) or str(fec)=='NaT': fec = date.today()
                 if pd.isna(f_ex) or str(f_ex)=='NaT': f_ex = None
                 
-                # UPDATE CON CAMPOS DE EMERGENCIA + LOGICA RUT
                 if r['rut'] != r['rut_old']:
                     c.execute("UPDATE personal SET rut=?, nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=?, contacto_emergencia=?, fono_emergencia=? WHERE rut=?", 
                               (r['rut'], r['nombre'], r['cargo'], r['centro_costo'], r['email'], r['estado'], fec, f_ex, r['contacto_emergencia'], r['fono_emergencia'], r['rut_old']))
