@@ -37,7 +37,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v135_personnel_pro.db' # DB Nueva con campos de emergencia
+DB_NAME = 'sgsst_v136_pro_dash.db'
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -73,13 +73,17 @@ if "mobile_sign" in query_params and query_params["mobile_sign"] == "true":
         conn.close()
     st.stop() 
 
-# --- ESTILOS CSS ---
+# --- ESTILOS CSS PRO ---
 st.markdown(f"""
     <style>
-    .main-header {{font-size: 2.0rem; font-weight: 700; color: {COLOR_SECONDARY}; border-bottom: 3px solid {COLOR_PRIMARY}; margin-bottom: 15px;}}
-    .alert-box {{padding: 10px; border-radius: 5px; margin-bottom: 5px; font-size: 0.9rem; font-weight: 500;}}
-    .alert-high {{background-color: #ffebee; color: #b71c1c; border-left: 5px solid #d32f2f;}}
-    .alert-ok {{background-color: #e8f5e9; color: #2e7d32; border-left: 5px solid #388e3c;}}
+    .main-header {{font-size: 2.2rem; font-weight: 800; color: {COLOR_SECONDARY}; margin-bottom: 0px;}}
+    .sub-header {{font-size: 1.1rem; color: #666; margin-bottom: 20px;}}
+    .card-kpi {{background-color: #f8f9fa; border-radius: 10px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; border-left: 5px solid {COLOR_PRIMARY};}}
+    .card-kpi h3 {{margin: 0; color: #666; font-size: 1rem;}}
+    .card-kpi h1 {{margin: 0; color: {COLOR_SECONDARY}; font-size: 2.5rem; font-weight: bold;}}
+    .alert-box {{padding: 15px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #ddd; display: flex; align-items: center;}}
+    .alert-icon {{font-size: 1.5rem; margin-right: 15px;}}
+    .alert-high {{background-color: #fff5f5; border-left: 5px solid #c53030; color: #c53030;}}
     </style>
 """, unsafe_allow_html=True)
 
@@ -92,24 +96,21 @@ LISTA_CONSECUENCIA = [1, 2, 4]
 # ==============================================================================
 def get_conn(): return sqlite3.connect(DB_NAME, check_same_thread=False)
 
+def check_and_add_column(cursor, table_name, column_name, column_type):
+    """Función de Auto-Reparación de Base de Datos"""
+    try:
+        cursor.execute(f"SELECT {column_name} FROM {table_name} LIMIT 1")
+    except sqlite3.OperationalError:
+        try:
+            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+            print(f"Columna {column_name} agregada a {table_name}")
+        except: pass
+
 def init_db():
     conn = get_conn(); c = conn.cursor()
     
-    # RRHH MEJORADO (Campos de Emergencia y Salud)
-    c.execute('''CREATE TABLE IF NOT EXISTS personal (
-        rut TEXT PRIMARY KEY, 
-        nombre TEXT, 
-        cargo TEXT, 
-        centro_costo TEXT, 
-        fecha_contrato DATE, 
-        estado TEXT, 
-        vigencia_examen_medico DATE, 
-        email TEXT,
-        contacto_emergencia TEXT, -- Nuevo
-        fono_emergencia TEXT,     -- Nuevo
-        obs_medica TEXT           -- Nuevo (Alergias, Grupo Sangre)
-    )''')
-    
+    # 1. Crear Tablas Base
+    c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (id INTEGER PRIMARY KEY AUTOINCREMENT, proceso TEXT, tipo_proceso TEXT, puesto_trabajo TEXT, tarea TEXT, es_rutinaria TEXT, peligro_factor TEXT, riesgo_asociado TEXT, tipo_riesgo TEXT, probabilidad INTEGER, consecuencia INTEGER, vep INTEGER, nivel_riesgo TEXT, medida_control TEXT, genero_obs TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, tema TEXT, tipo_actividad TEXT, responsable_rut TEXT, estado TEXT, duracion INTEGER, lugar TEXT, metodologia TEXT)''')
@@ -124,15 +125,21 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, usuario TEXT, accion TEXT, detalle TEXT)''')
 
-    # Seed Controlado
+    # 2. AUTO-REPARACIÓN DE COLUMNAS (SOLUCIÓN ERROR)
+    # Verifica si existen las columnas nuevas, si no, las crea.
+    check_and_add_column(c, "personal", "contacto_emergencia", "TEXT")
+    check_and_add_column(c, "personal", "fono_emergencia", "TEXT")
+    check_and_add_column(c, "personal", "obs_medica", "TEXT")
+    check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE") # Aseguramos esta también
+
+    # 3. Seed Controlado
     c.execute("SELECT count(*) FROM usuarios")
     data_u = c.fetchone()
     if data_u is None or data_u[0] == 0:
         c.execute("INSERT INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
         c.executemany("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion) VALUES (?,?,?,?)", [("Casco", 50, 5, "Bodega"), ("Lentes", 100, 10, "Bodega")])
         
-        # ELIMINADO EL TRABAJADOR DE EJEMPLO AUTOMÁTICO (SOLICITUD DE ALAN)
-        # La tabla personal inicia VACÍA para no molestar.
+        # NOTA: NO insertamos trabajadores de ejemplo para no ensuciar la lista.
             
         c.execute("SELECT count(*) FROM matriz_iper")
         data_m = c.fetchone()
@@ -154,23 +161,25 @@ def calcular_nivel_riesgo(vep):
 
 def get_alertas():
     conn = get_conn(); alertas = []; hoy = date.today()
-    trabs = pd.read_sql("SELECT rut, nombre, vigencia_examen_medico FROM personal WHERE estado='ACTIVO'", conn)
-    for i, t in trabs.iterrows():
-        falta = []
-        if pd.read_sql("SELECT count(*) FROM asistencia_capacitacion WHERE trabajador_rut=?", conn, params=(t['rut'],)).iloc[0,0] == 0: falta.append("IRL")
-        if pd.read_sql("SELECT count(*) FROM registro_riohs WHERE rut_trabajador=?", conn, params=(t['rut'],)).iloc[0,0] == 0: falta.append("RIOHS")
-        
-        if t['vigencia_examen_medico']:
-            try:
-                fv = datetime.strptime(t['vigencia_examen_medico'], '%Y-%m-%d').date()
-                if fv < hoy: falta.append("EXAMEN VENCIDO")
-                elif fv < hoy + timedelta(days=30): falta.append("EXAMEN VENCE PRONTO")
-            except: pass
-            
-        if falta: alertas.append(f"⚠️ {t['nombre']}: {', '.join(falta)}")
     
-    stock = pd.read_sql("SELECT producto FROM inventario_epp WHERE stock_actual <= stock_minimo", conn)
-    for i, s in stock.iterrows(): alertas.append(f"📦 Stock Bajo: {s['producto']}")
+    # Alertas Personal (Exámenes)
+    try:
+        trabs = pd.read_sql("SELECT rut, nombre, vigencia_examen_medico FROM personal WHERE estado='ACTIVO'", conn)
+        for i, t in trabs.iterrows():
+            if t['vigencia_examen_medico']:
+                try:
+                    fv = datetime.strptime(t['vigencia_examen_medico'], '%Y-%m-%d').date()
+                    if fv < hoy: alertas.append(f"🔴 {t['nombre']}: Examen Vencido")
+                    elif fv < hoy + timedelta(days=30): alertas.append(f"🟡 {t['nombre']}: Examen vence pronto")
+                except: pass
+    except: pass
+    
+    # Alertas Stock
+    try:
+        stock = pd.read_sql("SELECT producto FROM inventario_epp WHERE stock_actual <= stock_minimo", conn)
+        for i, s in stock.iterrows(): alertas.append(f"📦 Stock Bajo: {s['producto']}")
+    except: pass
+    
     conn.close(); return alertas
 
 def get_incidentes_mes():
@@ -269,40 +278,77 @@ if not st.session_state['logged_in']:
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V135 - PERSONNEL FIX")
+    st.caption("V136 - MASTER PRO DASHBOARD")
+    
     with open(DB_NAME, "rb") as fp:
-        st.download_button(label="💾 Respaldar BD", data=fp, file_name=f"backup_{date.today()}.db")
+        st.download_button(label="💾 Respaldar Base de Datos", data=fp, file_name=f"backup_{date.today()}.db", mime="application/octet-stream")
+        
     menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
 
-# --- 1. DASHBOARD ---
+# --- 1. DASHBOARD PRO ---
 if menu == "📊 Dashboard":
-    st.markdown("<div class='main-header'>Cuadro de Mando Integral</div>", unsafe_allow_html=True)
+    st.markdown(f"""
+        <div style="background-color: {COLOR_SECONDARY}; padding: 20px; border-radius: 10px; margin-bottom: 20px; color: white;">
+            <h2 style="margin:0; color:white;">Bienvenido, {st.session_state['user'].capitalize()}</h2>
+            <p style="margin:0;">Sistema de Gestión de Seguridad y Salud en el Trabajo | {date.today().strftime('%d-%m-%Y')}</p>
+        </div>
+    """, unsafe_allow_html=True)
+    
     conn = get_conn()
-    col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
-    total_acc = pd.read_sql("SELECT count(*) FROM incidentes", conn).iloc[0,0]
-    total_cap = pd.read_sql("SELECT count(*) FROM capacitaciones", conn).iloc[0,0]
-    alertas = get_alertas()
-    col_kpi1.metric("Accidentes", total_acc)
-    col_kpi2.metric("Capacitaciones", total_cap)
-    col_kpi3.metric("Alertas", len(alertas), delta_color="inverse")
-    st.divider()
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("Stock EPP")
-        df_epp = pd.read_sql("SELECT producto, stock_actual FROM inventario_epp", conn)
-        if not df_epp.empty:
-            fig = px.bar(df_epp, x='producto', y='stock_actual', color='stock_actual')
-            st.plotly_chart(fig, use_container_width=True)
-    with c2:
-        st.subheader("Personal")
-        df_per = pd.read_sql("SELECT estado, count(*) as count FROM personal GROUP BY estado", conn)
-        if not df_per.empty:
-            fig2 = px.pie(df_per, values='count', names='estado')
-            st.plotly_chart(fig2, use_container_width=True)
-    if alertas:
-        st.error("⚠️ Alertas Críticas:")
-        for a in alertas: st.write(a)
+    
+    # 1. Indicadores Clave (KPIs)
+    k1, k2, k3, k4 = st.columns(4)
+    
+    try:
+        acc = pd.read_sql("SELECT count(*) FROM incidentes", conn).iloc[0,0]
+        cap = pd.read_sql("SELECT count(*) FROM capacitaciones", conn).iloc[0,0]
+        trabs = pd.read_sql("SELECT count(*) FROM personal WHERE estado='ACTIVO'", conn).iloc[0,0]
+        alertas = get_alertas()
+    except: acc=0; cap=0; trabs=0; alertas=[]
+    
+    # HTML Cards
+    def card(title, val, icon="📊"):
+        return f"""<div class='card-kpi'><h3>{title}</h3><h1>{icon} {val}</h1></div>"""
+        
+    k1.markdown(card("Dotación Activa", trabs, "👷"), unsafe_allow_html=True)
+    k2.markdown(card("Accidentes (Año)", acc, "🚑"), unsafe_allow_html=True)
+    k3.markdown(card("Capacitaciones", cap, "🎓"), unsafe_allow_html=True)
+    k4.markdown(card("Alertas Activas", len(alertas), "⚠️"), unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    # 2. Panel Principal (Alertas y Gráficos)
+    col_izq, col_der = st.columns([1, 2])
+    
+    with col_izq:
+        st.subheader("🔔 Centro de Alertas")
+        if alertas:
+            with st.container(height=300):
+                for a in alertas:
+                    st.markdown(f"<div class='alert-box alert-high'><span class='alert-icon'>⚠️</span>{a}</div>", unsafe_allow_html=True)
+        else:
+            st.success("✅ Todo bajo control. Sin alertas pendientes.")
+            
+    with col_der:
+        st.subheader("📈 Métricas de Gestión")
+        t1, t2 = st.tabs(["Stock EPP", "Estado Personal"])
+        
+        with t1:
+            df_epp = pd.read_sql("SELECT producto, stock_actual, stock_minimo FROM inventario_epp", conn)
+            if not df_epp.empty:
+                # Color condicional
+                cols = ['red' if x <= y else '#2e7d32' for x,y in zip(df_epp['stock_actual'], df_epp['stock_minimo'])]
+                fig = px.bar(df_epp, x='producto', y='stock_actual', title="Inventario EPP en Bodega", text='stock_actual')
+                fig.update_traces(marker_color=cols, textposition='outside')
+                st.plotly_chart(fig, use_container_width=True)
+                
+        with t2:
+            df_per = pd.read_sql("SELECT estado, count(*) as count FROM personal GROUP BY estado", conn)
+            if not df_per.empty:
+                fig2 = px.pie(df_per, values='count', names='estado', title="Distribución de Dotación", hole=0.4)
+                st.plotly_chart(fig2, use_container_width=True)
+                
     conn.close()
 
 # --- 2. MATRIZ IPER ---
@@ -373,7 +419,7 @@ elif menu == "👥 Gestión Personas":
     tab_list, tab_carga, tab_new, tab_dig = st.tabs(["📋 Nómina", "📂 Carga Masiva", "➕ Nuevo", "🗂️ Carpeta Digital (Semáforo)"])
     
     with tab_list:
-        # CONSULTA ACTUALIZADA CON CAMPOS NUEVOS
+        # CONSULTA ACTUALIZADA CON CAMPOS NUEVOS Y RUT OLD
         df_p = pd.read_sql("SELECT rut, rut as rut_old, nombre, cargo, centro_costo, email, fecha_contrato, vigencia_examen_medico, contacto_emergencia, fono_emergencia, estado FROM personal", conn)
         df_p['fecha_contrato'] = pd.to_datetime(df_p['fecha_contrato'], errors='coerce')
         df_p['vigencia_examen_medico'] = pd.to_datetime(df_p['vigencia_examen_medico'], errors='coerce')
@@ -396,7 +442,7 @@ elif menu == "👥 Gestión Personas":
                 if pd.isna(fec) or str(fec)=='NaT': fec = date.today()
                 if pd.isna(f_ex) or str(f_ex)=='NaT': f_ex = None
                 
-                # UPDATE CON CAMPOS DE EMERGENCIA
+                # UPDATE CON CAMPOS DE EMERGENCIA + LOGICA RUT
                 if r['rut'] != r['rut_old']:
                     c.execute("UPDATE personal SET rut=?, nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=?, contacto_emergencia=?, fono_emergencia=? WHERE rut=?", 
                               (r['rut'], r['nombre'], r['cargo'], r['centro_costo'], r['email'], r['estado'], fec, f_ex, r['contacto_emergencia'], r['fono_emergencia'], r['rut_old']))
@@ -409,7 +455,7 @@ elif menu == "👥 Gestión Personas":
             conn.commit(); st.success("Guardado"); time.sleep(1); st.rerun()
 
     with tab_carga:
-        # PLANTILLA ACTUALIZADA
+        # PLANTILLA ACTUALIZADA Y CORREGIDA
         template_data = {
             'RUT': ['11.222.333-4'], 'NOMBRE': ['Juan Pérez'], 'CARGO': ['OPERADOR'], 
             'CENTRO_COSTO': ['FAENA'], 'EMAIL': ['juan@empresa.com'], 
@@ -515,7 +561,6 @@ elif menu == "⚖️ Gestor Documental":
         sel = st.selectbox("Trabajador:", df_p['rut'] + " - " + df_p['nombre'])
         if st.button("Generar IRL"):
             rut = sel.split(" - ")[0]; cargo = df_p[df_p['rut']==rut]['cargo'].values[0]
-            # Busca riesgos del puesto en la Matriz
             riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper WHERE puesto_trabajo LIKE ?", conn, params=(f'%{cargo}%',))
             if riesgos.empty: riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper LIMIT 3", conn)
             pdf = DocumentosLegalesPDF("IRL", "RG-GD-04").generar_irl({'nombre': sel.split(" - ")[1]}, riesgos.values.tolist())
