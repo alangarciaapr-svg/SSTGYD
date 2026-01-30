@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import io
 import hashlib
 import os
@@ -12,7 +12,7 @@ import socket
 from PIL import Image as PILImage
 import matplotlib
 import matplotlib.pyplot as plt
-import plotly.express as px  # Para gráficos bonitos
+import plotly.express as px
 from reportlab.lib import colors
 from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import letter
@@ -37,7 +37,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v131_production.db'
+DB_NAME = 'sgsst_v133_final_fix.db'
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -95,6 +95,7 @@ def get_conn(): return sqlite3.connect(DB_NAME, check_same_thread=False)
 def init_db():
     conn = get_conn(); c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (id INTEGER PRIMARY KEY AUTOINCREMENT, proceso TEXT, tipo_proceso TEXT, puesto_trabajo TEXT, tarea TEXT, es_rutinaria TEXT, peligro_factor TEXT, riesgo_asociado TEXT, tipo_riesgo TEXT, probabilidad INTEGER, consecuencia INTEGER, vep INTEGER, nivel_riesgo TEXT, medida_control TEXT, genero_obs TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, tema TEXT, tipo_actividad TEXT, responsable_rut TEXT, estado TEXT, duracion INTEGER, lugar TEXT, metodologia TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (id INTEGER PRIMARY KEY AUTOINCREMENT, capacitacion_id INTEGER, trabajador_rut TEXT, nombre_trabajador TEXT, cargo_trabajador TEXT, estado TEXT, firma_b64 TEXT)''')
@@ -110,13 +111,21 @@ def init_db():
 
     # Seed Controlado
     c.execute("SELECT count(*) FROM usuarios")
-    if c.fetchone()[0] == 0:
+    data_u = c.fetchone()
+    if data_u is None or data_u[0] == 0:
         c.execute("INSERT INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
         c.executemany("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion) VALUES (?,?,?,?)", [("Casco", 50, 5, "Bodega"), ("Lentes", 100, 10, "Bodega")])
+        
         c.execute("SELECT count(*) FROM personal")
-        if c.fetchone()[0] == 0: # Solo inserta si está vacío
+        data_p = c.fetchone()
+        if data_p is None or data_p[0] == 0:
             c.execute("INSERT INTO personal VALUES (?,?,?,?,?,?,?,?)", ("12.345.678-9", "JUAN PEREZ", "OPERADOR", "FAENA", date.today(), "ACTIVO", None, "juan@empresa.cl"))
-        c.execute("INSERT INTO matriz_iper (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, genero_obs) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", ("Cosecha", "Operativo", "Operador", "Tala", "SI", "Pendiente", "Volcamiento", "Seguridad", 2, 4, 8, "IMPORTANTE", "Cabina ROPS", "Sin Obs"))
+            
+        c.execute("SELECT count(*) FROM matriz_iper")
+        data_m = c.fetchone()
+        if data_m is None or data_m[0] == 0:
+            c.execute("INSERT INTO matriz_iper (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, genero_obs) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                 ("Cosecha", "Operativo", "Operador", "Tala", "SI", "Pendiente", "Volcamiento", "Seguridad", 2, 4, 8, "IMPORTANTE", "Cabina ROPS", "Sin Obs"))
     conn.commit(); conn.close()
 
 def registrar_auditoria(usuario, accion, detalle):
@@ -132,12 +141,21 @@ def calcular_nivel_riesgo(vep):
 
 def get_alertas():
     conn = get_conn(); alertas = []; hoy = date.today()
-    trabs = pd.read_sql("SELECT rut, nombre FROM personal WHERE estado='ACTIVO'", conn)
+    trabs = pd.read_sql("SELECT rut, nombre, vigencia_examen_medico FROM personal WHERE estado='ACTIVO'", conn)
     for i, t in trabs.iterrows():
         falta = []
         if pd.read_sql("SELECT count(*) FROM asistencia_capacitacion WHERE trabajador_rut=?", conn, params=(t['rut'],)).iloc[0,0] == 0: falta.append("IRL")
         if pd.read_sql("SELECT count(*) FROM registro_riohs WHERE rut_trabajador=?", conn, params=(t['rut'],)).iloc[0,0] == 0: falta.append("RIOHS")
-        if falta: alertas.append(f"⚠️ {t['nombre']}: Falta {', '.join(falta)}")
+        
+        if t['vigencia_examen_medico']:
+            try:
+                fv = datetime.strptime(t['vigencia_examen_medico'], '%Y-%m-%d').date()
+                if fv < hoy: falta.append("EXAMEN VENCIDO")
+                elif fv < hoy + timedelta(days=30): falta.append("EXAMEN VENCE PRONTO")
+            except: pass
+            
+        if falta: alertas.append(f"⚠️ {t['nombre']}: {', '.join(falta)}")
+    
     stock = pd.read_sql("SELECT producto FROM inventario_epp WHERE stock_actual <= stock_minimo", conn)
     for i, s in stock.iterrows(): alertas.append(f"📦 Stock Bajo: {s['producto']}")
     conn.close(); return alertas
@@ -238,53 +256,43 @@ if not st.session_state['logged_in']:
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V131 - FINAL PRODUCTION")
-    
-    # BOTON RESPALDO DB
+    st.caption("V133 - FINAL FIXES")
     with open(DB_NAME, "rb") as fp:
-        st.download_button(label="💾 Respaldar Base de Datos", data=fp, file_name=f"respaldo_{date.today()}.db", mime="application/octet-stream")
-        
+        st.download_button(label="💾 Respaldar BD", data=fp, file_name=f"backup_{date.today()}.db")
     menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
 
-# --- 1. DASHBOARD MEJORADO (GRÁFICOS) ---
+# --- 1. DASHBOARD ---
 if menu == "📊 Dashboard":
     st.markdown("<div class='main-header'>Cuadro de Mando Integral</div>", unsafe_allow_html=True)
-    
     conn = get_conn()
     col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
-    
     total_acc = pd.read_sql("SELECT count(*) FROM incidentes", conn).iloc[0,0]
     total_cap = pd.read_sql("SELECT count(*) FROM capacitaciones", conn).iloc[0,0]
     alertas = get_alertas()
-    
-    col_kpi1.metric("Accidentes Totales", total_acc)
+    col_kpi1.metric("Accidentes", total_acc)
     col_kpi2.metric("Capacitaciones", total_cap)
-    col_kpi3.metric("Alertas Activas", len(alertas), delta_color="inverse")
-    
+    col_kpi3.metric("Alertas", len(alertas), delta_color="inverse")
     st.divider()
-    
     c1, c2 = st.columns(2)
     with c1:
-        st.subheader("Estado de EPP")
+        st.subheader("Stock EPP")
         df_epp = pd.read_sql("SELECT producto, stock_actual FROM inventario_epp", conn)
         if not df_epp.empty:
-            fig = px.bar(df_epp, x='producto', y='stock_actual', title="Stock EPP", color='stock_actual', color_continuous_scale='RdYlGn')
+            fig = px.bar(df_epp, x='producto', y='stock_actual', color='stock_actual')
             st.plotly_chart(fig, use_container_width=True)
-    
     with c2:
-        st.subheader("Estado Personal")
+        st.subheader("Personal")
         df_per = pd.read_sql("SELECT estado, count(*) as count FROM personal GROUP BY estado", conn)
         if not df_per.empty:
-            fig2 = px.pie(df_per, values='count', names='estado', title="Distribución Personal")
+            fig2 = px.pie(df_per, values='count', names='estado')
             st.plotly_chart(fig2, use_container_width=True)
-            
     if alertas:
         st.error("⚠️ Alertas Críticas:")
         for a in alertas: st.write(a)
     conn.close()
 
-# --- 2. MATRIZ IPER (VISUAL ISP) ---
+# --- 2. MATRIZ IPER ---
 elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Riesgos (ISP 2024)</div>", unsafe_allow_html=True)
     tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Ver Matriz", "📂 Carga Masiva", "➕ Crear Riesgo"])
@@ -338,135 +346,128 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                 conn.commit(); st.success("Guardado"); st.rerun()
     conn.close()
 
-# --- MÓDULO 3: GESTIÓN PERSONAS (OPTIMIZADO) ---
+# --- 3. GESTION PERSONAS (FIXED RUT EDIT) ---
 elif menu == "👥 Gestión Personas":
     st.markdown("<div class='main-header'>Gestión de Capital Humano</div>", unsafe_allow_html=True)
     conn = get_conn()
-    
-    # KPIs
     try:
         total = pd.read_sql("SELECT count(*) FROM personal", conn).iloc[0,0]
         activos = pd.read_sql("SELECT count(*) FROM personal WHERE estado='ACTIVO'", conn).iloc[0,0]
     except: total=0; activos=0
-    
     k1, k2, k3 = st.columns(3)
-    k1.metric("Dotación Total", total)
-    k2.metric("Personal Activo", activos)
-    k3.metric("Bajas / Inactivos", total - activos)
-    st.markdown("---")
-
-    tab_list, tab_carga, tab_new, tab_dig = st.tabs(["📋 Nómina Interactiva", "📂 Carga Masiva (Excel)", "➕ Ingreso Manual", "🗂️ Carpeta Digital"])
+    k1.metric("Dotación Total", total); k2.metric("Activos", activos); k3.metric("Bajas", total-activos)
     
-    # PESTAÑA 1: EDICIÓN
+    tab_list, tab_carga, tab_new, tab_dig = st.tabs(["📋 Nómina", "📂 Carga Masiva", "➕ Nuevo", "🗂️ Carpeta Digital"])
+    
     with tab_list:
-        st.info("💡 Edición directa habilitada. Modifica y pulsa 'Guardar'.")
-        df_p = pd.read_sql("SELECT rut, nombre, cargo, centro_costo, email, fecha_contrato, estado FROM personal", conn)
+        # TRUCO: Traemos rut como rut_old para comparar
+        df_p = pd.read_sql("SELECT rut, rut as rut_old, nombre, cargo, centro_costo, email, fecha_contrato, vigencia_examen_medico, estado FROM personal", conn)
         df_p['fecha_contrato'] = pd.to_datetime(df_p['fecha_contrato'], errors='coerce')
+        df_p['vigencia_examen_medico'] = pd.to_datetime(df_p['vigencia_examen_medico'], errors='coerce')
         
-        edited = st.data_editor(
-            df_p,
-            key="pro_editor",
-            use_container_width=True,
-            num_rows="dynamic",
+        edited = st.data_editor(df_p, key="pers_ed", use_container_width=True, num_rows="dynamic",
             column_config={
-                "rut": st.column_config.TextColumn("RUT", disabled=True),
-                "estado": st.column_config.SelectboxColumn("Estado", options=["ACTIVO", "INACTIVO", "LICENCIA"]),
+                "rut_old": None, # Ocultar auxiliar
+                "rut": st.column_config.TextColumn("RUT (Editable)"),
+                "fecha_contrato": st.column_config.DateColumn("Contrato", format="DD/MM/YYYY"),
+                "vigencia_examen_medico": st.column_config.DateColumn("Venc. Examen", format="DD/MM/YYYY"),
                 "cargo": st.column_config.SelectboxColumn("Cargo", options=LISTA_CARGOS),
-                "fecha_contrato": st.column_config.DateColumn("Fecha Contrato", format="DD/MM/YYYY")
-            }
-        )
-        
+                "estado": st.column_config.SelectboxColumn("Estado", options=["ACTIVO", "INACTIVO"])
+            })
         if st.button("💾 Guardar Cambios"):
             c = conn.cursor()
             for i, r in edited.iterrows():
-                fec = r['fecha_contrato']
-                if pd.isna(fec) or str(fec) == 'NaT': fec = date.today()
-                c.execute("""UPDATE personal SET nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=? WHERE rut=?""", 
-                          (r['nombre'], r['cargo'], r['centro_costo'], r['email'], r['estado'], fec, r['rut']))
-            conn.commit(); st.success("✅ Guardado"); time.sleep(1); st.rerun()
+                fec = r['fecha_contrato']; f_ex = r['vigencia_examen_medico']
+                if pd.isna(fec) or str(fec)=='NaT': fec = date.today()
+                if pd.isna(f_ex) or str(f_ex)=='NaT': f_ex = None
+                
+                # DETECTAR CAMBIO DE RUT
+                if r['rut'] != r['rut_old']:
+                    c.execute("UPDATE personal SET rut=?, nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=? WHERE rut=?", (r['rut'], r['nombre'], r['cargo'], r['centro_costo'], r['email'], r['estado'], fec, f_ex, r['rut_old']))
+                    # Actualizar cascada
+                    c.execute("UPDATE asistencia_capacitacion SET trabajador_rut=? WHERE trabajador_rut=?", (r['rut'], r['rut_old']))
+                    c.execute("UPDATE registro_epp SET rut_trabajador=? WHERE rut_trabajador=?", (r['rut'], r['rut_old']))
+                    c.execute("UPDATE registro_riohs SET rut_trabajador=? WHERE rut_trabajador=?", (r['rut'], r['rut_old']))
+                else:
+                    c.execute("UPDATE personal SET nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=? WHERE rut=?", (r['nombre'], r['cargo'], r['centro_costo'], r['email'], r['estado'], fec, f_ex, r['rut']))
+            conn.commit(); st.success("Guardado"); time.sleep(1); st.rerun()
 
-    # PESTAÑA 2: CARGA MASIVA (SOLUCIÓN DEL PROBLEMA)
     with tab_carga:
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            st.markdown("##### Plantilla")
-            df_t = pd.DataFrame({'RUT':['11.111.111-1'], 'NOMBRE':['Oscar Tiviño'], 'CARGO':['OPERADOR'], 'EMAIL':['correo@x.cl'], 'FECHA DE CONTRATO':['2024-01-01']})
-            b = io.BytesIO()
-            with pd.ExcelWriter(b, engine='openpyxl') as w: df_t.to_excel(w, index=False)
-            st.download_button("📥 Descargar Ejemplo", b.getvalue(), "plantilla_personal.xlsx")
-            
-        with c2:
-            st.markdown("##### Cargar Datos")
-            up = st.file_uploader("Seleccione archivo", type=['xlsx','csv'])
-            
-            # CHECKBOX CRÍTICO: Permite borrar a "Juan Perez" antes de cargar los reales
-            limpiar = st.toggle("🗑️ Eliminar datos existentes antes de cargar (Borrar ejemplo)", value=True)
-            
-            if up:
-                if st.button("🚀 Procesar Carga"):
-                    try:
-                        df = pd.read_excel(up) if up.name.endswith('xlsx') else pd.read_csv(up)
-                        c = conn.cursor()
-                        
-                        if limpiar:
-                            c.execute("DELETE FROM personal") # Esto borra a Juan Perez
-                            conn.commit()
-                        
-                        count = 0
-                        for i, r in df.iterrows():
-                            rut = str(r.get('RUT','')).strip()
-                            # Validación simple de RUT
-                            if len(rut) > 3: 
-                                fec_raw = r.get('FECHA DE CONTRATO')
-                                try: f = pd.to_datetime(fec_raw, errors='coerce').date()
-                                except: f = date.today()
-                                if pd.isna(f): f = date.today()
-                                
-                                c.execute("INSERT OR REPLACE INTO personal (rut, nombre, cargo, email, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", 
-                                         (rut, r.get('NOMBRE'), r.get('CARGO'), r.get('EMAIL'), f, 'ACTIVO'))
-                                count += 1
-                        conn.commit()
-                        st.success(f"✅ Carga Exitosa: {count} trabajadores ingresados.")
-                        time.sleep(1.5); st.rerun()
-                    except Exception as e:
-                        st.error(f"Error: {e}")
+        template_data = {'RUT': ['11.222.333-4'], 'NOMBRE': ['Juan Pérez'], 'CARGO': ['OPERADOR'], 'EMAIL': ['juan@empresa.com'], 'FECHA DE CONTRATO': ['2024-01-01']}
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer: pd.DataFrame(template_data).to_excel(writer, index=False)
+        st.download_button("📥 Plantilla", data=buffer.getvalue(), file_name="plantilla_personal.xlsx")
+        
+        up = st.file_uploader("Subir", type=['xlsx', 'csv'])
+        limpiar_db = st.checkbox("⚠️ Borrar TODA la base de datos antes de cargar", value=False)
+        if up:
+            if st.button("🚀 Procesar"):
+                try:
+                    df = pd.read_excel(up) if up.name.endswith('xlsx') else pd.read_csv(up)
+                    c = conn.cursor()
+                    if limpiar_db: c.execute("DELETE FROM personal")
+                    for i, r in df.iterrows():
+                        rut = str(r.get('RUT', '')).strip()
+                        try: f = pd.to_datetime(r.get('FECHA DE CONTRATO'), errors='coerce').date()
+                        except: f = date.today()
+                        if pd.isna(f): f = date.today()
+                        if len(rut) > 3:
+                            c.execute("INSERT OR REPLACE INTO personal (rut, nombre, cargo, email, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (rut, r.get('NOMBRE'), r.get('CARGO'), r.get('EMAIL'), f, 'ACTIVO'))
+                    conn.commit(); st.success("Cargado"); time.sleep(1.5); st.rerun()
+                except Exception as e: st.error(f"Error: {e}")
 
-    # PESTAÑA 3: INGRESO MANUAL
     with tab_new:
         with st.form("new_p"):
-            c1, c2 = st.columns(2)
-            r = c1.text_input("RUT"); n = c2.text_input("Nombre")
-            c3, c4 = st.columns(2)
-            ca = c3.selectbox("Cargo", LISTA_CARGOS); em = c4.text_input("Email")
-            if st.form_submit_button("Crear"): 
-                conn.execute("INSERT INTO personal (rut, nombre, cargo, email, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (r, n, ca, em, date.today(), 'ACTIVO'))
-                conn.commit(); st.success("OK")
+            c1, c2 = st.columns(2); r = c1.text_input("RUT"); n = c2.text_input("Nombre"); ca = c1.selectbox("Cargo", LISTA_CARGOS); em = c2.text_input("Email"); f_ex = c1.date_input("Vencimiento Examen Médico (Opcional)", value=None)
+            if st.form_submit_button("Registrar"):
+                try: conn.execute("INSERT INTO personal (rut, nombre, cargo, email, fecha_contrato, estado, vigencia_examen_medico) VALUES (?,?,?,?,?,?,?)", (r, n, ca, em, date.today(), 'ACTIVO', f_ex)); conn.commit(); st.success("Creado")
+                except: st.error("Error (RUT duplicado?)")
 
-    # PESTAÑA 4: CARPETA DIGITAL (VISOR)
     with tab_dig:
         df_all = pd.read_sql("SELECT rut, nombre FROM personal", conn)
         if not df_all.empty:
-            sel = st.selectbox("Trabajador:", df_all['rut'] + " - " + df_all['nombre'])
-            rut_sel = sel.split(" - ")[0]
-            
-            # Estado Documental Visual
-            col_a, col_b, col_c = st.columns(3)
-            odi = pd.read_sql("SELECT count(*) FROM asistencia_capacitacion WHERE trabajador_rut=?", conn, params=(rut_sel,)).iloc[0,0]
-            riohs = pd.read_sql("SELECT count(*) FROM registro_riohs WHERE rut_trabajador=?", conn, params=(rut_sel,)).iloc[0,0]
-            epp = pd.read_sql("SELECT count(*) FROM registro_epp WHERE rut_trabajador=?", conn, params=(rut_sel,)).iloc[0,0]
-            
-            col_a.metric("ODI/IRL", "Vigente" if odi > 0 else "Pendiente", delta_color="normal" if odi > 0 else "inverse")
-            col_b.metric("RIOHS", "Entregado" if riohs > 0 else "Pendiente", delta_color="normal" if riohs > 0 else "inverse")
-            col_c.metric("EPP", "Al día" if epp > 0 else "Sin Registro", delta_color="normal" if epp > 0 else "inverse")
-            
+            sel_worker = st.selectbox("Seleccionar Trabajador:", df_all['rut'] + " - " + df_all['nombre'])
+            rut_sel = sel_worker.split(" - ")[0]
+            st.subheader("🚦 Estado de Habilitación")
+            odi = pd.read_sql("SELECT count(*) FROM asistencia_capacitacion WHERE trabajador_rut=?", conn, params=(rut_sel,)).iloc[0,0] > 0
+            riohs = pd.read_sql("SELECT count(*) FROM registro_riohs WHERE rut_trabajador=?", conn, params=(rut_sel,)).iloc[0,0] > 0
+            epp = pd.read_sql("SELECT count(*) FROM registro_epp WHERE rut_trabajador=?", conn, params=(rut_sel,)).iloc[0,0] > 0
+            f_examen_raw = pd.read_sql("SELECT vigencia_examen_medico FROM personal WHERE rut=?", conn, params=(rut_sel,)).iloc[0,0]
+            examen_ok = False
+            if f_examen_raw:
+                try: 
+                    f_ex_dt = datetime.strptime(f_examen_raw, '%Y-%m-%d').date()
+                    if f_ex_dt >= date.today(): examen_ok = True
+                except: pass
+            habilitado = odi and riohs and epp and (examen_ok if f_examen_raw else True) 
+            col_sem1, col_sem2 = st.columns([1,3])
+            with col_sem1:
+                if habilitado: st.success("### ✅ HABILITADO")
+                else: st.error("### 🚫 NO HABILITADO")
+            with col_sem2:
+                c1, c2, c3, c4 = st.columns(4)
+                c1.write(f"{'✅' if odi else '❌'} ODI/IRL")
+                c2.write(f"{'✅' if riohs else '❌'} RIOHS")
+                c3.write(f"{'✅' if epp else '❌'} EPP")
+                c4.write(f"{'✅' if examen_ok else '⚠️'} Examen")
+            st.divider()
+            st.subheader("⚖️ Historial de Conducta")
+            hist = pd.read_sql("SELECT fecha, tipo, descripcion, gravedad FROM conducta_personal WHERE rut_trabajador=?", conn, params=(rut_sel,))
+            if not hist.empty: st.dataframe(hist, use_container_width=True)
+            else: st.info("Sin registros de conducta.")
+            with st.expander("➕ Agregar Registro de Conducta"):
+                with st.form("conducta_form"):
+                    f_c = st.date_input("Fecha Evento"); t_c = st.selectbox("Tipo", ["Amonestación Verbal", "Amonestación Escrita", "Felicitación", "Incidente"])
+                    g_c = st.selectbox("Gravedad", ["Leve", "Grave", "Gravísima", "Positiva"]); d_c = st.text_area("Descripción")
+                    if st.form_submit_button("Guardar Registro"):
+                        conn.execute("INSERT INTO conducta_personal (rut_trabajador, fecha, tipo, descripcion, gravedad) VALUES (?,?,?,?,?)", (rut_sel, f_c, t_c, d_c, g_c))
+                        conn.commit(); st.success("Registrado"); st.rerun()
             if QR_AVAILABLE:
-                qr = qrcode.make(f"SGSST|{rut_sel}")
-                b_qr = io.BytesIO(); qr.save(b_qr, format='PNG')
-                st.image(b_qr.getvalue(), width=150, caption="Credencial Digital")
-
+                st.divider(); qr = qrcode.make(f"SGSST|{rut_sel}"); b_qr = io.BytesIO(); qr.save(b_qr, format='PNG')
+                st.image(b_qr.getvalue(), width=100, caption="Credencial QR")
     conn.close()
 
-# --- 4. GESTOR DOCUMENTAL ---
+# --- 4. GESTOR DOCUMENTAL (IRL DESDE MATRIZ) ---
 elif menu == "⚖️ Gestor Documental":
     st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
@@ -475,7 +476,6 @@ elif menu == "⚖️ Gestor Documental":
         sel = st.selectbox("Trabajador:", df_p['rut'] + " - " + df_p['nombre'])
         if st.button("Generar IRL"):
             rut = sel.split(" - ")[0]; cargo = df_p[df_p['rut']==rut]['cargo'].values[0]
-            # Busca riesgos del puesto en la Matriz
             riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper WHERE puesto_trabajo LIKE ?", conn, params=(f'%{cargo}%',))
             if riesgos.empty: riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper LIMIT 3", conn)
             pdf = DocumentosLegalesPDF("IRL", "RG-GD-04").generar_irl({'nombre': sel.split(" - ")[1]}, riesgos.values.tolist())
