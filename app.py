@@ -37,7 +37,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v133_final_fix.db'
+DB_NAME = 'sgsst_v135_personnel_pro.db' # DB Nueva con campos de emergencia
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -94,7 +94,22 @@ def get_conn(): return sqlite3.connect(DB_NAME, check_same_thread=False)
 
 def init_db():
     conn = get_conn(); c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
+    
+    # RRHH MEJORADO (Campos de Emergencia y Salud)
+    c.execute('''CREATE TABLE IF NOT EXISTS personal (
+        rut TEXT PRIMARY KEY, 
+        nombre TEXT, 
+        cargo TEXT, 
+        centro_costo TEXT, 
+        fecha_contrato DATE, 
+        estado TEXT, 
+        vigencia_examen_medico DATE, 
+        email TEXT,
+        contacto_emergencia TEXT, -- Nuevo
+        fono_emergencia TEXT,     -- Nuevo
+        obs_medica TEXT           -- Nuevo (Alergias, Grupo Sangre)
+    )''')
+    
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (id INTEGER PRIMARY KEY AUTOINCREMENT, proceso TEXT, tipo_proceso TEXT, puesto_trabajo TEXT, tarea TEXT, es_rutinaria TEXT, peligro_factor TEXT, riesgo_asociado TEXT, tipo_riesgo TEXT, probabilidad INTEGER, consecuencia INTEGER, vep INTEGER, nivel_riesgo TEXT, medida_control TEXT, genero_obs TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, tema TEXT, tipo_actividad TEXT, responsable_rut TEXT, estado TEXT, duracion INTEGER, lugar TEXT, metodologia TEXT)''')
@@ -116,10 +131,8 @@ def init_db():
         c.execute("INSERT INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
         c.executemany("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion) VALUES (?,?,?,?)", [("Casco", 50, 5, "Bodega"), ("Lentes", 100, 10, "Bodega")])
         
-        c.execute("SELECT count(*) FROM personal")
-        data_p = c.fetchone()
-        if data_p is None or data_p[0] == 0:
-            c.execute("INSERT INTO personal VALUES (?,?,?,?,?,?,?,?)", ("12.345.678-9", "JUAN PEREZ", "OPERADOR", "FAENA", date.today(), "ACTIVO", None, "juan@empresa.cl"))
+        # ELIMINADO EL TRABAJADOR DE EJEMPLO AUTOMÁTICO (SOLICITUD DE ALAN)
+        # La tabla personal inicia VACÍA para no molestar.
             
         c.execute("SELECT count(*) FROM matriz_iper")
         data_m = c.fetchone()
@@ -256,7 +269,7 @@ if not st.session_state['logged_in']:
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V133 - FINAL FIXES")
+    st.caption("V135 - PERSONNEL FIX")
     with open(DB_NAME, "rb") as fp:
         st.download_button(label="💾 Respaldar BD", data=fp, file_name=f"backup_{date.today()}.db")
     menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
@@ -346,7 +359,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                 conn.commit(); st.success("Guardado"); st.rerun()
     conn.close()
 
-# --- 3. GESTION PERSONAS (FIXED RUT EDIT) ---
+# --- 3. GESTION PERSONAS (MEJORADO V135) ---
 elif menu == "👥 Gestión Personas":
     st.markdown("<div class='main-header'>Gestión de Capital Humano</div>", unsafe_allow_html=True)
     conn = get_conn()
@@ -357,22 +370,24 @@ elif menu == "👥 Gestión Personas":
     k1, k2, k3 = st.columns(3)
     k1.metric("Dotación Total", total); k2.metric("Activos", activos); k3.metric("Bajas", total-activos)
     
-    tab_list, tab_carga, tab_new, tab_dig = st.tabs(["📋 Nómina", "📂 Carga Masiva", "➕ Nuevo", "🗂️ Carpeta Digital"])
+    tab_list, tab_carga, tab_new, tab_dig = st.tabs(["📋 Nómina", "📂 Carga Masiva", "➕ Nuevo", "🗂️ Carpeta Digital (Semáforo)"])
     
     with tab_list:
-        # TRUCO: Traemos rut como rut_old para comparar
-        df_p = pd.read_sql("SELECT rut, rut as rut_old, nombre, cargo, centro_costo, email, fecha_contrato, vigencia_examen_medico, estado FROM personal", conn)
+        # CONSULTA ACTUALIZADA CON CAMPOS NUEVOS
+        df_p = pd.read_sql("SELECT rut, rut as rut_old, nombre, cargo, centro_costo, email, fecha_contrato, vigencia_examen_medico, contacto_emergencia, fono_emergencia, estado FROM personal", conn)
         df_p['fecha_contrato'] = pd.to_datetime(df_p['fecha_contrato'], errors='coerce')
         df_p['vigencia_examen_medico'] = pd.to_datetime(df_p['vigencia_examen_medico'], errors='coerce')
         
         edited = st.data_editor(df_p, key="pers_ed", use_container_width=True, num_rows="dynamic",
             column_config={
-                "rut_old": None, # Ocultar auxiliar
+                "rut_old": None,
                 "rut": st.column_config.TextColumn("RUT (Editable)"),
                 "fecha_contrato": st.column_config.DateColumn("Contrato", format="DD/MM/YYYY"),
                 "vigencia_examen_medico": st.column_config.DateColumn("Venc. Examen", format="DD/MM/YYYY"),
                 "cargo": st.column_config.SelectboxColumn("Cargo", options=LISTA_CARGOS),
-                "estado": st.column_config.SelectboxColumn("Estado", options=["ACTIVO", "INACTIVO"])
+                "estado": st.column_config.SelectboxColumn("Estado", options=["ACTIVO", "INACTIVO"]),
+                "contacto_emergencia": st.column_config.TextColumn("Contacto Emergencia"),
+                "fono_emergencia": st.column_config.TextColumn("Fono Emergencia")
             })
         if st.button("💾 Guardar Cambios"):
             c = conn.cursor()
@@ -381,25 +396,32 @@ elif menu == "👥 Gestión Personas":
                 if pd.isna(fec) or str(fec)=='NaT': fec = date.today()
                 if pd.isna(f_ex) or str(f_ex)=='NaT': f_ex = None
                 
-                # DETECTAR CAMBIO DE RUT
+                # UPDATE CON CAMPOS DE EMERGENCIA
                 if r['rut'] != r['rut_old']:
-                    c.execute("UPDATE personal SET rut=?, nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=? WHERE rut=?", (r['rut'], r['nombre'], r['cargo'], r['centro_costo'], r['email'], r['estado'], fec, f_ex, r['rut_old']))
-                    # Actualizar cascada
+                    c.execute("UPDATE personal SET rut=?, nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=?, contacto_emergencia=?, fono_emergencia=? WHERE rut=?", 
+                              (r['rut'], r['nombre'], r['cargo'], r['centro_costo'], r['email'], r['estado'], fec, f_ex, r['contacto_emergencia'], r['fono_emergencia'], r['rut_old']))
                     c.execute("UPDATE asistencia_capacitacion SET trabajador_rut=? WHERE trabajador_rut=?", (r['rut'], r['rut_old']))
                     c.execute("UPDATE registro_epp SET rut_trabajador=? WHERE rut_trabajador=?", (r['rut'], r['rut_old']))
                     c.execute("UPDATE registro_riohs SET rut_trabajador=? WHERE rut_trabajador=?", (r['rut'], r['rut_old']))
                 else:
-                    c.execute("UPDATE personal SET nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=? WHERE rut=?", (r['nombre'], r['cargo'], r['centro_costo'], r['email'], r['estado'], fec, f_ex, r['rut']))
+                    c.execute("UPDATE personal SET nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=?, contacto_emergencia=?, fono_emergencia=? WHERE rut=?", 
+                              (r['nombre'], r['cargo'], r['centro_costo'], r['email'], r['estado'], fec, f_ex, r['contacto_emergencia'], r['fono_emergencia'], r['rut']))
             conn.commit(); st.success("Guardado"); time.sleep(1); st.rerun()
 
     with tab_carga:
-        template_data = {'RUT': ['11.222.333-4'], 'NOMBRE': ['Juan Pérez'], 'CARGO': ['OPERADOR'], 'EMAIL': ['juan@empresa.com'], 'FECHA DE CONTRATO': ['2024-01-01']}
+        # PLANTILLA ACTUALIZADA
+        template_data = {
+            'RUT': ['11.222.333-4'], 'NOMBRE': ['Juan Pérez'], 'CARGO': ['OPERADOR'], 
+            'CENTRO_COSTO': ['FAENA'], 'EMAIL': ['juan@empresa.com'], 
+            'FECHA DE CONTRATO': ['2024-01-01'], 'VIGENCIA_EXAMEN': ['2025-01-01'],
+            'CONTACTO_EMERGENCIA': ['Maria Perez'], 'TELEFONO_EMERGENCIA': ['+56912345678']
+        }
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer: pd.DataFrame(template_data).to_excel(writer, index=False)
-        st.download_button("📥 Plantilla", data=buffer.getvalue(), file_name="plantilla_personal.xlsx")
+        st.download_button("📥 Descargar Plantilla", data=buffer.getvalue(), file_name="plantilla_personal_completa.xlsx")
         
         up = st.file_uploader("Subir", type=['xlsx', 'csv'])
-        limpiar_db = st.checkbox("⚠️ Borrar TODA la base de datos antes de cargar", value=False)
+        limpiar_db = st.checkbox("⚠️ Borrar TODA la base de datos antes de cargar (Limpia Ejemplo)", value=False)
         if up:
             if st.button("🚀 Procesar"):
                 try:
@@ -408,19 +430,30 @@ elif menu == "👥 Gestión Personas":
                     if limpiar_db: c.execute("DELETE FROM personal")
                     for i, r in df.iterrows():
                         rut = str(r.get('RUT', '')).strip()
+                        # Fechas Seguras
                         try: f = pd.to_datetime(r.get('FECHA DE CONTRATO'), errors='coerce').date()
                         except: f = date.today()
                         if pd.isna(f): f = date.today()
+                        
+                        try: f_ex = pd.to_datetime(r.get('VIGENCIA_EXAMEN'), errors='coerce').date()
+                        except: f_ex = None
+                        if pd.isna(f_ex): f_ex = None
+
                         if len(rut) > 3:
-                            c.execute("INSERT OR REPLACE INTO personal (rut, nombre, cargo, email, fecha_contrato, estado) VALUES (?,?,?,?,?,?)", (rut, r.get('NOMBRE'), r.get('CARGO'), r.get('EMAIL'), f, 'ACTIVO'))
+                            c.execute("""INSERT OR REPLACE INTO personal 
+                                (rut, nombre, cargo, centro_costo, email, fecha_contrato, estado, vigencia_examen_medico, contacto_emergencia, fono_emergencia) 
+                                VALUES (?,?,?,?,?,?,?,?,?,?)""", 
+                                (rut, r.get('NOMBRE'), r.get('CARGO'), r.get('CENTRO_COSTO'), r.get('EMAIL'), f, 'ACTIVO', f_ex, r.get('CONTACTO_EMERGENCIA'), r.get('TELEFONO_EMERGENCIA')))
                     conn.commit(); st.success("Cargado"); time.sleep(1.5); st.rerun()
                 except Exception as e: st.error(f"Error: {e}")
 
     with tab_new:
         with st.form("new_p"):
-            c1, c2 = st.columns(2); r = c1.text_input("RUT"); n = c2.text_input("Nombre"); ca = c1.selectbox("Cargo", LISTA_CARGOS); em = c2.text_input("Email"); f_ex = c1.date_input("Vencimiento Examen Médico (Opcional)", value=None)
+            c1, c2 = st.columns(2); r = c1.text_input("RUT"); n = c2.text_input("Nombre"); ca = c1.selectbox("Cargo", LISTA_CARGOS); em = c2.text_input("Email"); 
+            c3, c4 = st.columns(2); f_ex = c3.date_input("Vencimiento Examen (Opcional)", value=None); c_emer = c4.text_input("Contacto Emergencia")
+            f_emer = c3.text_input("Teléfono Emergencia"); obs = c4.text_input("Alergias/Obs Médica")
             if st.form_submit_button("Registrar"):
-                try: conn.execute("INSERT INTO personal (rut, nombre, cargo, email, fecha_contrato, estado, vigencia_examen_medico) VALUES (?,?,?,?,?,?,?)", (r, n, ca, em, date.today(), 'ACTIVO', f_ex)); conn.commit(); st.success("Creado")
+                try: conn.execute("INSERT INTO personal (rut, nombre, cargo, email, fecha_contrato, estado, vigencia_examen_medico, contacto_emergencia, fono_emergencia, obs_medica) VALUES (?,?,?,?,?,?,?,?,?,?)", (r, n, ca, em, date.today(), 'ACTIVO', f_ex, c_emer, f_emer, obs)); conn.commit(); st.success("Creado")
                 except: st.error("Error (RUT duplicado?)")
 
     with tab_dig:
@@ -428,11 +461,17 @@ elif menu == "👥 Gestión Personas":
         if not df_all.empty:
             sel_worker = st.selectbox("Seleccionar Trabajador:", df_all['rut'] + " - " + df_all['nombre'])
             rut_sel = sel_worker.split(" - ")[0]
+            
+            # --- DATOS EMERGENCIA ---
+            datos_p = pd.read_sql("SELECT contacto_emergencia, fono_emergencia, obs_medica, vigencia_examen_medico FROM personal WHERE rut=?", conn, params=(rut_sel,)).iloc[0]
+            st.info(f"🚑 Emergencia: {datos_p['contacto_emergencia']} - {datos_p['fono_emergencia']} | ⚕️ Obs: {datos_p['obs_medica']}")
+            
             st.subheader("🚦 Estado de Habilitación")
             odi = pd.read_sql("SELECT count(*) FROM asistencia_capacitacion WHERE trabajador_rut=?", conn, params=(rut_sel,)).iloc[0,0] > 0
             riohs = pd.read_sql("SELECT count(*) FROM registro_riohs WHERE rut_trabajador=?", conn, params=(rut_sel,)).iloc[0,0] > 0
             epp = pd.read_sql("SELECT count(*) FROM registro_epp WHERE rut_trabajador=?", conn, params=(rut_sel,)).iloc[0,0] > 0
-            f_examen_raw = pd.read_sql("SELECT vigencia_examen_medico FROM personal WHERE rut=?", conn, params=(rut_sel,)).iloc[0,0]
+            
+            f_examen_raw = datos_p['vigencia_examen_medico']
             examen_ok = False
             if f_examen_raw:
                 try: 
@@ -476,6 +515,7 @@ elif menu == "⚖️ Gestor Documental":
         sel = st.selectbox("Trabajador:", df_p['rut'] + " - " + df_p['nombre'])
         if st.button("Generar IRL"):
             rut = sel.split(" - ")[0]; cargo = df_p[df_p['rut']==rut]['cargo'].values[0]
+            # Busca riesgos del puesto en la Matriz
             riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper WHERE puesto_trabajo LIKE ?", conn, params=(f'%{cargo}%',))
             if riesgos.empty: riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper LIMIT 3", conn)
             pdf = DocumentosLegalesPDF("IRL", "RG-GD-04").generar_irl({'nombre': sel.split(" - ")[1]}, riesgos.values.tolist())
