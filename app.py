@@ -263,84 +263,118 @@ class DocumentosLegalesPDF:
 init_db()
 
 # ==============================================================================
-# BLOQUE DE INICIO DE SESIÓN (MEJORADO V137)
+# BLOQUE DE INICIO DE SESIÓN (DISEÑO PREMIUM V138)
 # ==============================================================================
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'user' not in st.session_state: st.session_state['user'] = "Invitado"
 
 if not st.session_state['logged_in']:
-    # 1. CSS Específico para el Login (Centrado, Sombra, Ocultar Sidebar)
-    st.markdown("""
+    # --- CONFIGURACIÓN VISUAL DEL LOGIN ---
+    # Imagen de fondo temática (Bosque/Madera industrial)
+    BG_IMAGE = "https://images.unsplash.com/photo-1621262923537-4b713539ba71?q=80&w=2670&auto=format&fit=crop"
+    
+    st.markdown(f"""
         <style>
-            [data-testid="stSidebar"] {display: none;} /* Oculta la barra lateral en el login */
-            .stApp {
-                background-color: #f0f2f6; /* Fondo gris suave para contraste */
-            }
-            .login-container {
-                background-color: white;
-                padding: 3rem;
-                border-radius: 15px;
-                box-shadow: 0 10px 25px rgba(0,0,0,0.1); /* Sombra elegante */
+            /* Ocultar elementos de Streamlit por defecto en el login */
+            [data-testid="stSidebar"] {{display: none;}}
+            [data-testid="stHeader"] {{visibility: hidden;}}
+            
+            /* Fondo de Pantalla Completa con Superposición Oscura */
+            .stApp {{
+                background-image: linear-gradient(rgba(0, 0, 0, 0.6), rgba(44, 62, 80, 0.8)), url("{BG_IMAGE}");
+                background-size: cover;
+                background-position: center;
+                background-attachment: fixed;
+            }}
+            
+            /* Contenedor de la Tarjeta de Login (Efecto Glassmorphism) */
+            .login-card {{
+                background-color: rgba(255, 255, 255, 0.95);
+                padding: 40px;
+                border-radius: 20px;
+                box-shadow: 0 20px 50px rgba(0,0,0,0.5);
                 text-align: center;
-                border-top: 6px solid #8B0000; /* Línea de color corporativo */
-                margin-top: 50px;
-            }
-            .login-logo {
-                font-size: 3.5rem;
+                margin-top: 80px;
+                border-top: 8px solid {COLOR_PRIMARY};
+            }}
+            
+            /* Tipografía */
+            .company-name {{
+                font-size: 2.2rem;
+                font-weight: 900;
+                color: {COLOR_SECONDARY};
+                margin-bottom: 0px;
+                text-transform: uppercase;
+                letter-spacing: -1px;
+            }}
+            .system-name {{
+                font-size: 0.9rem;
+                font-weight: 600;
+                color: #888;
+                margin-bottom: 30px;
+                text-transform: uppercase;
+                letter-spacing: 2px;
+            }}
+            
+            /* Icono animado (sutil) */
+            .icon-container {{
+                font-size: 4rem;
                 margin-bottom: 10px;
-            }
-            .login-title {
-                font-size: 1.8rem;
-                font-weight: 700;
-                color: #2C3E50;
-                margin-bottom: 5px;
-            }
-            .login-subtitle {
+                text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+            }}
+            
+            /* Input fields styling override */
+            div[data-testid="stTextInput"] input {{
+                border-radius: 10px;
+                border: 1px solid #e0e0e0;
+                padding: 12px;
                 font-size: 1rem;
-                color: #7f8c8d;
-                margin-bottom: 25px;
-            }
-            .footer-text {
-                font-size: 0.8rem;
-                color: #bdc3c7;
-                margin-top: 20px;
-            }
+            }}
+            div[data-testid="stTextInput"] input:focus {{
+                border-color: {COLOR_PRIMARY};
+                box-shadow: 0 0 0 2px rgba(139, 0, 0, 0.2);
+            }}
         </style>
     """, unsafe_allow_html=True)
 
-    # 2. Estructura Centrada
-    c1, c2, c3 = st.columns([1, 1.2, 1]) # Columnas para centrar la tarjeta
+    # --- ESTRUCTURA CENTRADA ---
+    col_spacer1, col_login, col_spacer2 = st.columns([1, 1.5, 1])
     
-    with c2:
-        # Inicio de la tarjeta HTML
-        st.markdown('<div class="login-container">', unsafe_allow_html=True)
+    with col_login:
+        st.markdown('<div class="login-card">', unsafe_allow_html=True)
         
-        # Encabezado
-        st.markdown('<div class="login-logo">🏗️</div>', unsafe_allow_html=True)
-        st.markdown('<div class="login-title">MADERAS GÁLVEZ</div>', unsafe_allow_html=True)
-        st.markdown('<div class="login-subtitle">ERP de Gestión SST | Acceso Seguro</div>', unsafe_allow_html=True)
+        # Logo e Identidad
+        st.markdown('<div class="icon-container">🌲</div>', unsafe_allow_html=True)
+        st.markdown('<div class="company-name">MADERAS GÁLVEZ</div>', unsafe_allow_html=True)
+        st.markdown('<div class="system-name">ERP S.G.S.S.T. | Acceso Seguro</div>', unsafe_allow_html=True)
         
-        # Formulario
-        u = st.text_input("Usuario", placeholder="Ej: admin", label_visibility="collapsed")
-        p = st.text_input("Contraseña", type="password", placeholder="••••••••", label_visibility="collapsed")
+        # Campos de Login
+        u = st.text_input("Usuario Corporativo", placeholder="Ingrese su usuario", label_visibility="collapsed")
+        p = st.text_input("Contraseña", type="password", placeholder="Ingrese su contraseña", label_visibility="collapsed")
         
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.write("") # Espaciador
         
-        # Botón con estilo primario
-        if st.button("🔒 INICIAR SESIÓN", type="primary", use_container_width=True):
+        # Botón de Ingreso
+        if st.button("INGRESAR AL SISTEMA", type="primary", use_container_width=True):
             if u == "admin" and p == "1234": 
                 st.session_state['logged_in'] = True
                 st.session_state['user'] = u
-                registrar_auditoria(u, "LOGIN", "Acceso Exitoso al Sistema")
+                registrar_auditoria(u, "LOGIN", "Inicio de sesión exitoso")
                 st.rerun()
             else:
-                st.error("🚫 Credenciales incorrectas. Intente nuevamente.")
+                st.error("🔒 Acceso denegado. Verifique sus credenciales.")
         
-        # Pie de la tarjeta
-        st.markdown('<div class="footer-text">© 2024 Departamento de Prevención de Riesgos</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True) # Fin de la tarjeta
+        st.markdown('</div>', unsafe_allow_html=True) # Cierre login-card
+        
+        # Footer flotante
+        st.markdown("""
+            <div style="text-align: center; color: rgba(255,255,255,0.7); font-size: 0.8rem; margin-top: 20px;">
+                © 2024 Departamento de Prevención de Riesgos<br>
+                Plataforma Segura SSL
+            </div>
+        """, unsafe_allow_html=True)
 
-    st.stop() # Detiene la ejecución para no mostrar el resto de la app
+    st.stop()
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
