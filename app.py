@@ -37,7 +37,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v136_pro_dash.db' # Mantenemos la misma DB para no perder datos
+DB_NAME = 'sgsst_v136_pro_dash.db'
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -97,18 +97,13 @@ LISTA_CONSECUENCIA = [1, 2, 4]
 def get_conn(): return sqlite3.connect(DB_NAME, check_same_thread=False)
 
 def check_and_add_column(cursor, table_name, column_name, column_type):
-    """Función de Auto-Reparación de Base de Datos"""
-    try:
-        cursor.execute(f"SELECT {column_name} FROM {table_name} LIMIT 1")
+    try: cursor.execute(f"SELECT {column_name} FROM {table_name} LIMIT 1")
     except sqlite3.OperationalError:
-        try:
-            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+        try: cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
         except: pass
 
 def init_db():
     conn = get_conn(); c = conn.cursor()
-    
-    # 1. Crear Tablas Base
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (id INTEGER PRIMARY KEY AUTOINCREMENT, proceso TEXT, tipo_proceso TEXT, puesto_trabajo TEXT, tarea TEXT, es_rutinaria TEXT, peligro_factor TEXT, riesgo_asociado TEXT, tipo_riesgo TEXT, probabilidad INTEGER, consecuencia INTEGER, vep INTEGER, nivel_riesgo TEXT, medida_control TEXT, genero_obs TEXT)''')
@@ -124,13 +119,11 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, usuario TEXT, accion TEXT, detalle TEXT)''')
 
-    # 2. AUTO-REPARACIÓN DE COLUMNAS
     check_and_add_column(c, "personal", "contacto_emergencia", "TEXT")
     check_and_add_column(c, "personal", "fono_emergencia", "TEXT")
     check_and_add_column(c, "personal", "obs_medica", "TEXT")
     check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE")
 
-    # 3. Seed Controlado
     c.execute("SELECT count(*) FROM usuarios")
     data_u = c.fetchone()
     if data_u is None or data_u[0] == 0:
@@ -253,7 +246,7 @@ class DocumentosLegalesPDF:
 # ==============================================================================
 init_db()
 
-# --- LOGIN (DISEÑO PERSONALIZADO V137) ---
+# --- LOGIN (DISEÑO V138 - LOGO DENTRO Y SIN SCROLL) ---
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'user' not in st.session_state: st.session_state['user'] = "Invitado"
 
@@ -263,14 +256,20 @@ if not st.session_state['logged_in']:
     
     st.markdown(f"""
         <style>
-            [data-testid="stSidebar"] {{display: none;}}
-            [data-testid="stHeader"] {{visibility: hidden;}}
+            /* BLOQUEAR SCROLL GLOBAL */
             .stApp {{
                 background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.7)), url("{BG_IMAGE}");
                 background-size: cover;
                 background-position: center;
                 background-attachment: fixed;
+                overflow: hidden; /* NO SCROLL */
+                height: 100vh;
             }}
+            
+            [data-testid="stSidebar"] {{display: none;}}
+            [data-testid="stHeader"] {{visibility: hidden;}}
+            
+            /* Tarjeta de Login */
             .login-card {{
                 background-color: rgba(255, 255, 255, 0.95);
                 backdrop-filter: blur(10px);
@@ -278,47 +277,56 @@ if not st.session_state['logged_in']:
                 border-radius: 20px;
                 box-shadow: 0 20px 50px rgba(0,0,0,0.5);
                 text-align: center;
-                margin-top: 80px;
+                margin-top: 60px; /* Ajuste para centrar mejor en pantalla fija */
                 border-top: 8px solid {COLOR_PRIMARY};
             }}
+            
+            /* Inputs Estilizados */
             div[data-testid="stTextInput"] input {{
                 border-radius: 10px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid #ccc;
                 padding: 12px;
                 font-size: 1rem;
+                background-color: #f9f9f9;
             }}
             div[data-testid="stTextInput"] input:focus {{
                 border-color: {COLOR_PRIMARY};
-                box-shadow: 0 0 0 2px rgba(139, 0, 0, 0.2);
+                box-shadow: 0 0 5px rgba(139, 0, 0, 0.3);
+                background-color: #fff;
             }}
         </style>
     """, unsafe_allow_html=True)
 
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
+        # APERTURA DE TARJETA
         st.markdown('<div class="login-card">', unsafe_allow_html=True)
-        # LOGO SEPARADO
-        st.markdown(f'<img src="{LOGO_URL}" style="width: 80%; margin-bottom: 40px; display: block; margin-left: auto; margin-right: auto;">', unsafe_allow_html=True)
         
-        st.markdown("**ACCESO PLATAFORMA SGSST**")
+        # LOGO (DENTRO DEL CUADRO BLANCO)
+        st.markdown(f'<img src="{LOGO_URL}" style="width: 80%; max-width: 250px; margin-bottom: 30px; display: block; margin-left: auto; margin-right: auto;">', unsafe_allow_html=True)
+        
+        st.markdown("<h4 style='color:#555; margin-bottom:20px;'>ACCESO PLATAFORMA SGSST</h4>", unsafe_allow_html=True)
         
         # INPUTS
-        u = st.text_input("Usuario", placeholder="Usuario", label_visibility="collapsed")
-        p = st.text_input("Contraseña", type="password", placeholder="Contraseña", label_visibility="collapsed")
-        st.write("") # Espaciador visual
+        u = st.text_input("Usuario", placeholder="Ingrese usuario", label_visibility="collapsed")
+        p = st.text_input("Contraseña", type="password", placeholder="Ingrese contraseña", label_visibility="collapsed")
+        
+        st.write("") # Espacio
         
         if st.button("INGRESAR AL SISTEMA", type="primary", use_container_width=True):
             if u == "admin" and p == "1234": 
                 st.session_state['logged_in'] = True; st.session_state['user'] = u; registrar_auditoria(u, "LOGIN", "OK"); st.rerun()
             else: st.error("🔒 Credenciales incorrectas")
             
-        st.markdown('<br><small style="color:#999;">© 2024 Departamento de Prevención</small>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        # FOOTER (DENTRO DEL CUADRO)
+        st.markdown('<br><hr style="margin:10px 0;"><small style="color:#999; font-weight:bold;">© 2026 SEGAV</small>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True) # CIERRE TARJETA
+        
     st.stop()
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V137 - VISUAL UPDATE")
+    st.caption("V138 - LOGIN FIXED")
     with open(DB_NAME, "rb") as fp: st.download_button(label="💾 Respaldar BD", data=fp, file_name=f"backup_{date.today()}.db")
     menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
@@ -416,7 +424,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                 conn.commit(); st.success("Guardado"); st.rerun()
     conn.close()
 
-# --- 3. GESTION PERSONAS (MEJORADO V136) ---
+# --- 3. GESTION PERSONAS ---
 elif menu == "👥 Gestión Personas":
     st.markdown("<div class='main-header'>Gestión de Capital Humano</div>", unsafe_allow_html=True)
     conn = get_conn()
@@ -557,30 +565,6 @@ elif menu == "👥 Gestión Personas":
             if QR_AVAILABLE:
                 st.divider(); qr = qrcode.make(f"SGSST|{rut_sel}"); b_qr = io.BytesIO(); qr.save(b_qr, format='PNG')
                 st.image(b_qr.getvalue(), width=100, caption="Credencial QR")
-    conn.close()
-
-# --- 4. GESTOR DOCUMENTAL (IRL DESDE MATRIZ) ---
-elif menu == "⚖️ Gestor Documental":
-    st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
-    t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
-    conn = get_conn(); df_p = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
-    with t1:
-        sel = st.selectbox("Trabajador:", df_p['rut'] + " - " + df_p['nombre'])
-        if st.button("Generar IRL"):
-            rut = sel.split(" - ")[0]; cargo = df_p[df_p['rut']==rut]['cargo'].values[0]
-            riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper WHERE puesto_trabajo LIKE ?", conn, params=(f'%{cargo}%',))
-            if riesgos.empty: riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper LIMIT 3", conn)
-            pdf = DocumentosLegalesPDF("IRL", "RG-GD-04").generar_irl({'nombre': sel.split(" - ")[1]}, riesgos.values.tolist())
-            st.download_button("Descargar IRL", pdf.getvalue(), "IRL.pdf")
-    with t2:
-        sel_r = st.selectbox("Trabajador RIOHS:", df_p['rut'] + " | " + df_p['nombre'])
-        c_riohs = st_canvas(stroke_width=2, height=150, key="riohs")
-        if st.button("Registrar Entrega"):
-            if c_riohs.image_data is not None:
-                img = PILImage.fromarray(c_riohs.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); ib64 = base64.b64encode(b.getvalue()).decode()
-                conn.execute("INSERT INTO registro_riohs (fecha_entrega, rut_trabajador, nombre_trabajador, firma_b64) VALUES (?,?,?,?)", (date.today(), sel_r.split(" | ")[0], sel_r.split(" | ")[1], ib64)); conn.commit()
-                pdf = DocumentosLegalesPDF("RIOHS", "RG-GD-03").generar_riohs({'nombre': sel_r.split(" | ")[1], 'firma_b64': ib64})
-                st.download_button("Descargar", pdf.getvalue(), "RIOHS.pdf")
     conn.close()
 
 # --- 5. LOGISTICA EPP ---
