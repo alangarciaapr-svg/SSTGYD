@@ -97,13 +97,12 @@ LISTA_CONSECUENCIA = [1, 2, 4]
 def get_conn(): return sqlite3.connect(DB_NAME, check_same_thread=False)
 
 def check_and_add_column(cursor, table_name, column_name, column_type):
-    """Función de Auto-Reparación de Base de Datos"""
+    """Función de Auto-Reparación de Base de Datos para evitar errores de columnas faltantes"""
     try:
         cursor.execute(f"SELECT {column_name} FROM {table_name} LIMIT 1")
     except sqlite3.OperationalError:
         try:
             cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
-            print(f"Columna {column_name} agregada a {table_name}")
         except: pass
 
 def init_db():
@@ -125,12 +124,11 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, usuario TEXT, accion TEXT, detalle TEXT)''')
 
-    # 2. AUTO-REPARACIÓN DE COLUMNAS (SOLUCIÓN ERROR)
-    # Verifica si existen las columnas nuevas, si no, las crea.
+    # 2. AUTO-REPARACIÓN DE COLUMNAS (SOLUCIÓN DEL ERROR REPORTADO)
     check_and_add_column(c, "personal", "contacto_emergencia", "TEXT")
     check_and_add_column(c, "personal", "fono_emergencia", "TEXT")
     check_and_add_column(c, "personal", "obs_medica", "TEXT")
-    check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE") # Aseguramos esta también
+    check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE")
 
     # 3. Seed Controlado
     c.execute("SELECT count(*) FROM usuarios")
@@ -139,8 +137,8 @@ def init_db():
         c.execute("INSERT INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
         c.executemany("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion) VALUES (?,?,?,?)", [("Casco", 50, 5, "Bodega"), ("Lentes", 100, 10, "Bodega")])
         
-        # NOTA: NO insertamos trabajadores de ejemplo para no ensuciar la lista.
-            
+        # Validación: Si la tabla personal está vacía, NO insertamos nada (para no ensuciar carga masiva)
+        # Validación: Si la matriz está vacía, insertamos ejemplo
         c.execute("SELECT count(*) FROM matriz_iper")
         data_m = c.fetchone()
         if data_m is None or data_m[0] == 0:
@@ -262,193 +260,81 @@ class DocumentosLegalesPDF:
 # ==============================================================================
 init_db()
 
-# ==============================================================================
-# BLOQUE DE INICIO DE SESIÓN (DISEÑO PREMIUM V138)
-# ==============================================================================
+# --- LOGIN ---
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'user' not in st.session_state: st.session_state['user'] = "Invitado"
 
 if not st.session_state['logged_in']:
-    # --- CONFIGURACIÓN VISUAL DEL LOGIN ---
-    # Imagen de fondo temática (Bosque/Madera industrial)
-    BG_IMAGE = "https://i.imgur.com/aHPH6U6.jpeg"
-    
+    BG_IMAGE = "https://i.imgur.com/HwKEIOW.jpeg"
     st.markdown(f"""
         <style>
-            /* Ocultar elementos de Streamlit por defecto en el login */
             [data-testid="stSidebar"] {{display: none;}}
             [data-testid="stHeader"] {{visibility: hidden;}}
-            
-            /* Fondo de Pantalla Completa con Superposición Oscura */
-            .stApp {{
-                background-image: linear-gradient(rgba(0, 0, 0, 0.6), rgba(44, 62, 80, 0.8)), url("{BG_IMAGE}");
-                background-size: cover;
-                background-position: center;
-                background-attachment: fixed;
-            }}
-            
-            /* Contenedor de la Tarjeta de Login (Efecto Glassmorphism) */
-            .login-card {{
-                background-color: rgba(255, 255, 255, 0.95);
-                padding: 40px;
-                border-radius: 20px;
-                box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-                text-align: center;
-                margin-top: 80px;
-                border-top: 8px solid {COLOR_PRIMARY};
-            }}
-            
-            /* Tipografía */
-            .company-name {{
-                font-size: 2.2rem;
-                font-weight: 900;
-                color: {COLOR_SECONDARY};
-                margin-bottom: 0px;
-                text-transform: uppercase;
-                letter-spacing: -1px;
-            }}
-            .system-name {{
-                font-size: 0.9rem;
-                font-weight: 600;
-                color: #888;
-                margin-bottom: 30px;
-                text-transform: uppercase;
-                letter-spacing: 2px;
-            }}
-            
-            /* Icono animado (sutil) */
-            .icon-container {{
-                font-size: 4rem;
-                margin-bottom: 10px;
-                text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
-            }}
-            
-            /* Input fields styling override */
-            div[data-testid="stTextInput"] input {{
-                border-radius: 10px;
-                border: 1px solid #e0e0e0;
-                padding: 12px;
-                font-size: 1rem;
-            }}
-            div[data-testid="stTextInput"] input:focus {{
-                border-color: {COLOR_PRIMARY};
-                box-shadow: 0 0 0 2px rgba(139, 0, 0, 0.2);
-            }}
+            .stApp {{background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.7)), url("{BG_IMAGE}"); background-size: cover; background-position: center;}}
+            .login-card {{background-color: rgba(255, 255, 255, 0.90); backdrop-filter: blur(10px); padding: 40px; border-radius: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); text-align: center; margin-top: 80px; border-top: 8px solid {COLOR_PRIMARY};}}
+            .company-name {{font-size: 2.2rem; font-weight: 900; color: {COLOR_SECONDARY}; margin-bottom: 0px;}}
+            .system-name {{font-size: 0.9rem; font-weight: 600; color: #888; margin-bottom: 30px; letter-spacing: 2px;}}
+            .icon-container {{font-size: 4rem; margin-bottom: 10px;}}
+            div[data-testid="stTextInput"] input {{border-radius: 10px; border: 1px solid #e0e0e0; padding: 12px; font-size: 1rem;}}
         </style>
     """, unsafe_allow_html=True)
-
-    # --- ESTRUCTURA CENTRADA ---
-    col_spacer1, col_login, col_spacer2 = st.columns([1, 1.5, 1])
-    
-    with col_login:
-        st.markdown('<div class="login-card">', unsafe_allow_html=True)
-        
-        # Logo e Identidad
-        st.markdown('<div class="icon-container">🌲</div>', unsafe_allow_html=True)
-        st.markdown('<div class="company-name">MADERAS GÁLVEZ</div>', unsafe_allow_html=True)
-        st.markdown('<div class="system-name">ERP S.G.S.S.T. | Acceso Seguro</div>', unsafe_allow_html=True)
-        
-        # Campos de Login
-        u = st.text_input("Usuario Corporativo", placeholder="Ingrese su usuario", label_visibility="collapsed")
-        p = st.text_input("Contraseña", type="password", placeholder="Ingrese su contraseña", label_visibility="collapsed")
-        
-        st.write("") # Espaciador
-        
-        # Botón de Ingreso
-        if st.button("INGRESAR AL SISTEMA", type="primary", use_container_width=True):
+    c1, c2, c3 = st.columns([1, 1.5, 1])
+    with c2:
+        st.markdown('<div class="login-card"><div class="icon-container">🌲</div><div class="company-name">MADERAS GÁLVEZ</div><div class="system-name">ERP S.G.S.S.T.</div>', unsafe_allow_html=True)
+        u = st.text_input("Usuario", placeholder="Usuario", label_visibility="collapsed")
+        p = st.text_input("Contraseña", type="password", placeholder="Contraseña", label_visibility="collapsed")
+        st.write("")
+        if st.button("INGRESAR", type="primary", use_container_width=True):
             if u == "admin" and p == "1234": 
-                st.session_state['logged_in'] = True
-                st.session_state['user'] = u
-                registrar_auditoria(u, "LOGIN", "Inicio de sesión exitoso")
-                st.rerun()
-            else:
-                st.error("🔒 Acceso denegado. Verifique sus credenciales.")
-        
-        st.markdown('</div>', unsafe_allow_html=True) # Cierre login-card
-        
-        # Footer flotante
-        st.markdown("""
-            <div style="text-align: center; color: rgba(255,255,255,0.7); font-size: 0.8rem; margin-top: 20px;">
-                © 2024 Departamento de Prevención de Riesgos<br>
-                Plataforma Segura SSL
-            </div>
-        """, unsafe_allow_html=True)
-
+                st.session_state['logged_in'] = True; st.session_state['user'] = u; registrar_auditoria(u, "LOGIN", "OK"); st.rerun()
+            else: st.error("Acceso Denegado")
+        st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 with st.sidebar:
     st.title("MADERAS GÁLVEZ")
-    st.caption("V136 - MASTER PRO DASHBOARD")
-    
-    with open(DB_NAME, "rb") as fp:
-        st.download_button(label="💾 Respaldar Base de Datos", data=fp, file_name=f"backup_{date.today()}.db", mime="application/octet-stream")
-        
+    st.caption("V136 - PRO DASHBOARD")
+    with open(DB_NAME, "rb") as fp: st.download_button(label="💾 Respaldar BD", data=fp, file_name=f"backup_{date.today()}.db")
     menu = st.radio("MENÚ", ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"])
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
 
-# --- 1. DASHBOARD PRO ---
+# --- 1. DASHBOARD ---
 if menu == "📊 Dashboard":
-    st.markdown(f"""
-        <div style="background-color: {COLOR_SECONDARY}; padding: 20px; border-radius: 10px; margin-bottom: 20px; color: white;">
-            <h2 style="margin:0; color:white;">Bienvenido, {st.session_state['user'].capitalize()}</h2>
-            <p style="margin:0;">Sistema de Gestión de Seguridad y Salud en el Trabajo | {date.today().strftime('%d-%m-%Y')}</p>
-        </div>
-    """, unsafe_allow_html=True)
-    
+    st.markdown(f"""<div style="background-color: {COLOR_SECONDARY}; padding: 20px; border-radius: 10px; margin-bottom: 20px; color: white;"><h2 style="margin:0; color:white;">Bienvenido, {st.session_state['user'].capitalize()}</h2><p style="margin:0;">Sistema de Gestión SST | {date.today().strftime('%d-%m-%Y')}</p></div>""", unsafe_allow_html=True)
     conn = get_conn()
-    
-    # 1. Indicadores Clave (KPIs)
     k1, k2, k3, k4 = st.columns(4)
-    
     try:
         acc = pd.read_sql("SELECT count(*) FROM incidentes", conn).iloc[0,0]
         cap = pd.read_sql("SELECT count(*) FROM capacitaciones", conn).iloc[0,0]
         trabs = pd.read_sql("SELECT count(*) FROM personal WHERE estado='ACTIVO'", conn).iloc[0,0]
         alertas = get_alertas()
     except: acc=0; cap=0; trabs=0; alertas=[]
-    
-    # HTML Cards
-    def card(title, val, icon="📊"):
-        return f"""<div class='card-kpi'><h3>{title}</h3><h1>{icon} {val}</h1></div>"""
-        
-    k1.markdown(card("Dotación Activa", trabs, "👷"), unsafe_allow_html=True)
-    k2.markdown(card("Accidentes (Año)", acc, "🚑"), unsafe_allow_html=True)
+    def card(t, v, i): return f"<div class='card-kpi'><h3>{t}</h3><h1>{i} {v}</h1></div>"
+    k1.markdown(card("Dotación", trabs, "👷"), unsafe_allow_html=True)
+    k2.markdown(card("Accidentes", acc, "🚑"), unsafe_allow_html=True)
     k3.markdown(card("Capacitaciones", cap, "🎓"), unsafe_allow_html=True)
-    k4.markdown(card("Alertas Activas", len(alertas), "⚠️"), unsafe_allow_html=True)
-    
+    k4.markdown(card("Alertas", len(alertas), "⚠️"), unsafe_allow_html=True)
     st.markdown("---")
-    
-    # 2. Panel Principal (Alertas y Gráficos)
-    col_izq, col_der = st.columns([1, 2])
-    
-    with col_izq:
-        st.subheader("🔔 Centro de Alertas")
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        st.subheader("🔔 Alertas")
         if alertas:
             with st.container(height=300):
-                for a in alertas:
-                    st.markdown(f"<div class='alert-box alert-high'><span class='alert-icon'>⚠️</span>{a}</div>", unsafe_allow_html=True)
-        else:
-            st.success("✅ Todo bajo control. Sin alertas pendientes.")
-            
-    with col_der:
-        st.subheader("📈 Métricas de Gestión")
-        t1, t2 = st.tabs(["Stock EPP", "Estado Personal"])
-        
+                for a in alertas: st.markdown(f"<div class='alert-box alert-high'>⚠️ {a}</div>", unsafe_allow_html=True)
+        else: st.success("Todo OK")
+    with c2:
+        st.subheader("📈 Métricas")
+        t1, t2 = st.tabs(["Stock EPP", "Personal"])
         with t1:
             df_epp = pd.read_sql("SELECT producto, stock_actual, stock_minimo FROM inventario_epp", conn)
             if not df_epp.empty:
-                # Color condicional
-                cols = ['red' if x <= y else '#2e7d32' for x,y in zip(df_epp['stock_actual'], df_epp['stock_minimo'])]
-                fig = px.bar(df_epp, x='producto', y='stock_actual', title="Inventario EPP en Bodega", text='stock_actual')
-                fig.update_traces(marker_color=cols, textposition='outside')
+                fig = px.bar(df_epp, x='producto', y='stock_actual', title="Stock EPP", color='stock_actual')
                 st.plotly_chart(fig, use_container_width=True)
-                
         with t2:
             df_per = pd.read_sql("SELECT estado, count(*) as count FROM personal GROUP BY estado", conn)
             if not df_per.empty:
-                fig2 = px.pie(df_per, values='count', names='estado', title="Distribución de Dotación", hole=0.4)
+                fig2 = px.pie(df_per, values='count', names='estado', title="Dotación", hole=0.4)
                 st.plotly_chart(fig2, use_container_width=True)
-                
     conn.close()
 
 # --- 2. MATRIZ IPER ---
@@ -505,7 +391,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                 conn.commit(); st.success("Guardado"); st.rerun()
     conn.close()
 
-# --- 3. GESTION PERSONAS (MEJORADO V135) ---
+# --- 3. GESTION PERSONAS (MEJORADO V136) ---
 elif menu == "👥 Gestión Personas":
     st.markdown("<div class='main-header'>Gestión de Capital Humano</div>", unsafe_allow_html=True)
     conn = get_conn()
@@ -519,7 +405,6 @@ elif menu == "👥 Gestión Personas":
     tab_list, tab_carga, tab_new, tab_dig = st.tabs(["📋 Nómina", "📂 Carga Masiva", "➕ Nuevo", "🗂️ Carpeta Digital (Semáforo)"])
     
     with tab_list:
-        # CONSULTA ACTUALIZADA CON CAMPOS NUEVOS Y RUT OLD
         df_p = pd.read_sql("SELECT rut, rut as rut_old, nombre, cargo, centro_costo, email, fecha_contrato, vigencia_examen_medico, contacto_emergencia, fono_emergencia, estado FROM personal", conn)
         df_p['fecha_contrato'] = pd.to_datetime(df_p['fecha_contrato'], errors='coerce')
         df_p['vigencia_examen_medico'] = pd.to_datetime(df_p['vigencia_examen_medico'], errors='coerce')
@@ -555,7 +440,6 @@ elif menu == "👥 Gestión Personas":
             conn.commit(); st.success("Guardado"); time.sleep(1); st.rerun()
 
     with tab_carga:
-        # PLANTILLA ACTUALIZADA Y CORREGIDA
         template_data = {
             'RUT': ['11.222.333-4'], 'NOMBRE': ['Juan Pérez'], 'CARGO': ['OPERADOR'], 
             'CENTRO_COSTO': ['FAENA'], 'EMAIL': ['juan@empresa.com'], 
@@ -576,7 +460,6 @@ elif menu == "👥 Gestión Personas":
                     if limpiar_db: c.execute("DELETE FROM personal")
                     for i, r in df.iterrows():
                         rut = str(r.get('RUT', '')).strip()
-                        # Fechas Seguras
                         try: f = pd.to_datetime(r.get('FECHA DE CONTRATO'), errors='coerce').date()
                         except: f = date.today()
                         if pd.isna(f): f = date.today()
