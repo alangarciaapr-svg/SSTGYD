@@ -37,27 +37,9 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v167_pro_sig.db' # Actualización para firmas profesionales
+DB_NAME = 'sgsst_v165_boot_fix.db' # Nombre final estable
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
-
-# --- FUNCIÓN DE PROCESAMIENTO DE FIRMA (ERP PROFESIONAL) ---
-def process_signature_bg(img_data):
-    """
-    Toma la data del canvas (que tiene fondo gris) y vuelve el fondo transparente
-    para que se vea profesional en el PDF.
-    """
-    img = PILImage.fromarray(img_data.astype('uint8'), 'RGBA')
-    data = img.getdata()
-    new_data = []
-    for item in data:
-        # Si el pixel es el gris de fondo (#eeeeee es aprox 238), hacerlo transparente
-        if item[0] > 220 and item[1] > 220 and item[2] > 220:
-            new_data.append((255, 255, 255, 0)) # Transparente
-        else:
-            new_data.append(item) # Mantener tinta
-    img.putdata(new_data)
-    return img
 
 # --- MODO KIOSCO (FIRMA MÓVIL) ---
 query_params = st.query_params
@@ -74,17 +56,13 @@ if "mobile_sign" in query_params and query_params["mobile_sign"] == "true":
                 with st.form("mobile_sign_form"):
                     rut_input = st.text_input("Ingresa tu RUT (con guión)", placeholder="12345678-9")
                     st.write("Firma aquí:")
-                    # FONDO GRIS VISIBLE
-                    canvas_mobile = st_canvas(stroke_width=2, stroke_color="black", background_color="#eeeeee", height=200, width=300, key="mobile_c")
+                    canvas_mobile = st_canvas(stroke_width=2, stroke_color="black", background_color="#eee", height=200, width=300, key="mobile_c")
                     
                     if st.form_submit_button("ENVIAR FIRMA"):
                         if rut_input and canvas_mobile.image_data is not None:
                             check = pd.read_sql("SELECT id FROM asistencia_capacitacion WHERE capacitacion_id=? AND trabajador_rut=?", conn, params=(cap_id_mobile, rut_input))
                             if not check.empty:
-                                # PROCESAMIENTO INTELIGENTE
-                                img = process_signature_bg(canvas_mobile.image_data)
-                                b = io.BytesIO(); img.save(b, format='PNG'); img_str = base64.b64encode(b.getvalue()).decode()
-                                
+                                img = PILImage.fromarray(canvas_mobile.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); img_str = base64.b64encode(b.getvalue()).decode()
                                 conn.execute("UPDATE asistencia_capacitacion SET estado='FIRMADO', firma_b64=? WHERE capacitacion_id=? AND trabajador_rut=?", (img_str, cap_id_mobile, rut_input))
                                 conn.commit()
                                 st.success("✅ Firma registrada. Gracias.")
@@ -106,6 +84,15 @@ st.markdown(f"""
     .alert-box {{padding: 15px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #ddd; display: flex; align-items: center;}}
     .alert-icon {{font-size: 1.5rem; margin-right: 15px;}}
     .alert-high {{background-color: #fff5f5; border-left: 5px solid #c53030; color: #c53030;}}
+    
+    /* FIX: BORDE VISIBLE PARA LOS CUADROS DE FIRMA */
+    div[data-testid="stCanvas"] {{
+        border: 2px solid #a0a0a0 !important;
+        border-radius: 5px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        background-color: #ffffff;
+        margin-bottom: 10px;
+    }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -122,7 +109,8 @@ def check_and_add_column(cursor, table_name, column_name, column_type):
         try: cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
         except: pass
 
-if 'db_setup_complete' not in st.session_state:
+# --- FUNCIÓN DE INICIALIZACIÓN SIN CACHÉ (CORRECCIÓN DEL ERROR) ---
+def init_db():
     conn = get_conn(); c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
@@ -144,6 +132,8 @@ if 'db_setup_complete' not in st.session_state:
     check_and_add_column(c, "personal", "obs_medica", "TEXT")
     check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE")
     check_and_add_column(c, "inventario_epp", "precio", "INTEGER")
+    
+    # RIOHS Columns
     check_and_add_column(c, "registro_riohs", "nombre_difusor", "TEXT")
     check_and_add_column(c, "registro_riohs", "firma_difusor_b64", "TEXT")
     check_and_add_column(c, "registro_riohs", "email_copia", "TEXT")
@@ -170,7 +160,6 @@ if 'db_setup_complete' not in st.session_state:
             c.execute("INSERT INTO matriz_iper (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, genero_obs) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  ("Cosecha", "Operativo", "Operador", "Tala", "SI", "Pendiente", "Volcamiento", "Seguridad", 2, 4, 8, "IMPORTANTE", "Cabina ROPS", "Sin Obs"))
     conn.commit(); conn.close()
-    st.session_state['db_setup_complete'] = True
 
 def registrar_auditoria(usuario, accion, detalle):
     try: conn = get_conn(); conn.execute("INSERT INTO auditoria (fecha, usuario, accion, detalle) VALUES (?,?,?,?)", (datetime.now(), usuario, accion, detalle)); conn.commit(); conn.close()
@@ -373,7 +362,9 @@ class DocumentosLegalesPDF:
 # ==============================================================================
 # 4. FRONTEND
 # ==============================================================================
-init_db()
+if 'db_setup_complete' not in st.session_state:
+    init_db()
+    st.session_state['db_setup_complete'] = True
 
 # --- LOGIN ---
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
@@ -714,25 +705,22 @@ elif menu == "⚖️ Gestor Documental":
                 c3, c4 = st.columns(2)
                 with c3:
                     st.write("Firma Trabajador:")
-                    sig_worker = st_canvas(stroke_width=2, stroke_color="black", background_color="#eeeeee", height=150, width=400, key="sig_w_riohs_v167")
+                    sig_worker = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_w_riohs_v163")
                 with c4:
                     st.write("Firma Difusor:")
-                    sig_diffuser = st_canvas(stroke_width=2, stroke_color="black", background_color="#eeeeee", height=150, width=400, key="sig_d_riohs_v167")
+                    sig_diffuser = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_d_riohs_v163")
                 
                 if st.form_submit_button("Registrar Entrega RIOHS"):
                     if sig_worker.image_data is not None and sig_diffuser.image_data is not None and nom_dif:
-                        # Procesar Firmas
-                        img_w = process_signature_bg(sig_worker.image_data); b_w = io.BytesIO(); img_w.save(b_w, format='PNG'); str_w = base64.b64encode(b_w.getvalue()).decode()
-                        img_d = process_signature_bg(sig_diffuser.image_data); b_d = io.BytesIO(); img_d.save(b_d, format='PNG'); str_d = base64.b64encode(b_d.getvalue()).decode()
+                        img_w = PILImage.fromarray(sig_worker.image_data.astype('uint8'), 'RGBA'); b_w = io.BytesIO(); img_w.save(b_w, format='PNG'); str_w = base64.b64encode(b_w.getvalue()).decode()
+                        img_d = PILImage.fromarray(sig_diffuser.image_data.astype('uint8'), 'RGBA'); b_d = io.BytesIO(); img_d.save(b_d, format='PNG'); str_d = base64.b64encode(b_d.getvalue()).decode()
                         
-                        # Tipo simple para DB
                         tipo_db = "Digital" if "Digital" in tipo_ent else "Físico"
                         
                         conn.execute("""INSERT INTO registro_riohs (fecha_entrega, rut_trabajador, nombre_trabajador, tipo_entrega, firma_b64, nombre_difusor, firma_difusor_b64, email_copia) VALUES (?,?,?,?,?,?,?,?)""", 
                             (date.today(), rut_w, nom_w, tipo_db, str_w, nom_dif, str_d, email_w))
                         conn.commit()
                         
-                        # Generar PDF RIOHS (V157 - Texto Dinámico)
                         pdf = DocumentosLegalesPDF("REGISTRO DE ENTREGA DE REGLAMENTO INTERNO DE ORDEN, HIGIENE Y SEGURIDAD", "RG-SSTGD-03").generar_riohs({
                             'nombre': nom_w, 'rut': rut_w, 'cargo': worker_data['cargo'], 
                             'fecha': date.today().strftime("%d-%m-%Y"), 
@@ -821,12 +809,11 @@ elif menu == "🦺 Logística EPP":
                     if st.button("🗑️ Vaciar Carrito"): st.session_state.epp_cart = []; st.rerun()
                     
                     st.write("---"); st.write("Firma de Recepción (Trabajador):")
-                    firm_canvas = st_canvas(stroke_width=2, height=350, width=700, key="epp_sig_big", background_color="#eeeeee")
+                    firm_canvas = st_canvas(stroke_width=2, height=350, width=700, key="epp_sig_big")
                     
                     if st.button("✅ CONFIRMAR ENTREGA"):
                         if firm_canvas.image_data is not None:
-                            img = process_signature_bg(firm_canvas.image_data)
-                            b = io.BytesIO(); img.save(b, format='PNG'); img_str = base64.b64encode(b.getvalue()).decode()
+                            img = PILImage.fromarray(firm_canvas.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); img_str = base64.b64encode(b.getvalue()).decode()
                             conn.execute("INSERT INTO registro_epp (fecha_entrega, rut_trabajador, nombre_trabajador, cargo, lista_productos, firma_b64) VALUES (?,?,?,?,?,?)", (date.today(), rut_w, nom_w, cargo_w, str(st.session_state.epp_cart), img_str))
                             for item in st.session_state.epp_cart:
                                 conn.execute("UPDATE inventario_epp SET stock_actual = stock_actual - ? WHERE producto=?", (item['cant'], item['prod']))
