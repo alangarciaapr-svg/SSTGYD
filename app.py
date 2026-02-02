@@ -37,7 +37,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v165_stable_final.db' # Nombre definitivo para evitar conflictos
+DB_NAME = 'sgsst_v166_sig_fix.db' # Actualizado para evitar cache
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -85,13 +85,11 @@ st.markdown(f"""
     .alert-icon {{font-size: 1.5rem; margin-right: 15px;}}
     .alert-high {{background-color: #fff5f5; border-left: 5px solid #c53030; color: #c53030;}}
     
-    /* FIX FINAL: BORDE PARA LOS CUADROS DE FIRMA */
-    div[data-testid="stCanvas"] {{
-        border: 2px solid #a0a0a0 !important;
+    /* FIX V166: BORDE GRIS OBLIGATORIO PARA LOS CANVAS */
+    iframe[title="streamlit_drawable_canvas.st_canvas"] {{
+        border: 2px solid #ccc !important;
         border-radius: 5px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        background-color: #ffffff;
-        margin-bottom: 10px;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
     }}
     </style>
 """, unsafe_allow_html=True)
@@ -132,7 +130,7 @@ def init_db():
     check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE")
     check_and_add_column(c, "inventario_epp", "precio", "INTEGER")
     
-    # Nuevos campos para RIOHS
+    # RIOHS Columns
     check_and_add_column(c, "registro_riohs", "nombre_difusor", "TEXT")
     check_and_add_column(c, "registro_riohs", "firma_difusor_b64", "TEXT")
     check_and_add_column(c, "registro_riohs", "email_copia", "TEXT")
@@ -263,6 +261,7 @@ class DocumentosLegalesPDF:
     def generar_riohs(self, data):
         self._header()
         
+        # 1. TEXTO LEGAL
         legal_1 = """Se deja expresa constancia, de acuerdo a lo establecido en el artículo 156 del Código del Trabajo y DS 44 de la Ley 16.744 que, he recibido en forma gratuita un ejemplar del Reglamento Interno de Orden, Higiene y Seguridad de SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA."""
         self.elements.append(Paragraph(legal_1, ParagraphStyle('L1', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
         self.elements.append(Spacer(1, 10))
@@ -275,10 +274,13 @@ class DocumentosLegalesPDF:
         self.elements.append(Paragraph(legal_3, ParagraphStyle('L3', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
         self.elements.append(Spacer(1, 15))
         
+        # 2. TEXTO DE DECISIÓN (MODIFICADO V166)
         if "Digital" in data.get('tipo_entrega', ''):
             email_val = data.get('email', 'N/A')
+            # TEXTO DIGITAL
             texto_decision = f"<b>EL TRABAJADOR DECIDIO LA RECEPCION DEL RELGAMENTO INTERNO DE ORDEN HIGIENE Y SEGURIDAD DE MANERA DIGITAL AL SIGUIENTE CORREO: {email_val}</b>"
         else:
+            # TEXTO FISICO
             texto_decision = "<b>EL TRABAJADOR DECIDIO LA ENTREGA DEL REGLAMENTO INTERNO DE ORDEN HIGIENE Y SEGURIDAD DE MANERA IMPRESA.</b>"
             
         self.elements.append(Paragraph(texto_decision, ParagraphStyle('Decision', fontSize=10, leading=14, alignment=TA_CENTER, fontName='Helvetica-Bold')))
@@ -288,6 +290,7 @@ class DocumentosLegalesPDF:
         self.elements.append(Paragraph(legal_4, ParagraphStyle('L4', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
         self.elements.append(Spacer(1, 20))
         
+        # 3. DATOS TRABAJADOR
         sig_img = Paragraph("", self.styles['Normal'])
         if data.get('firma_b64'):
             try: sig_img = RLImage(io.BytesIO(base64.b64decode(data['firma_b64'])), width=200, height=80)
@@ -311,6 +314,7 @@ class DocumentosLegalesPDF:
         self.elements.append(t_worker)
         self.elements.append(Spacer(1, 20))
         
+        # 4. DATOS DIFUSOR
         sig_dif = Paragraph("", self.styles['Normal'])
         if data.get('firma_difusor'):
             try: sig_dif = RLImage(io.BytesIO(base64.b64decode(data['firma_difusor'])), width=180, height=70)
@@ -661,7 +665,7 @@ elif menu == "👥 Gestión Personas":
                 st.rerun()
     conn.close()
 
-# --- 4. GESTOR DOCUMENTAL (V157 - RIOHS FIX FINAL + V159 CANVAS BORDER + V160 KEY FIX + V161 CSS FIX) ---
+# --- 4. GESTOR DOCUMENTAL (V166 - RIOHS FINAL: NO X, NO EMAIL INPUT, AUTO TEXT) ---
 elif menu == "⚖️ Gestor Documental":
     st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
@@ -691,24 +695,25 @@ elif menu == "⚖️ Gestor Documental":
             with st.form("riohs_form"):
                 c1, c2 = st.columns(2)
                 with c1:
+                    # Selector V166: Solo selección de modo, sin inputs extra
                     tipo_ent = st.radio("Formato de Entrega:", ["Físico (Papel)", "Digital (Email)"], index=0)
                     if tipo_ent == "Digital (Email)":
-                        st.info(f"📧 Se enviará constancia al correo: {email_w}")
+                        st.info(f"📧 Se generará constancia digital para el correo: {email_w}")
                         if email_w == "Sin Email":
-                            st.error("⚠️ El trabajador no tiene email registrado. Actualícelo en Gestión Personas.")
+                            st.error("⚠️ El trabajador no tiene email registrado.")
                 with c2:
                     nom_dif = st.text_input("Nombre del Difusor (Quien entrega):")
                 
                 st.divider()
                 
-                # CANVAS: Background WHITE para PDF limpio, con borde CSS sólido de V161
+                # CANVAS: FONDO BLANCO PERO BORDE CSS FORZADO
                 c3, c4 = st.columns(2)
                 with c3:
                     st.write("Firma Trabajador:")
-                    sig_worker = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_w_riohs_v163")
+                    sig_worker = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_w_riohs_v166")
                 with c4:
                     st.write("Firma Difusor:")
-                    sig_diffuser = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_d_riohs_v163")
+                    sig_diffuser = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_d_riohs_v166")
                 
                 if st.form_submit_button("Registrar Entrega RIOHS"):
                     if sig_worker.image_data is not None and sig_diffuser.image_data is not None and nom_dif:
@@ -721,6 +726,7 @@ elif menu == "⚖️ Gestor Documental":
                             (date.today(), rut_w, nom_w, tipo_db, str_w, nom_dif, str_d, email_w))
                         conn.commit()
                         
+                        # Generar PDF V166 (Sin X, Texto Automático)
                         pdf = DocumentosLegalesPDF("REGISTRO DE ENTREGA DE REGLAMENTO INTERNO DE ORDEN, HIGIENE Y SEGURIDAD", "RG-SSTGD-03").generar_riohs({
                             'nombre': nom_w, 'rut': rut_w, 'cargo': worker_data['cargo'], 
                             'fecha': date.today().strftime("%d-%m-%Y"), 
