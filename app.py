@@ -37,7 +37,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v153_epp_max.db' # Actualizado para nuevas columnas de precio
+DB_NAME = 'sgsst_v153_epp_max.db' # Mantenemos la misma DB
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -117,13 +117,10 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, usuario TEXT, accion TEXT, detalle TEXT)''')
 
-    # AUTO-FIX COLUMNAS
     check_and_add_column(c, "personal", "contacto_emergencia", "TEXT")
     check_and_add_column(c, "personal", "fono_emergencia", "TEXT")
     check_and_add_column(c, "personal", "obs_medica", "TEXT")
     check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE")
-    
-    # MEJORA: Columna PRECIO en Inventario
     check_and_add_column(c, "inventario_epp", "precio", "INTEGER")
 
     c.execute("SELECT count(*) FROM usuarios")
@@ -141,7 +138,6 @@ def init_db():
             ("CHAQUETA ANTICORTE", 30, 3, "Bodega", 55000), ("FONO AUDITIVO", 50, 5, "Bodega", 7000),
             ("FONO PARA CASCO", 50, 5, "Bodega", 12000), ("BOTA FORESTAL", 30, 3, "Bodega", 85000)
         ]
-        # Insertar con precio (si la tabla está vacía)
         c.executemany("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion, precio) VALUES (?,?,?,?,?)", epp_list)
         
         c.execute("SELECT count(*) FROM matriz_iper")
@@ -186,7 +182,7 @@ def get_incidentes_mes():
     conn.close(); return res
 
 # ==============================================================================
-# 3. MOTOR DOCUMENTAL
+# 3. MOTOR DOCUMENTAL (PDF ACTUALIZADO 154 - RIOHS & EPP UNIFICADOS)
 # ==============================================================================
 class DocumentosLegalesPDF:
     def __init__(self, titulo_doc, codigo_doc):
@@ -194,13 +190,15 @@ class DocumentosLegalesPDF:
         self.styles = getSampleStyleSheet(); self.titulo = titulo_doc; self.codigo = codigo_doc; self.logo_url = "https://www.maderasgyd.cl/wp-content/uploads/2024/02/logo-maderas-gd-1.png"
 
     def _header(self):
+        # Header Estilo Exacto RG-SSTGD
+        # El codigo ahora es dinamico segun se pase en __init__
         try:
             logo = RLImage(self.logo_url, width=120, height=50)
         except:
             logo = Paragraph("<b>MADERAS G&D</b>", self.styles['Normal'])
             
         data = [
-            [logo, "SISTEMA DE GESTION\nSALUD Y SEGURIDAD EN EL TRABAJO", f"CODIGO: RG-SSTGD-01\nVERSION: 1.0\nFECHA: 05/01/2026"],
+            [logo, "SISTEMA DE GESTION\nSALUD Y SEGURIDAD EN EL TRABAJO", f"CODIGO: {self.codigo}\nVERSION: 1.0\nFECHA: 05/01/2026"],
             ["", Paragraph(f"<b>{self.titulo}</b>", ParagraphStyle('T', alignment=TA_CENTER, fontSize=11, fontName='Helvetica-Bold')), "PAGINA: 1 DE 1"]
         ]
         
@@ -251,9 +249,75 @@ class DocumentosLegalesPDF:
         self._signature_block(data['firma_b64']); self.doc.build(self.elements); self.buffer.seek(0); return self.buffer
 
     def generar_riohs(self, data):
-        self._header(); self.elements.append(Paragraph(f"ENTREGA RIOHS: {data['nombre']}", self.styles['Heading3']))
-        self.elements.append(Spacer(1, 20)); self.elements.append(Paragraph("Certifico recepción RIOHS (Art 156 CT).", self.styles['Normal']))
-        self.elements.append(Spacer(1, 40)); self._signature_block(data['firma_b64']); self.doc.build(self.elements); self.buffer.seek(0); return self.buffer
+        self._header()
+        
+        # 1. TEXTO LEGAL
+        legal_1 = """Se deja expresa constancia, de acuerdo a lo establecido en el artículo 156 del Código del Trabajo y DS 44 de la Ley 16.744 que, he recibido en forma gratuita un ejemplar del Reglamento Interno de Orden, Higiene y Seguridad de SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA."""
+        self.elements.append(Paragraph(legal_1, ParagraphStyle('L1', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
+        self.elements.append(Spacer(1, 10))
+        
+        legal_2 = """Declaro bajo mi firma haber recibido, leído y comprendido el presente Reglamento Interno de Orden, Higiene y Seguridad, del cual doy fe de conocer el contenido de éste y me hago responsable de su estricto cumplimiento en cada uno de sus artículos, no pudiendo alegar desconocimiento de su texto a contar de esta fecha."""
+        self.elements.append(Paragraph(legal_2, ParagraphStyle('L2', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
+        self.elements.append(Spacer(1, 10))
+        
+        legal_3 = """Este reglamento puede entregarse en electronico conforme se expresa en ordinario N°1086, del 06/03/15, departamento juridico, de la direccion del trabajo, siendo mi decision que la entrega de este documento se haga de acuerdo a lo siguiente:"""
+        self.elements.append(Paragraph(legal_3, ParagraphStyle('L3', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
+        self.elements.append(Spacer(1, 15))
+        
+        # 2. SELECCION FORMATO
+        self.elements.append(Paragraph("MARQUE CON UNA X LA OPCION DONDE DESEA RECIBIR LA COPIA DEL RIOHS", self.styles['Normal']))
+        t_opts = Table([["FORMATO PAPEL   [   ]", "FORMATO DIGITAL   [   ]"]], colWidths=[250, 250])
+        t_opts.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (-1,-1), colors.whitesmoke)]))
+        self.elements.append(t_opts)
+        self.elements.append(Spacer(1, 10))
+        
+        self.elements.append(Paragraph("SI ES DE FORMA DIGITAL AGREGUE SU CORREO ELECTRONICO O NUMERO DE TELEFONO:", self.styles['Normal']))
+        self.elements.append(Paragraph("__________________________________________________________________________________", self.styles['Normal']))
+        self.elements.append(Spacer(1, 15))
+        
+        legal_4 = """Asumo mi responsabilidad de dar lectura a su contenido y cumplir con las obligaciones, prohibiciones, normas de orden, higiene y seguridad que en el estan escritas, como asi tambien las dispocisiones y procedimientos que en forma posterior se emitan y/o modifiquen y que formen parte de este reglamento o que expresamente lo indique."""
+        self.elements.append(Paragraph(legal_4, ParagraphStyle('L4', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
+        self.elements.append(Spacer(1, 20))
+        
+        # 3. DATOS TRABAJADOR
+        sig_img = Paragraph("", self.styles['Normal'])
+        if data.get('firma_b64'):
+            try: sig_img = RLImage(io.BytesIO(base64.b64decode(data['firma_b64'])), width=200, height=80)
+            except: pass
+            
+        t_data = [
+            ["NOMBRE COMPLETO", data['nombre']],
+            ["RUT", data['rut']],
+            ["CARGO", data['cargo']],
+            ["FECHA DE ENTREGA", data['fecha']],
+            ["FIRMA", sig_img]
+        ]
+        t_worker = Table(t_data, colWidths=[150, 350], rowHeights=[25, 25, 25, 25, 90])
+        t_worker.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+            ('BACKGROUND', (0,0), (0,-1), HexColor(COLOR_PRIMARY)),
+            ('TEXTCOLOR', (0,0), (0,-1), colors.white),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('ALIGN', (1,4), (1,4), 'CENTER') # Centrar firma
+        ]))
+        self.elements.append(t_worker)
+        self.elements.append(Spacer(1, 20))
+        
+        # 4. DATOS DIFUSOR
+        t_difusor = [
+            ["NOMBRE DIFUSOR", "____________________________________"],
+            ["FIRMA Y TIMBRE", "\n\n\n"]
+        ]
+        t_dif = Table(t_difusor, colWidths=[150, 350])
+        t_dif.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+            ('BACKGROUND', (0,0), (0,-1), HexColor(COLOR_PRIMARY)),
+            ('TEXTCOLOR', (0,0), (0,-1), colors.white),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE')
+        ]))
+        self.elements.append(t_dif)
+        
+        self.doc.build(self.elements); self.buffer.seek(0); return self.buffer
 
     def generar_irl(self, data, riesgos):
         self._header(); self.elements.append(Paragraph(f"IRL: {data['nombre']}", self.styles['Heading3']))
@@ -294,6 +358,7 @@ if 'rol' not in st.session_state: st.session_state['rol'] = "VISITOR"
 if not st.session_state['logged_in']:
     BG_IMAGE = "https://i.imgur.com/aHPH6U6.jpeg"
     LOGO_URL = "https://www.maderasgyd.cl/wp-content/uploads/2024/02/logo-maderas-gd-1.png"
+    
     st.markdown(f"""
         <style>
             html, body, [data-testid="stAppViewContainer"] {{overflow: hidden !important; height: 100vh !important; margin: 0;}}
@@ -580,7 +645,7 @@ elif menu == "👥 Gestión Personas":
                 st.rerun()
     conn.close()
 
-# --- 4. GESTOR DOCUMENTAL ---
+# --- 4. GESTOR DOCUMENTAL (V154 - RIOHS UPDATE) ---
 elif menu == "⚖️ Gestor Documental":
     st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
@@ -597,20 +662,43 @@ elif menu == "⚖️ Gestor Documental":
                 if riesgos.empty: riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper LIMIT 3", conn)
                 pdf = DocumentosLegalesPDF("IRL", "RG-GD-04").generar_irl({'nombre': sel.split(" - ")[1]}, riesgos.values.tolist())
                 st.download_button("Descargar IRL", pdf.getvalue(), "IRL.pdf")
+        
         with t2:
+            st.subheader("Entrega de Reglamento Interno (RIOHS)")
             sel_r = st.selectbox("Trabajador RIOHS:", df_p['rut'] + " | " + df_p['nombre'])
-            c_riohs = st_canvas(stroke_width=2, height=150, key="riohs")
-            if st.button("Registrar Entrega"):
-                if c_riohs.image_data is not None:
-                    img = PILImage.fromarray(c_riohs.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); ib64 = base64.b64encode(b.getvalue()).decode()
-                    conn.execute("INSERT INTO registro_riohs (fecha_entrega, rut_trabajador, nombre_trabajador, firma_b64) VALUES (?,?,?,?)", (date.today(), sel_r.split(" | ")[0], sel_r.split(" | ")[1], ib64)); conn.commit()
-                    pdf = DocumentosLegalesPDF("RIOHS", "RG-GD-03").generar_riohs({'nombre': sel_r.split(" | ")[1], 'firma_b64': ib64})
-                    st.download_button("Descargar", pdf.getvalue(), "RIOHS.pdf")
+            
+            # Formulario RIOHS
+            with st.form("riohs_form"):
+                st.write("Firma de Recepción:")
+                c_riohs = st_canvas(stroke_width=2, height=200, width=500, key="riohs_sig")
+                
+                if st.form_submit_button("Registrar Entrega"):
+                    if c_riohs.image_data is not None:
+                        img = PILImage.fromarray(c_riohs.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); ib64 = base64.b64encode(b.getvalue()).decode()
+                        rut_w = sel_r.split(" | ")[0]
+                        nom_w = sel_r.split(" | ")[1]
+                        cargo_w = df_p[df_p['rut'] == rut_w]['cargo'].values[0]
+                        
+                        conn.execute("INSERT INTO registro_riohs (fecha_entrega, rut_trabajador, nombre_trabajador, firma_b64) VALUES (?,?,?,?)", (date.today(), rut_w, nom_w, ib64)); conn.commit()
+                        
+                        # Generar PDF RIOHS (V154)
+                        pdf = DocumentosLegalesPDF("REGISTRO DE ENTREGA DE REGLAMENTO INTERNO DE ORDEN, HIGIENE Y SEGURIDAD", "RG-SSTGD-03").generar_riohs({
+                            'nombre': nom_w, 'rut': rut_w, 'cargo': cargo_w, 'fecha': date.today().strftime("%d-%m-%Y"), 'firma_b64': ib64
+                        })
+                        
+                        st.session_state.riohs_pdf = pdf.getvalue()
+                        st.success("Entrega registrada.")
+                    else:
+                        st.warning("Firma requerida.")
+            
+            if 'riohs_pdf' in st.session_state:
+                st.download_button("📥 Descargar RIOHS", st.session_state.riohs_pdf, "RIOHS.pdf", "application/pdf")
+
         with t3:
             st.dataframe(pd.read_sql("SELECT * FROM registro_riohs", conn))
     conn.close()
 
-# --- 5. LOGISTICA EPP (V153 - MEJORAS COMPLETAS) ---
+# --- 5. LOGISTICA EPP (V153) ---
 elif menu == "🦺 Logística EPP":
     st.markdown("<div class='main-header'>Logística y Entrega EPP</div>", unsafe_allow_html=True)
     conn = get_conn()
