@@ -37,7 +37,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v164_stable.db' # NOMBRE NUEVO PARA EVITAR BLOQUEOS
+DB_NAME = 'sgsst_v165_stable_final.db' # Nombre definitivo para evitar conflictos
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -73,7 +73,7 @@ if "mobile_sign" in query_params and query_params["mobile_sign"] == "true":
         conn.close()
     st.stop() 
 
-# --- ESTILOS CSS GENERALES (CORREGIDOS PARA VER FIRMAS) ---
+# --- ESTILOS CSS GENERALES ---
 st.markdown(f"""
     <style>
     .main-header {{font-size: 2.2rem; font-weight: 800; color: {COLOR_SECONDARY}; margin-bottom: 0px;}}
@@ -85,15 +85,13 @@ st.markdown(f"""
     .alert-icon {{font-size: 1.5rem; margin-right: 15px;}}
     .alert-high {{background-color: #fff5f5; border-left: 5px solid #c53030; color: #c53030;}}
     
-    /* FIX V164: FORZAR BORDE VISIBLE EN LOS CANVAS DE FIRMA */
-    /* Esto hace que el cuadro blanco tenga un borde gris para que se vea en pantalla */
+    /* FIX FINAL: BORDE PARA LOS CUADROS DE FIRMA */
     div[data-testid="stCanvas"] {{
-        border: 2px solid #cccccc !important;
-        border-radius: 4px;
-        background-color: white;
-    }}
-    iframe {{
-        border: 1px solid #ccc; /* Respaldo para navegadores antiguos */
+        border: 2px solid #a0a0a0 !important;
+        border-radius: 5px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        background-color: #ffffff;
+        margin-bottom: 10px;
     }}
     </style>
 """, unsafe_allow_html=True)
@@ -101,7 +99,7 @@ st.markdown(f"""
 LISTA_CARGOS = ["GERENTE GENERAL", "PREVENCIONISTA DE RIESGOS", "JEFE DE PATIO", "OPERADOR DE ASERRADERO", "OPERADOR DE MAQUINARIA", "MOTOSIERRISTA", "ESTROBERO", "MECANICO", "ADMINISTRATIVO"]
 
 # ==============================================================================
-# 2. CAPA DE DATOS (SQL) - OPTIMIZADA
+# 2. CAPA DE DATOS (SQL)
 # ==============================================================================
 def get_conn(): return sqlite3.connect(DB_NAME, check_same_thread=False)
 
@@ -111,8 +109,7 @@ def check_and_add_column(cursor, table_name, column_name, column_type):
         try: cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
         except: pass
 
-# --- INICIALIZACIÓN OPTIMIZADA (SOLO CORRE UNA VEZ) ---
-if 'db_initialized' not in st.session_state:
+def init_db():
     conn = get_conn(); c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
@@ -134,6 +131,8 @@ if 'db_initialized' not in st.session_state:
     check_and_add_column(c, "personal", "obs_medica", "TEXT")
     check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE")
     check_and_add_column(c, "inventario_epp", "precio", "INTEGER")
+    
+    # Nuevos campos para RIOHS
     check_and_add_column(c, "registro_riohs", "nombre_difusor", "TEXT")
     check_and_add_column(c, "registro_riohs", "firma_difusor_b64", "TEXT")
     check_and_add_column(c, "registro_riohs", "email_copia", "TEXT")
@@ -160,7 +159,6 @@ if 'db_initialized' not in st.session_state:
             c.execute("INSERT INTO matriz_iper (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, genero_obs) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  ("Cosecha", "Operativo", "Operador", "Tala", "SI", "Pendiente", "Volcamiento", "Seguridad", 2, 4, 8, "IMPORTANTE", "Cabina ROPS", "Sin Obs"))
     conn.commit(); conn.close()
-    st.session_state['db_initialized'] = True # MARCA LA BD COMO INICIALIZADA PARA NO REPETIR
 
 def registrar_auditoria(usuario, accion, detalle):
     try: conn = get_conn(); conn.execute("INSERT INTO auditoria (fecha, usuario, accion, detalle) VALUES (?,?,?,?)", (datetime.now(), usuario, accion, detalle)); conn.commit(); conn.close()
@@ -363,7 +361,10 @@ class DocumentosLegalesPDF:
 # ==============================================================================
 # 4. FRONTEND
 # ==============================================================================
-init_db()
+# --- FIX: INICIALIZACIÓN SEGURA PARA EVITAR BUCLE DE CARGA ---
+if 'db_setup_complete' not in st.session_state:
+    init_db()
+    st.session_state['db_setup_complete'] = True
 
 # --- LOGIN ---
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
