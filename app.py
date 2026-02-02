@@ -37,7 +37,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v149_epp_final.db' # Mismo nombre DB V149 para mantener datos
+DB_NAME = 'sgsst_v149_epp_final.db'
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -181,18 +181,19 @@ def get_incidentes_mes():
     conn.close(); return res
 
 # ==============================================================================
-# 3. MOTOR DOCUMENTAL (PDF ACTUALIZADO)
+# 3. MOTOR DOCUMENTAL (PDF ACTUALIZADO 151)
 # ==============================================================================
 class DocumentosLegalesPDF:
     def __init__(self, titulo_doc, codigo_doc):
         self.buffer = io.BytesIO(); self.doc = SimpleDocTemplate(self.buffer, pagesize=letter, topMargin=30, leftMargin=30, rightMargin=30); self.elements = []
-        self.styles = getSampleStyleSheet(); self.titulo = titulo_doc; self.codigo = codigo_doc; self.logo_path = "logo_empresa.png"
+        self.styles = getSampleStyleSheet(); self.titulo = titulo_doc; self.codigo = codigo_doc; self.logo_url = "https://www.maderasgyd.cl/wp-content/uploads/2024/02/logo-maderas-gd-1.png"
 
     def _header(self):
-        logo = Paragraph("<b>MADERAS G&D</b>", self.styles['Normal'])
-        if os.path.exists(self.logo_path):
-            try: logo = RLImage(self.logo_path, width=120, height=50)
-            except: pass
+        # Logo desde URL
+        try:
+            logo = RLImage(self.logo_url, width=120, height=50)
+        except:
+            logo = Paragraph("<b>MADERAS G&D</b>", self.styles['Normal'])
             
         data = [
             [logo, "SISTEMA DE GESTION\nSALUD Y SEGURIDAD EN EL TRABAJO", f"CODIGO: RG-SSTGD-01\nVERSION: 1.0\nFECHA: 05/01/2026"],
@@ -214,18 +215,19 @@ class DocumentosLegalesPDF:
     def _signature_block(self, firma_b64):
         sig_img = Paragraph("", self.styles['Normal'])
         if firma_b64:
-            try: sig_img = RLImage(io.BytesIO(base64.b64decode(firma_b64)), width=120, height=50)
+            try: sig_img = RLImage(io.BytesIO(base64.b64decode(firma_b64)), width=250, height=100) # Firma mas grande
             except: pass
+        
         data = [[sig_img], ["__________________________"], ["FIRMA TRABAJADOR"]]; 
-        t = Table(data, colWidths=[200])
+        t = Table(data, colWidths=[300])
         t.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'BOTTOM')]))
-        self.elements.append(Spacer(1, 30)); self.elements.append(t)
+        self.elements.append(Spacer(1, 20)); self.elements.append(t)
 
     def generar_epp(self, data):
         self._header()
         
-        # TEXTO LEGAL MEJORADO Y GRANDE (11 pts)
-        texto_legal = """De conformidad a lo dispuesto en la <b>Ley 16.744 (Art. 68, inciso 3°)</b> sobre Accidentes del Trabajo y Enfermedades Profesionales, el <b>Decreto Supremo N° 594 (Art. 53)</b> y el <b>Decreto Supremo N° 44</b> del Ministerio del Trabajo y Previsión Social; la empresa <b>SOCIEDAD MADERERA GALVEZ Y DI GÉNOVA LTDA.</b> hace entrega gratuita de los Elementos de Protección Personal (EPP) adecuados al riesgo, los cuales el trabajador declara recibir en buen estado y se compromete a utilizar durante su jornada laboral."""
+        # TEXTO LEGAL COMPLETO (11 pts)
+        texto_legal = """De conformidad a lo dispuesto en la <b>Ley 16.744 (Art. 68, inciso 3°)</b> sobre Accidentes del Trabajo y Enfermedades Profesionales, el <b>Decreto Supremo N° 594 (Art. 53)</b> y el <b>Decreto Supremo N° 44</b> del Ministerio del Trabajo y Previsión Social; la empresa <b>SOCIEDAD MADERERA GALVEZ Y DI GÉNOVA LTDA.</b> hace entrega gratuita de los Elementos de Protección Personal (EPP) adecuados al riesgo."""
         
         self.elements.append(Paragraph(texto_legal, ParagraphStyle('Legal', fontSize=11, leading=14, alignment=TA_JUSTIFY)))
         self.elements.append(Spacer(1, 20))
@@ -261,6 +263,10 @@ class DocumentosLegalesPDF:
         ]))
         self.elements.append(t_prod)
         self.elements.append(Spacer(1, 20))
+        
+        # [cite_start]TEXTO DE ACEPTACION RESTAURADO [cite: 17, 18]
+        texto_comp = """El trabajador se compromete a mantener los Elementos de Protección Personal en buen estado y declara haberlos recibido en forma gratuita. Además, se compromete a utilizar los implementos durante la totalidad de su jornada laboral."""
+        self.elements.append(Paragraph(texto_comp, ParagraphStyle('Comp', fontSize=11, alignment=TA_JUSTIFY)))
         
         self._signature_block(data['firma_b64'])
         self.doc.build(self.elements)
@@ -680,7 +686,7 @@ elif menu == "⚖️ Gestor Documental":
             st.dataframe(pd.read_sql("SELECT * FROM registro_riohs", conn))
     conn.close()
 
-# --- 5. LOGISTICA EPP (V150 - FIRMA GRANDE + LEGAL UPDATED) ---
+# --- 5. LOGISTICA EPP (V150 - FIRMA GRANDE + LEGAL + AUTO-HIDE) ---
 elif menu == "🦺 Logística EPP":
     st.markdown("<div class='main-header'>Logística y Entrega EPP</div>", unsafe_allow_html=True)
     conn = get_conn()
@@ -733,7 +739,7 @@ elif menu == "🦺 Logística EPP":
                     
                     st.write("---")
                     st.write("Firma de Recepción (Trabajador):")
-                    # FIRMA GRANDE (SOLICITUD CUMPLIDA)
+                    # FIRMA GRANDE 700x350
                     firm_canvas = st_canvas(stroke_width=2, height=350, width=700, key="epp_sig_big")
                     
                     if st.button("✅ CONFIRMAR ENTREGA"):
@@ -747,7 +753,7 @@ elif menu == "🦺 Logística EPP":
                                 conn.execute("UPDATE inventario_epp SET stock_actual = stock_actual - ? WHERE producto=?", (item['cant'], item['prod']))
                             conn.commit()
                             
-                            # Generar PDF y Guardar en Session para Descarga
+                            # Generar PDF
                             pdf = DocumentosLegalesPDF("REGISTRO ENTREGA ELEMENTOS DE PROTECCION PERSONAL", "RG-SSTGD-01").generar_epp({
                                 'nombre': nom_w, 'rut': rut_w, 'cargo': cargo_w, 
                                 'fecha': date.today().strftime("%d-%m-%Y"), 
