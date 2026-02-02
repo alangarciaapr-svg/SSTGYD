@@ -37,7 +37,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v148_epp_pro.db'
+DB_NAME = 'sgsst_v149_epp_final.db' # Nueva DB para cargar la lista completa de EPP
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -73,7 +73,7 @@ if "mobile_sign" in query_params and query_params["mobile_sign"] == "true":
         conn.close()
     st.stop() 
 
-# --- ESTILOS CSS ---
+# --- ESTILOS CSS GENERALES ---
 st.markdown(f"""
     <style>
     .main-header {{font-size: 2.2rem; font-weight: 800; color: {COLOR_SECONDARY}; margin-bottom: 0px;}}
@@ -125,7 +125,31 @@ def init_db():
     c.execute("SELECT count(*) FROM usuarios")
     if c.fetchone()[0] == 0:
         c.execute("INSERT INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
-        c.executemany("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion) VALUES (?,?,?,?)", [("ZAPATOS DE SEGURIDAD", 50, 5, "Bodega"), ("LENTES DE SEGURIDAD", 100, 10, "Bodega"), ("GUANTE CABRITILLA", 100, 10, "Bodega"), ("CASCO", 50, 5, "Bodega")])
+        
+        # --- CARGA INICIAL COMPLETA DE EPP (SEGÚN DOCUMENTO) ---
+        epp_list = [
+            ("ZAPATOS DE SEGURIDAD", 50, 5, "Bodega"),
+            ("LENTES DE SEGURIDAD", 100, 10, "Bodega"),
+            ("GUANTE CABRITILLA", 100, 10, "Bodega"),
+            ("GUANTES MULTIFLEX", 100, 10, "Bodega"),
+            ("GORRO LEGIONARIO", 50, 5, "Bodega"),
+            ("ARNES DE SEGURIDAD", 20, 2, "Bodega"),
+            ("PROTECTOR SOLAR UV", 50, 5, "Bodega"),
+            ("CASCO DE SEGURIDAD", 50, 5, "Bodega"),
+            ("CABO DE VIDA", 20, 2, "Bodega"),
+            ("OVEROL TIPO PILOTO", 50, 5, "Bodega"),
+            ("TRAJE DE AGUA", 50, 5, "Bodega"),
+            ("PROTECTOR FACIAL", 30, 3, "Bodega"),
+            ("CHALECO REFLECTANTE", 50, 5, "Bodega"),
+            ("PANTALON ANTICORTE", 30, 3, "Bodega"),
+            ("MASCARILLAS DESECHABLES", 200, 20, "Bodega"),
+            ("ALCOHOL GEL", 50, 5, "Bodega"),
+            ("CHAQUETA ANTICORTE", 30, 3, "Bodega"),
+            ("FONO AUDITIVO", 50, 5, "Bodega"),
+            ("FONO PARA CASCO", 50, 5, "Bodega"),
+            ("BOTA FORESTAL", 30, 3, "Bodega")
+        ]
+        c.executemany("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion) VALUES (?,?,?,?)", epp_list)
         
         c.execute("SELECT count(*) FROM matriz_iper")
         if c.fetchone()[0] == 0:
@@ -169,38 +193,34 @@ def get_incidentes_mes():
     conn.close(); return res
 
 # ==============================================================================
-# 3. MOTOR DOCUMENTAL
+# 3. MOTOR DOCUMENTAL (PDF EXACTO AL REQUERIMIENTO)
 # ==============================================================================
 class DocumentosLegalesPDF:
     def __init__(self, titulo_doc, codigo_doc):
-        self.buffer = io.BytesIO(); self.doc = SimpleDocTemplate(self.buffer, pagesize=letter, topMargin=30); self.elements = []
+        self.buffer = io.BytesIO(); self.doc = SimpleDocTemplate(self.buffer, pagesize=letter, topMargin=30, leftMargin=30, rightMargin=30); self.elements = []
         self.styles = getSampleStyleSheet(); self.titulo = titulo_doc; self.codigo = codigo_doc; self.logo_path = "logo_empresa.png"
 
     def _header(self):
-        # Header Estilo "RG-GD-01" (Exacto al PDF subido)
-        # Col 1: Logo + Nombre Empresa
-        # Col 2: Sistema de Gestión
-        # Col 3: Codigo / Version
-        
+        # Header Estilo Exacto RG-SSTGD-01
         logo = Paragraph("<b>MADERAS G&D</b>", self.styles['Normal'])
         if os.path.exists(self.logo_path):
-            try: logo = RLImage(self.logo_path, width=100, height=40)
+            try: logo = RLImage(self.logo_path, width=120, height=50)
             except: pass
             
-        # Tabla Header Compleja
         data = [
-            [logo, "SISTEMA DE GESTION\nSALUD Y SEGURIDAD OCUPACIONAL", f"CODIGO: RSSO-GD-01\nVERSION: 1.0\nFECHA: {date.today().strftime('%d-%m-%Y')}"],
-            ["", Paragraph(f"<b>{self.titulo}</b>", ParagraphStyle('T', alignment=TA_CENTER, fontSize=12, fontName='Helvetica-Bold')), f"PAGINA: 1 DE 1"]
+            [logo, "SISTEMA DE GESTION\nSALUD Y SEGURIDAD OCUPACIONAL", f"CODIGO: RG-SSTGD-01\nVERSION: 1.0\nFECHA: 05/01/2026"],
+            ["", Paragraph(f"<b>{self.titulo}</b>", ParagraphStyle('T', alignment=TA_CENTER, fontSize=11, fontName='Helvetica-Bold')), "PAGINA: 1 DE 1"]
         ]
         
-        t = Table(data, colWidths=[120, 300, 100], rowHeights=[50, 30])
+        t = Table(data, colWidths=[140, 280, 120], rowHeights=[60, 25])
         t.setStyle(TableStyle([
             ('GRID', (0,0), (-1,-1), 0.5, colors.black),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
             ('SPAN', (0,0), (0,1)), # Unir celda logo vertical
-            ('FONTSIZE', (2,0), (2,0), 7), # Letra chica codigo
-            ('FONTSIZE', (1,0), (1,0), 9)
+            ('FONTSIZE', (2,0), (2,0), 8), # Letra chica codigo
+            ('FONTSIZE', (1,0), (1,0), 10),
+            ('BACKGROUND', (0,1), (-1,1), colors.whitesmoke)
         ]))
         self.elements.append(t); self.elements.append(Spacer(1, 15))
 
@@ -210,58 +230,55 @@ class DocumentosLegalesPDF:
             try: sig_img = RLImage(io.BytesIO(base64.b64decode(firma_b64)), width=120, height=50)
             except: pass
         
-        # Bloque de firma simple
         data = [[sig_img], ["__________________________"], ["FIRMA TRABAJADOR"]]; 
         t = Table(data, colWidths=[200])
-        t.setStyle(TableStyle([
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('VALIGN', (0,0), (-1,-1), 'BOTTOM')
-        ]))
-        self.elements.append(Spacer(1, 30))
-        self.elements.append(t)
+        t.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'BOTTOM')]))
+        self.elements.append(Spacer(1, 30)); self.elements.append(t)
 
     def generar_epp(self, data):
         self._header()
         
-        # Texto Legal
+        # Texto Legal (DS 44)
         texto_legal = """La empresa SOCIEDAD MADERERA GALVEZ Y DI GÉNOVA LTDA. Hace entrega de los elementos de protección personal de acuerdo a lo estipulado en la ley 16.744, Art. 68, inciso 3 y lo estipulado en el DS 44 del ministerio del trabajo y previsión social de Chile "Las empresas deberán proporcionar a sus trabajadores, los equipos e implementos necesarios, no pudiendo en caso alguno cobrarles su valor"."""
         self.elements.append(Paragraph(texto_legal, ParagraphStyle('Legal', fontSize=9, alignment=TA_JUSTIFY)))
         self.elements.append(Spacer(1, 15))
         
-        # Tabla Datos Trabajador
+        # Datos del Trabajador
         d_info = [
             [f"NOMBRE: {data['nombre']}", f"RUT: {data['rut']}"],
             [f"CARGO: {data['cargo']}", f"FECHA: {data['fecha']}"]
         ]
-        t_info = Table(d_info, colWidths=[260, 260], rowHeights=25)
-        t_info.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+        t_info = Table(d_info, colWidths=[270, 270], rowHeights=25)
+        t_info.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BACKGROUND', (0,0), (-1,-1), colors.whitesmoke)]))
         self.elements.append(t_info)
         self.elements.append(Spacer(1, 15))
         
         self.elements.append(Paragraph("<b>ELEMENTOS DE PROTECCION PERSONAL ENTREGADOS</b>", self.styles['Normal']))
         self.elements.append(Spacer(1, 5))
         
-        # Tabla de Productos (Carrito)
+        # Tabla de Items (Ocupando bien la hoja)
         try: items = ast.literal_eval(data['lista'])
         except: items = []
         
-        # Header Tabla Productos
         t_data = [["CANT", "ELEMENTO / PRODUCTO", "TALLA"]]
         for i in items:
             talla = i.get('talla', 'U') if i.get('talla') else 'U'
             t_data.append([str(i.get('cant','1')), i.get('prod','EPP'), talla])
             
-        t_prod = Table(t_data, colWidths=[50, 370, 100])
+        # Ancho total hoja carta ~612pts. Margenes 60. Ancho util ~550.
+        t_prod = Table(t_data, colWidths=[60, 400, 80])
         t_prod.setStyle(TableStyle([
             ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-            ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+            ('BACKGROUND', (0,0), (-1,0), HexColor(COLOR_PRIMARY)), # Color corporativo en header
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('FONTSIZE', (0,0), (-1,-1), 8)
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('FONTSIZE', (0,0), (-1,-1), 9)
         ]))
         self.elements.append(t_prod)
         self.elements.append(Spacer(1, 20))
         
-        # Compromiso Final
+        # Compromiso
         texto_comp = """El trabajador se compromete a mantener los Elementos de Protección Personal en buen estado y declara haberlos recibido en forma gratuita. Además, se compromete a utilizar los implementos durante la totalidad de su jornada laboral."""
         self.elements.append(Paragraph(texto_comp, ParagraphStyle('Comp', fontSize=9, alignment=TA_JUSTIFY)))
         
@@ -688,7 +705,7 @@ elif menu == "⚖️ Gestor Documental":
             st.dataframe(pd.read_sql("SELECT * FROM registro_riohs", conn))
     conn.close()
 
-# --- 5. LOGISTICA EPP (SHOPPING CART & PDF REPLICA) ---
+# --- 5. LOGISTICA EPP (V149 - CARRITO Y PDF EXACTO) ---
 elif menu == "🦺 Logística EPP":
     st.markdown("<div class='main-header'>Logística y Entrega EPP</div>", unsafe_allow_html=True)
     conn = get_conn()
@@ -774,8 +791,8 @@ elif menu == "🦺 Logística EPP":
                         
                         conn.commit()
                         
-                        # Generar PDF REPLICA RG-GD-01
-                        pdf = DocumentosLegalesPDF("REGISTRO ENTREGA ELEMENTOS DE PROTECCION PERSONAL", "RG-GD-01").generar_epp({
+                        # Generar PDF REPLICA RG-SSTGD-01
+                        pdf = DocumentosLegalesPDF("REGISTRO ENTREGA ELEMENTOS DE PROTECCION PERSONAL", "RG-SSTGD-01").generar_epp({
                             'nombre': nom_w, 'rut': rut_w, 'cargo': cargo_w, 
                             'fecha': date.today().strftime("%d-%m-%Y"), 
                             'lista': str(st.session_state.epp_cart), 
@@ -783,7 +800,7 @@ elif menu == "🦺 Logística EPP":
                         })
                         
                         st.success("Entrega registrada exitosamente.")
-                        st.download_button("📥 DESCARGAR ACTA RG-GD-01", pdf.getvalue(), f"EPP_{rut_w}.pdf", "application/pdf")
+                        st.download_button("📥 DESCARGAR ACTA RG-SSTGD-01", pdf.getvalue(), f"EPP_{rut_w}.pdf", "application/pdf")
                         
                         # Limpiar
                         st.session_state.epp_cart = []
@@ -793,17 +810,18 @@ elif menu == "🦺 Logística EPP":
                         st.warning("Debe firmar para confirmar.")
 
     with t2:
-        st.subheader("Gestión de Inventario")
+        st.subheader("Gestión de Inventario (Editar/Eliminar)")
         current_inv = pd.read_sql("SELECT * FROM inventario_epp", conn)
-        edited_inv = st.data_editor(current_inv, num_rows="dynamic", use_container_width=True)
+        edited_inv = st.data_editor(current_inv, num_rows="dynamic", use_container_width=True, key="inv_editor")
         
-        if st.button("💾 Actualizar Inventario"):
+        if st.button("💾 Guardar Cambios Inventario"):
+            # Borrar todo e insertar lo nuevo (Simple Sync)
             conn.execute("DELETE FROM inventario_epp")
             for i, r in edited_inv.iterrows():
                 conn.execute("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion) VALUES (?,?,?,?)", 
                              (r['producto'], r['stock_actual'], r['stock_minimo'], r['ubicacion']))
             conn.commit()
-            st.success("Inventario actualizado.")
+            st.success("Inventario actualizado correctamente.")
             time.sleep(1)
             st.rerun()
             
