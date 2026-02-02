@@ -37,7 +37,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v156_final_riohs.db' # Actualización final
+DB_NAME = 'sgsst_v156_final_riohs.db' # Mismo nombre para mantener datos
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -187,7 +187,7 @@ def get_incidentes_mes():
     conn.close(); return res
 
 # ==============================================================================
-# 3. MOTOR DOCUMENTAL (PDF ACTUALIZADO 156)
+# 3. MOTOR DOCUMENTAL (PDF ACTUALIZADO 157 - RIOHS FIX)
 # ==============================================================================
 class DocumentosLegalesPDF:
     def __init__(self, titulo_doc, codigo_doc):
@@ -267,14 +267,15 @@ class DocumentosLegalesPDF:
         self.elements.append(Paragraph(legal_3, ParagraphStyle('L3', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
         self.elements.append(Spacer(1, 15))
         
-        # 2. TEXTO DE DECISIÓN (MODIFICADO V156)
+        # 2. TEXTO DE DECISIÓN (MODIFICADO V156 - TEXTO DINÁMICO REQUERIDO)
         if "Digital" in data.get('tipo_entrega', ''):
-            texto_decision = f"<b>EL TRABAJADOR DECIDIO LA RECEPCION DEL REGLAMENTO INTERNO DE ORDEN HIGIENE Y SEGURIDAD DE MANERA DIGITAL AL SIGUIENTE CORREO: {data.get('email', 'N/A')}</b>"
+            email_val = data.get('email', 'N/A')
+            texto_decision = f"<b>EL TRABAJADOR DECIDIO LA RECEPCION DEL RELGAMENTO INTERNO DE ORDEN HIGIENE Y SEGURIDAD DE MANERA DIGITAL AL SIGUIENTE CORREO: {email_val}</b>"
         else:
             texto_decision = "<b>EL TRABAJADOR DECIDIO LA ENTREGA DEL REGLAMENTO INTERNO DE ORDEN HIGIENE Y SEGURIDAD DE MANERA IMPRESA.</b>"
             
-        self.elements.append(Paragraph(texto_decision, ParagraphStyle('Decision', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
-        self.elements.append(Spacer(1, 15))
+        self.elements.append(Paragraph(texto_decision, ParagraphStyle('Decision', fontSize=10, leading=14, alignment=TA_CENTER, fontName='Helvetica-Bold')))
+        self.elements.append(Spacer(1, 20))
         
         legal_4 = """Asumo mi responsabilidad de dar lectura a su contenido y cumplir con las obligaciones, prohibiciones, normas de orden, higiene y seguridad que en el estan escritas, como asi tambien las dispocisiones y procedimientos que en forma posterior se emitan y/o modifiquen y que formen parte de este reglamento o que expresamente lo indique."""
         self.elements.append(Paragraph(legal_4, ParagraphStyle('L4', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
@@ -652,7 +653,7 @@ elif menu == "👥 Gestión Personas":
                 st.rerun()
     conn.close()
 
-# --- 4. GESTOR DOCUMENTAL (V156 - RIOHS FINAL) ---
+# --- 4. GESTOR DOCUMENTAL (V157 - RIOHS FIX FINAL) ---
 elif menu == "⚖️ Gestor Documental":
     st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
@@ -674,7 +675,7 @@ elif menu == "⚖️ Gestor Documental":
             st.subheader("Entrega de Reglamento Interno (RIOHS)")
             sel_r = st.selectbox("Trabajador RIOHS:", df_p['rut'] + " | " + df_p['nombre'])
             
-            # NUEVA LÓGICA V156
+            # --- NUEVA LÓGICA RIOHS V157 ---
             rut_w = sel_r.split(" | ")[0]
             nom_w = sel_r.split(" | ")[1]
             worker_data = df_p[df_p['rut'] == rut_w].iloc[0]
@@ -682,44 +683,59 @@ elif menu == "⚖️ Gestor Documental":
             
             with st.form("riohs_form"):
                 c1, c2 = st.columns(2)
+                
+                # Selector de Tipo
                 with c1:
                     tipo_ent = st.radio("Formato de Entrega:", ["Físico (Papel)", "Digital (Email)"], index=0)
                     if tipo_ent == "Digital (Email)":
                         st.info(f"📧 Se enviará constancia al correo: {email_w}")
+                        if email_w == "Sin Email":
+                            st.error("⚠️ El trabajador no tiene email registrado. Actualícelo en Gestión Personas.")
+                
+                # Datos Difusor
                 with c2:
                     nom_dif = st.text_input("Nombre del Difusor (Quien entrega):")
                 
                 st.divider()
                 
-                # Canvas con keys únicos para evitar que no carguen
+                # Canvas VISIBLES (V157)
                 c3, c4 = st.columns(2)
                 with c3:
                     st.write("Firma Trabajador:")
-                    sig_worker = st_canvas(stroke_width=2, height=150, width=400, key="sig_w_riohs_v156")
+                    sig_worker = st_canvas(stroke_width=2, stroke_color="black", background_color="#eee", height=150, width=400, key="sig_w_riohs_v157")
                 with c4:
                     st.write("Firma Difusor:")
-                    sig_diffuser = st_canvas(stroke_width=2, height=150, width=400, key="sig_d_riohs_v156")
+                    sig_diffuser = st_canvas(stroke_width=2, stroke_color="black", background_color="#eee", height=150, width=400, key="sig_d_riohs_v157")
                 
                 if st.form_submit_button("Registrar Entrega RIOHS"):
                     if sig_worker.image_data is not None and sig_diffuser.image_data is not None and nom_dif:
+                        # Procesar Firmas
                         img_w = PILImage.fromarray(sig_worker.image_data.astype('uint8'), 'RGBA'); b_w = io.BytesIO(); img_w.save(b_w, format='PNG'); str_w = base64.b64encode(b_w.getvalue()).decode()
                         img_d = PILImage.fromarray(sig_diffuser.image_data.astype('uint8'), 'RGBA'); b_d = io.BytesIO(); img_d.save(b_d, format='PNG'); str_d = base64.b64encode(b_d.getvalue()).decode()
                         
+                        # Tipo simple para DB
                         tipo_db = "Digital" if "Digital" in tipo_ent else "Físico"
                         
-                        conn.execute("""INSERT INTO registro_riohs (fecha_entrega, rut_trabajador, nombre_trabajador, tipo_entrega, firma_b64, nombre_difusor, firma_difusor_b64, email_copia) VALUES (?,?,?,?,?,?,?,?)""", 
+                        # Guardar en BD
+                        conn.execute("""INSERT INTO registro_riohs 
+                            (fecha_entrega, rut_trabajador, nombre_trabajador, tipo_entrega, firma_b64, nombre_difusor, firma_difusor_b64, email_copia) 
+                            VALUES (?,?,?,?,?,?,?,?)""", 
                             (date.today(), rut_w, nom_w, tipo_db, str_w, nom_dif, str_d, email_w))
                         conn.commit()
                         
+                        # Generar PDF RIOHS (V157 - Texto Dinámico)
                         pdf = DocumentosLegalesPDF("REGISTRO DE ENTREGA DE REGLAMENTO INTERNO DE ORDEN, HIGIENE Y SEGURIDAD", "RG-SSTGD-03").generar_riohs({
                             'nombre': nom_w, 'rut': rut_w, 'cargo': worker_data['cargo'], 
                             'fecha': date.today().strftime("%d-%m-%Y"), 
-                            'firma_b64': str_w, 'tipo_entrega': tipo_db, 'email': email_w,
-                            'nombre_difusor': nom_dif, 'firma_difusor': str_d
+                            'firma_b64': str_w,
+                            'tipo_entrega': tipo_db,
+                            'email': email_w,
+                            'nombre_difusor': nom_dif,
+                            'firma_difusor': str_d
                         })
                         
                         st.session_state.riohs_pdf = pdf.getvalue()
-                        st.success("Entrega RIOHS registrada.")
+                        st.success("Entrega RIOHS registrada exitosamente.")
                     else:
                         st.warning("⚠️ Faltan datos (Firmas o Nombre Difusor).")
             
@@ -755,9 +771,17 @@ elif menu == "🦺 Logística EPP":
             if 'epp_cart' not in st.session_state: st.session_state.epp_cart = []
             if 'epp_step' not in st.session_state: st.session_state.epp_step = 1
             
+            # --- PASO 1: LLENAR CARRITO ---
             if st.session_state.epp_step == 1:
+                # 1. KIT RÁPIDO
                 if st.button("📦 Cargar Kit Básico (Nuevo Ingreso)"):
-                    kit = [{"prod": "CASCO DE SEGURIDAD", "cant": 1, "talla": "U", "precio": 12000}, {"prod": "LENTES DE SEGURIDAD", "cant": 1, "talla": "U", "precio": 3000}, {"prod": "GUANTE CABRITILLA", "cant": 1, "talla": "U", "precio": 4500}, {"prod": "CHALECO REFLECTANTE", "cant": 1, "talla": "L", "precio": 3500}]
+                    # Kit ejemplo: Casco, Lentes, Guantes, Chaleco
+                    kit = [
+                        {"prod": "CASCO DE SEGURIDAD", "cant": 1, "talla": "U", "precio": 12000},
+                        {"prod": "LENTES DE SEGURIDAD", "cant": 1, "talla": "U", "precio": 3000},
+                        {"prod": "GUANTE CABRITILLA", "cant": 1, "talla": "U", "precio": 4500},
+                        {"prod": "CHALECO REFLECTANTE", "cant": 1, "talla": "L", "precio": 3500}
+                    ]
                     st.session_state.epp_cart = kit
                     st.success("Kit cargado. Revise tallas.")
 
@@ -769,66 +793,104 @@ elif menu == "🦺 Logística EPP":
                 else:
                     with c1: 
                         prod_sel = st.selectbox("Elemento EPP", inv_df['producto'])
+                        # MEJORA: Alerta de recambio
                         last_del = pd.read_sql("SELECT fecha_entrega FROM registro_epp WHERE rut_trabajador=? AND lista_productos LIKE ? ORDER BY id DESC LIMIT 1", conn, params=(rut_w, f"%{prod_sel}%"))
                         if not last_del.empty:
                             f_last = datetime.strptime(last_del.iloc[0,0], '%Y-%m-%d').date()
                             dias = (date.today() - f_last).days
-                            if dias < 30: st.warning(f"⚠️ {prod_sel} entregado hace solo {dias} días ({f_last})")
-                            else: st.caption(f"✅ Última entrega: {f_last} (Hace {dias} días)")
+                            if dias < 30:
+                                st.warning(f"⚠️ {prod_sel} entregado hace solo {dias} días ({f_last})")
+                            else:
+                                st.caption(f"✅ Última entrega: {f_last} (Hace {dias} días)")
                     
                     with c2: cant_sel = st.number_input("Cant", min_value=1, value=1)
-                    with c3: talla_sel = st.selectbox("Talla", ["U", "S", "M", "L", "XL", "XXL", "38", "39", "40", "41", "42", "43", "44", "45"], index=0)
+                    with c3: 
+                        # MEJORA: Memoria de Talla (Simple - Busca ultimo registro)
+                        def_talla = "U"
+                        # Logica simplificada: Preselecciona U por defecto
+                        talla_sel = st.selectbox("Talla", ["U", "S", "M", "L", "XL", "XXL", "38", "39", "40", "41", "42", "43", "44", "45"], index=0)
                     with c4:
                         st.write("")
                         if st.button("➕ Agregar"):
                             row = inv_df[inv_df['producto'] == prod_sel].iloc[0]
                             if row['stock_actual'] >= cant_sel:
-                                st.session_state.epp_cart.append({"prod": prod_sel, "cant": cant_sel, "talla": talla_sel, "precio": int(row['precio'])})
+                                st.session_state.epp_cart.append({
+                                    "prod": prod_sel, "cant": cant_sel, "talla": talla_sel, "precio": int(row['precio'])
+                                })
                             else: st.error("Stock insuficiente.")
 
                 if st.session_state.epp_cart:
                     st.write("---"); st.markdown("##### Resumen de Entrega y Costos")
                     cart_df = pd.DataFrame(st.session_state.epp_cart)
+                    # Calculo Total
                     cart_df['Subtotal'] = cart_df['cant'] * cart_df['precio']
                     total_cost = cart_df['Subtotal'].sum()
-                    st.table(cart_df); st.metric("Costo Total Estimado", f"${total_cost:,.0f}")
                     
-                    if st.button("🗑️ Vaciar Carrito"): st.session_state.epp_cart = []; st.rerun()
+                    st.table(cart_df)
+                    st.metric("Costo Total Estimado", f"${total_cost:,.0f}")
                     
-                    st.write("---"); st.write("Firma de Recepción (Trabajador):")
+                    if st.button("🗑️ Vaciar Carrito"):
+                        st.session_state.epp_cart = []
+                        st.rerun()
+                    
+                    st.write("---")
+                    st.write("Firma de Recepción (Trabajador):")
                     firm_canvas = st_canvas(stroke_width=2, height=350, width=700, key="epp_sig_big")
                     
                     if st.button("✅ CONFIRMAR ENTREGA"):
                         if firm_canvas.image_data is not None:
                             img = PILImage.fromarray(firm_canvas.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); img_str = base64.b64encode(b.getvalue()).decode()
-                            conn.execute("INSERT INTO registro_epp (fecha_entrega, rut_trabajador, nombre_trabajador, cargo, lista_productos, firma_b64) VALUES (?,?,?,?,?,?)", (date.today(), rut_w, nom_w, cargo_w, str(st.session_state.epp_cart), img_str))
+                            
+                            conn.execute("INSERT INTO registro_epp (fecha_entrega, rut_trabajador, nombre_trabajador, cargo, lista_productos, firma_b64) VALUES (?,?,?,?,?,?)", 
+                                        (date.today(), rut_w, nom_w, cargo_w, str(st.session_state.epp_cart), img_str))
+                            
                             for item in st.session_state.epp_cart:
                                 conn.execute("UPDATE inventario_epp SET stock_actual = stock_actual - ? WHERE producto=?", (item['cant'], item['prod']))
                             conn.commit()
+                            
                             pdf = DocumentosLegalesPDF("REGISTRO ENTREGA ELEMENTOS DE PROTECCION PERSONAL", "RG-SSTGD-01").generar_epp({
-                                'nombre': nom_w, 'rut': rut_w, 'cargo': cargo_w, 'fecha': date.today().strftime("%d-%m-%Y"), 'lista': str(st.session_state.epp_cart), 'firma_b64': img_str
+                                'nombre': nom_w, 'rut': rut_w, 'cargo': cargo_w, 
+                                'fecha': date.today().strftime("%d-%m-%Y"), 
+                                'lista': str(st.session_state.epp_cart), 
+                                'firma_b64': img_str
                             })
-                            st.session_state.pdf_buffer = pdf.getvalue(); st.session_state.epp_step = 2; st.rerun()
-                        else: st.warning("Debe firmar para confirmar.")
+                            
+                            st.session_state.pdf_buffer = pdf.getvalue()
+                            st.session_state.epp_step = 2 
+                            st.rerun()
+                        else:
+                            st.warning("Debe firmar para confirmar.")
 
+            # --- PASO 2: DESCARGAR Y LIMPIAR ---
             elif st.session_state.epp_step == 2:
                 st.success("✅ Entrega registrada exitosamente.")
                 st.download_button(label="📥 DESCARGAR ACTA RG-SSTGD-01", data=st.session_state.pdf_buffer, file_name=f"EPP_{rut_w}.pdf", mime="application/pdf")
                 st.write("")
                 if st.button("🔄 Finalizar y Limpiar"):
-                    st.session_state.epp_cart = []; st.session_state.epp_step = 1; del st.session_state.pdf_buffer; st.rerun()
+                    st.session_state.epp_cart = []
+                    st.session_state.epp_step = 1
+                    del st.session_state.pdf_buffer
+                    st.rerun()
 
     with t2:
         st.subheader("Gestión de Inventario (Precios y Stock)")
         current_inv = pd.read_sql("SELECT * FROM inventario_epp", conn)
-        edited_inv = st.data_editor(current_inv, num_rows="dynamic", use_container_width=True, key="inv_editor", column_config={"precio": st.column_config.NumberColumn("Precio Unitario ($)", format="$%d")})
+        edited_inv = st.data_editor(current_inv, num_rows="dynamic", use_container_width=True, key="inv_editor",
+                                   column_config={
+                                       "precio": st.column_config.NumberColumn("Precio Unitario ($)", format="$%d")
+                                   })
+        
         if st.button("💾 Guardar Cambios Inventario"):
             conn.execute("DELETE FROM inventario_epp")
             for i, r in edited_inv.iterrows():
-                p = r.get('precio', 0); 
+                # Manejo seguro de precio
+                p = r.get('precio', 0)
                 if pd.isna(p): p = 0
-                conn.execute("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion, precio) VALUES (?,?,?,?,?)", (r['producto'], r['stock_actual'], r['stock_minimo'], r['ubicacion'], int(p)))
-            conn.commit(); st.success("Inventario actualizado."); time.sleep(1); st.rerun()
+                conn.execute("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion, precio) VALUES (?,?,?,?,?)", 
+                             (r['producto'], r['stock_actual'], r['stock_minimo'], r['ubicacion'], int(p)))
+            conn.commit()
+            st.success("Inventario actualizado.")
+            time.sleep(1); st.rerun()
             
     with t3:
         st.subheader("📜 Historial Detallado")
