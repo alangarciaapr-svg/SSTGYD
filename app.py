@@ -37,7 +37,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v156_final_riohs.db' # Mantenemos DB V156
+DB_NAME = 'sgsst_v160_riohs_fix.db' # Actualización V160
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -85,9 +85,10 @@ st.markdown(f"""
     .alert-icon {{font-size: 1.5rem; margin-right: 15px;}}
     .alert-high {{background-color: #fff5f5; border-left: 5px solid #c53030; color: #c53030;}}
     
-    /* FIX V159: BORDE PARA LOS IFRAMES (CANVAS) PARA QUE EL FONDO BLANCO SE VEA */
-    iframe[title="streamlit_drawable_canvas.st_canvas"] {{
-        border: 2px solid #ccc;
+    /* FIX V160: BORDE VISIBLE PARA LOS CUADROS DE FIRMA */
+    /* Esto asegura que el canvas blanco tenga un marco gris para saber donde firmar */
+    div[data-testid="stCanvas"] {{
+        border: 2px dashed #cccccc;
         border-radius: 5px;
     }}
     </style>
@@ -659,7 +660,7 @@ elif menu == "👥 Gestión Personas":
                 st.rerun()
     conn.close()
 
-# --- 4. GESTOR DOCUMENTAL (V157 - RIOHS FIX FINAL + V159 CANVAS BORDER) ---
+# --- 4. GESTOR DOCUMENTAL (V157 - RIOHS FIX FINAL + V159 CANVAS BORDER + V160 KEY FIX) ---
 elif menu == "⚖️ Gestor Documental":
     st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
@@ -699,14 +700,15 @@ elif menu == "⚖️ Gestor Documental":
                 
                 st.divider()
                 
-                # CANVAS: Background WHITE para PDF limpio, pero con borde CSS para visibilidad App
+                # CANVAS: Background WHITE para PDF limpio, con borde CSS.
+                # KEYS NUEVOS (V160) PARA FORZAR RE-RENDER
                 c3, c4 = st.columns(2)
                 with c3:
                     st.write("Firma Trabajador:")
-                    sig_worker = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_w_riohs_v159")
+                    sig_worker = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_w_riohs_fix_v160")
                 with c4:
                     st.write("Firma Difusor:")
-                    sig_diffuser = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_d_riohs_v159")
+                    sig_diffuser = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_d_riohs_fix_v160")
                 
                 if st.form_submit_button("Registrar Entrega RIOHS"):
                     if sig_worker.image_data is not None and sig_diffuser.image_data is not None and nom_dif:
