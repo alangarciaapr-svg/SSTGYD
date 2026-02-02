@@ -37,7 +37,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v156_final_riohs.db' # Mismo nombre para mantener datos
+DB_NAME = 'sgsst_v158_final.db' 
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -187,7 +187,7 @@ def get_incidentes_mes():
     conn.close(); return res
 
 # ==============================================================================
-# 3. MOTOR DOCUMENTAL (PDF ACTUALIZADO 157 - RIOHS FIX)
+# 3. MOTOR DOCUMENTAL (PDF ACTUALIZADO 156)
 # ==============================================================================
 class DocumentosLegalesPDF:
     def __init__(self, titulo_doc, codigo_doc):
@@ -267,7 +267,7 @@ class DocumentosLegalesPDF:
         self.elements.append(Paragraph(legal_3, ParagraphStyle('L3', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
         self.elements.append(Spacer(1, 15))
         
-        # 2. TEXTO DE DECISIÓN (MODIFICADO V156 - TEXTO DINÁMICO REQUERIDO)
+        # 2. TEXTO DE DECISIÓN (MODIFICADO V156)
         if "Digital" in data.get('tipo_entrega', ''):
             email_val = data.get('email', 'N/A')
             texto_decision = f"<b>EL TRABAJADOR DECIDIO LA RECEPCION DEL RELGAMENTO INTERNO DE ORDEN HIGIENE Y SEGURIDAD DE MANERA DIGITAL AL SIGUIENTE CORREO: {email_val}</b>"
@@ -698,14 +698,14 @@ elif menu == "⚖️ Gestor Documental":
                 
                 st.divider()
                 
-                # Canvas VISIBLES (V157)
+                # Canvas VISIBLES - FONDO BLANCO (V158 FIX)
                 c3, c4 = st.columns(2)
                 with c3:
                     st.write("Firma Trabajador:")
-                    sig_worker = st_canvas(stroke_width=2, stroke_color="black", background_color="#eee", height=150, width=400, key="sig_w_riohs_v157")
+                    sig_worker = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_w_riohs_v157")
                 with c4:
                     st.write("Firma Difusor:")
-                    sig_diffuser = st_canvas(stroke_width=2, stroke_color="black", background_color="#eee", height=150, width=400, key="sig_d_riohs_v157")
+                    sig_diffuser = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_d_riohs_v157")
                 
                 if st.form_submit_button("Registrar Entrega RIOHS"):
                     if sig_worker.image_data is not None and sig_diffuser.image_data is not None and nom_dif:
@@ -875,6 +875,7 @@ elif menu == "🦺 Logística EPP":
     with t2:
         st.subheader("Gestión de Inventario (Precios y Stock)")
         current_inv = pd.read_sql("SELECT * FROM inventario_epp", conn)
+        # Configurar columnas
         edited_inv = st.data_editor(current_inv, num_rows="dynamic", use_container_width=True, key="inv_editor",
                                    column_config={
                                        "precio": st.column_config.NumberColumn("Precio Unitario ($)", format="$%d")
