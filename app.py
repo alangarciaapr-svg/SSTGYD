@@ -33,11 +33,12 @@ except ImportError:
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CONFIGURACIÓN GLOBAL
+# 1. CONFIGURACIÓN GLOBAL (LO PRIMERO QUE DEBE EJECUTARSE)
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v156_final_riohs.db' # Misma DB
+# CAMBIO DE NOMBRE DB PARA EVITAR BLOQUEOS DE ARCHIVO PREVIO
+DB_NAME = 'sgsst_v162_system_fix.db' 
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -85,13 +86,12 @@ st.markdown(f"""
     .alert-icon {{font-size: 1.5rem; margin-right: 15px;}}
     .alert-high {{background-color: #fff5f5; border-left: 5px solid #c53030; color: #c53030;}}
     
-    /* FIX V161: BORDE VISIBLE PARA LOS CUADROS DE FIRMA */
-    /* Apunta directamente al contenedor del canvas para darle borde gris sólido */
+    /* FIX: BORDE VISIBLE PARA LOS CUADROS DE FIRMA */
     div[data-testid="stCanvas"] {{
         border: 2px solid #a0a0a0 !important;
         border-radius: 5px;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        background-color: #ffffff; /* Asegura fondo blanco */
+        background-color: #ffffff;
         margin-bottom: 10px;
     }}
     </style>
@@ -110,6 +110,8 @@ def check_and_add_column(cursor, table_name, column_name, column_type):
         try: cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
         except: pass
 
+# OPTIMIZACIÓN DE CARGA: @st.cache_resource evita que esto corra en cada click
+@st.cache_resource
 def init_db():
     conn = get_conn(); c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
@@ -133,7 +135,7 @@ def init_db():
     check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE")
     check_and_add_column(c, "inventario_epp", "precio", "INTEGER")
     
-    # Nuevos campos para RIOHS
+    # RIOHS Columns
     check_and_add_column(c, "registro_riohs", "nombre_difusor", "TEXT")
     check_and_add_column(c, "registro_riohs", "firma_difusor_b64", "TEXT")
     check_and_add_column(c, "registro_riohs", "email_copia", "TEXT")
@@ -197,7 +199,7 @@ def get_incidentes_mes():
     conn.close(); return res
 
 # ==============================================================================
-# 3. MOTOR DOCUMENTAL (PDF ACTUALIZADO)
+# 3. MOTOR DOCUMENTAL
 # ==============================================================================
 class DocumentosLegalesPDF:
     def __init__(self, titulo_doc, codigo_doc):
@@ -264,7 +266,6 @@ class DocumentosLegalesPDF:
     def generar_riohs(self, data):
         self._header()
         
-        # 1. TEXTO LEGAL
         legal_1 = """Se deja expresa constancia, de acuerdo a lo establecido en el artículo 156 del Código del Trabajo y DS 44 de la Ley 16.744 que, he recibido en forma gratuita un ejemplar del Reglamento Interno de Orden, Higiene y Seguridad de SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA."""
         self.elements.append(Paragraph(legal_1, ParagraphStyle('L1', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
         self.elements.append(Spacer(1, 10))
@@ -277,7 +278,6 @@ class DocumentosLegalesPDF:
         self.elements.append(Paragraph(legal_3, ParagraphStyle('L3', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
         self.elements.append(Spacer(1, 15))
         
-        # 2. TEXTO DE DECISIÓN
         if "Digital" in data.get('tipo_entrega', ''):
             email_val = data.get('email', 'N/A')
             texto_decision = f"<b>EL TRABAJADOR DECIDIO LA RECEPCION DEL RELGAMENTO INTERNO DE ORDEN HIGIENE Y SEGURIDAD DE MANERA DIGITAL AL SIGUIENTE CORREO: {email_val}</b>"
@@ -291,7 +291,6 @@ class DocumentosLegalesPDF:
         self.elements.append(Paragraph(legal_4, ParagraphStyle('L4', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
         self.elements.append(Spacer(1, 20))
         
-        # 3. DATOS TRABAJADOR
         sig_img = Paragraph("", self.styles['Normal'])
         if data.get('firma_b64'):
             try: sig_img = RLImage(io.BytesIO(base64.b64decode(data['firma_b64'])), width=200, height=80)
@@ -315,7 +314,6 @@ class DocumentosLegalesPDF:
         self.elements.append(t_worker)
         self.elements.append(Spacer(1, 20))
         
-        # 4. DATOS DIFUSOR
         sig_dif = Paragraph("", self.styles['Normal'])
         if data.get('firma_difusor'):
             try: sig_dif = RLImage(io.BytesIO(base64.b64decode(data['firma_difusor'])), width=180, height=70)
@@ -366,6 +364,7 @@ class DocumentosLegalesPDF:
 # ==============================================================================
 # 4. FRONTEND
 # ==============================================================================
+# INICIALIZACION SEGURA
 init_db()
 
 # --- LOGIN ---
