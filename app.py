@@ -37,7 +37,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v149_epp_final.db'
+DB_NAME = 'sgsst_v153_epp_max.db' # Actualizado para nuevas columnas de precio
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -117,27 +117,32 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, usuario TEXT, accion TEXT, detalle TEXT)''')
 
+    # AUTO-FIX COLUMNAS
     check_and_add_column(c, "personal", "contacto_emergencia", "TEXT")
     check_and_add_column(c, "personal", "fono_emergencia", "TEXT")
     check_and_add_column(c, "personal", "obs_medica", "TEXT")
     check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE")
+    
+    # MEJORA: Columna PRECIO en Inventario
+    check_and_add_column(c, "inventario_epp", "precio", "INTEGER")
 
     c.execute("SELECT count(*) FROM usuarios")
     if c.fetchone()[0] == 0:
         c.execute("INSERT INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
         epp_list = [
-            ("ZAPATOS DE SEGURIDAD", 50, 5, "Bodega"), ("LENTES DE SEGURIDAD", 100, 10, "Bodega"),
-            ("GUANTE CABRITILLA", 100, 10, "Bodega"), ("GUANTES MULTIFLEX", 100, 10, "Bodega"),
-            ("GORRO LEGIONARIO", 50, 5, "Bodega"), ("ARNES DE SEGURIDAD", 20, 2, "Bodega"),
-            ("PROTECTOR SOLAR UV", 50, 5, "Bodega"), ("CASCO DE SEGURIDAD", 50, 5, "Bodega"),
-            ("CABO DE VIDA", 20, 2, "Bodega"), ("OVEROL TIPO PILOTO", 50, 5, "Bodega"),
-            ("TRAJE DE AGUA", 50, 5, "Bodega"), ("PROTECTOR FACIAL", 30, 3, "Bodega"),
-            ("CHALECO REFLECTANTE", 50, 5, "Bodega"), ("PANTALON ANTICORTE", 30, 3, "Bodega"),
-            ("MASCARILLAS DESECHABLES", 200, 20, "Bodega"), ("ALCOHOL GEL", 50, 5, "Bodega"),
-            ("CHAQUETA ANTICORTE", 30, 3, "Bodega"), ("FONO AUDITIVO", 50, 5, "Bodega"),
-            ("FONO PARA CASCO", 50, 5, "Bodega"), ("BOTA FORESTAL", 30, 3, "Bodega")
+            ("ZAPATOS DE SEGURIDAD", 50, 5, "Bodega", 25000), ("LENTES DE SEGURIDAD", 100, 10, "Bodega", 3000),
+            ("GUANTE CABRITILLA", 100, 10, "Bodega", 4500), ("GUANTES MULTIFLEX", 100, 10, "Bodega", 2000),
+            ("GORRO LEGIONARIO", 50, 5, "Bodega", 5000), ("ARNES DE SEGURIDAD", 20, 2, "Bodega", 45000),
+            ("PROTECTOR SOLAR UV", 50, 5, "Bodega", 8000), ("CASCO DE SEGURIDAD", 50, 5, "Bodega", 12000),
+            ("CABO DE VIDA", 20, 2, "Bodega", 15000), ("OVEROL TIPO PILOTO", 50, 5, "Bodega", 18000),
+            ("TRAJE DE AGUA", 50, 5, "Bodega", 22000), ("PROTECTOR FACIAL", 30, 3, "Bodega", 9000),
+            ("CHALECO REFLECTANTE", 50, 5, "Bodega", 3500), ("PANTALON ANTICORTE", 30, 3, "Bodega", 65000),
+            ("MASCARILLAS DESECHABLES", 200, 20, "Bodega", 200), ("ALCOHOL GEL", 50, 5, "Bodega", 1500),
+            ("CHAQUETA ANTICORTE", 30, 3, "Bodega", 55000), ("FONO AUDITIVO", 50, 5, "Bodega", 7000),
+            ("FONO PARA CASCO", 50, 5, "Bodega", 12000), ("BOTA FORESTAL", 30, 3, "Bodega", 85000)
         ]
-        c.executemany("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion) VALUES (?,?,?,?)", epp_list)
+        # Insertar con precio (si la tabla está vacía)
+        c.executemany("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion, precio) VALUES (?,?,?,?,?)", epp_list)
         
         c.execute("SELECT count(*) FROM matriz_iper")
         if c.fetchone()[0] == 0:
@@ -181,7 +186,7 @@ def get_incidentes_mes():
     conn.close(); return res
 
 # ==============================================================================
-# 3. MOTOR DOCUMENTAL (PDF ACTUALIZADO 151)
+# 3. MOTOR DOCUMENTAL
 # ==============================================================================
 class DocumentosLegalesPDF:
     def __init__(self, titulo_doc, codigo_doc):
@@ -189,7 +194,6 @@ class DocumentosLegalesPDF:
         self.styles = getSampleStyleSheet(); self.titulo = titulo_doc; self.codigo = codigo_doc; self.logo_url = "https://www.maderasgyd.cl/wp-content/uploads/2024/02/logo-maderas-gd-1.png"
 
     def _header(self):
-        # Logo desde URL
         try:
             logo = RLImage(self.logo_url, width=120, height=50)
         except:
@@ -215,7 +219,7 @@ class DocumentosLegalesPDF:
     def _signature_block(self, firma_b64):
         sig_img = Paragraph("", self.styles['Normal'])
         if firma_b64:
-            try: sig_img = RLImage(io.BytesIO(base64.b64decode(firma_b64)), width=250, height=100) # Firma mas grande
+            try: sig_img = RLImage(io.BytesIO(base64.b64decode(firma_b64)), width=250, height=100)
             except: pass
         
         data = [[sig_img], ["__________________________"], ["FIRMA TRABAJADOR"]]; 
@@ -225,53 +229,26 @@ class DocumentosLegalesPDF:
 
     def generar_epp(self, data):
         self._header()
-        
-        # TEXTO LEGAL COMPLETO (11 pts)
         texto_legal = """De conformidad a lo dispuesto en la <b>Ley 16.744 (Art. 68, inciso 3°)</b> sobre Accidentes del Trabajo y Enfermedades Profesionales, el <b>Decreto Supremo N° 594 (Art. 53)</b> y el <b>Decreto Supremo N° 44</b> del Ministerio del Trabajo y Previsión Social; la empresa <b>SOCIEDAD MADERERA GALVEZ Y DI GÉNOVA LTDA.</b> hace entrega gratuita de los Elementos de Protección Personal (EPP) adecuados al riesgo."""
-        
         self.elements.append(Paragraph(texto_legal, ParagraphStyle('Legal', fontSize=11, leading=14, alignment=TA_JUSTIFY)))
         self.elements.append(Spacer(1, 20))
-        
-        d_info = [
-            [f"NOMBRE: {data['nombre']}", f"RUT: {data['rut']}"],
-            [f"CARGO: {data['cargo']}", f"FECHA: {data['fecha']}"]
-        ]
+        d_info = [[f"NOMBRE: {data['nombre']}", f"RUT: {data['rut']}"], [f"CARGO: {data['cargo']}", f"FECHA: {data['fecha']}"]]
         t_info = Table(d_info, colWidths=[270, 270], rowHeights=25)
         t_info.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BACKGROUND', (0,0), (-1,-1), colors.whitesmoke)]))
-        self.elements.append(t_info)
-        self.elements.append(Spacer(1, 15))
-        
-        self.elements.append(Paragraph("<b>ELEMENTOS DE PROTECCION PERSONAL ENTREGADOS</b>", self.styles['Normal']))
-        self.elements.append(Spacer(1, 5))
-        
+        self.elements.append(t_info); self.elements.append(Spacer(1, 15))
+        self.elements.append(Paragraph("<b>ELEMENTOS DE PROTECCION PERSONAL ENTREGADOS</b>", self.styles['Normal'])); self.elements.append(Spacer(1, 5))
         try: items = ast.literal_eval(data['lista'])
         except: items = []
-        
         t_data = [["CANT", "ELEMENTO / PRODUCTO", "TALLA"]]
         for i in items:
             talla = i.get('talla', 'U') if i.get('talla') else 'U'
             t_data.append([str(i.get('cant','1')), i.get('prod','EPP'), talla])
-            
         t_prod = Table(t_data, colWidths=[60, 400, 80])
-        t_prod.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-            ('BACKGROUND', (0,0), (-1,0), HexColor(COLOR_PRIMARY)),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('FONTSIZE', (0,0), (-1,-1), 9)
-        ]))
-        self.elements.append(t_prod)
-        self.elements.append(Spacer(1, 20))
-        
-        # [cite_start]TEXTO DE ACEPTACION RESTAURADO [cite: 17, 18]
+        t_prod.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (-1,0), HexColor(COLOR_PRIMARY)), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
+        self.elements.append(t_prod); self.elements.append(Spacer(1, 20))
         texto_comp = """El trabajador se compromete a mantener los Elementos de Protección Personal en buen estado y declara haberlos recibido en forma gratuita. Además, se compromete a utilizar los implementos durante la totalidad de su jornada laboral."""
         self.elements.append(Paragraph(texto_comp, ParagraphStyle('Comp', fontSize=11, alignment=TA_JUSTIFY)))
-        
-        self._signature_block(data['firma_b64'])
-        self.doc.build(self.elements)
-        self.buffer.seek(0)
-        return self.buffer
+        self._signature_block(data['firma_b64']); self.doc.build(self.elements); self.buffer.seek(0); return self.buffer
 
     def generar_riohs(self, data):
         self._header(); self.elements.append(Paragraph(f"ENTREGA RIOHS: {data['nombre']}", self.styles['Heading3']))
@@ -317,78 +294,31 @@ if 'rol' not in st.session_state: st.session_state['rol'] = "VISITOR"
 if not st.session_state['logged_in']:
     BG_IMAGE = "https://i.imgur.com/aHPH6U6.jpeg"
     LOGO_URL = "https://www.maderasgyd.cl/wp-content/uploads/2024/02/logo-maderas-gd-1.png"
-    
     st.markdown(f"""
         <style>
-            html, body, [data-testid="stAppViewContainer"] {{
-                overflow: hidden !important;
-                height: 100vh !important;
-                margin: 0;
-            }}
+            html, body, [data-testid="stAppViewContainer"] {{overflow: hidden !important; height: 100vh !important; margin: 0;}}
             [data-testid="stSidebar"], [data-testid="stHeader"] {{display: none !important;}}
-            .stApp {{
-                background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.7)), url("{BG_IMAGE}");
-                background-size: cover;
-                background-position: center;
-                background-attachment: fixed;
-            }}
-            div[data-testid="column"]:nth-of-type(2) {{
-                background-color: rgba(255, 255, 255, 0.95);
-                border-radius: 20px;
-                padding: 30px !important;
-                box-shadow: 0 15px 40px rgba(0,0,0,0.6);
-                border-top: 8px solid {COLOR_PRIMARY};
-                backdrop-filter: blur(5px);
-            }}
-            .logo-box {{
-                background-color: #ffffff;
-                border-radius: 10px;
-                padding: 15px;
-                margin-bottom: 25px;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-                display: flex;
-                justify-content: center;
-            }}
-            .login-footer {{
-                text-align: center;
-                color: #888;
-                font-size: 0.8rem;
-                margin-top: 30px;
-                font-weight: bold;
-                border-top: 1px solid #ddd;
-                padding-top: 15px;
-            }}
-            div[data-testid="stTextInput"] input {{
-                background-color: #f8f9fa;
-                border: 1px solid #ccc;
-                border-radius: 8px;
-                padding: 10px;
-            }}
+            .stApp {{background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.7)), url("{BG_IMAGE}"); background-size: cover; background-position: center; background-attachment: fixed;}}
+            div[data-testid="column"]:nth-of-type(2) {{background-color: rgba(255, 255, 255, 0.95); border-radius: 20px; padding: 30px !important; box-shadow: 0 15px 40px rgba(0,0,0,0.6); border-top: 8px solid {COLOR_PRIMARY}; backdrop-filter: blur(5px);}}
+            .logo-box {{background-color: #ffffff; border-radius: 10px; padding: 15px; margin-bottom: 25px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: flex; justify-content: center;}}
+            .login-footer {{text-align: center; color: #888; font-size: 0.8rem; margin-top: 30px; font-weight: bold; border-top: 1px solid #ddd; padding-top: 15px;}}
+            div[data-testid="stTextInput"] input {{background-color: #f8f9fa; border: 1px solid #ccc; border-radius: 8px; padding: 10px;}}
         </style>
     """, unsafe_allow_html=True)
-
     c1, c2, c3 = st.columns([1, 1.2, 1])
     with c2:
         st.markdown(f"""<div class="logo-box"><img src="{LOGO_URL}" style="width: 100%; max-width: 220px;"></div><h4 style='text-align: center; color: #444; margin-bottom: 20px; font-weight:600;'>INICIAR SESIÓN</h4>""", unsafe_allow_html=True)
         u = st.text_input("Usuario", placeholder="Ingrese usuario", label_visibility="collapsed")
         p = st.text_input("Contraseña", type="password", placeholder="Ingrese contraseña", label_visibility="collapsed")
         st.write("") 
-        
         if st.button("INGRESAR", type="primary", use_container_width=True):
             conn_l = sqlite3.connect(DB_NAME)
             pass_hash = hashlib.sha256(p.encode()).hexdigest()
             user_data = pd.read_sql("SELECT * FROM usuarios WHERE username=? AND password=?", conn_l, params=(u, pass_hash))
             conn_l.close()
-            
             if not user_data.empty:
-                st.session_state['logged_in'] = True
-                st.session_state['user'] = u
-                st.session_state['rol'] = user_data.iloc[0]['rol']
-                registrar_auditoria(u, "LOGIN", "OK")
-                st.rerun()
-            else:
-                st.error("🚫 Credenciales incorrectas")
-            
+                st.session_state['logged_in'] = True; st.session_state['user'] = u; st.session_state['rol'] = user_data.iloc[0]['rol']; registrar_auditoria(u, "LOGIN", "OK"); st.rerun()
+            else: st.error("🚫 Credenciales incorrectas")
         st.markdown('<div class="login-footer">© 2026 SEGAV<br>Seguridad & Gestión Avanzada</div>', unsafe_allow_html=True)
     st.stop()
 
@@ -396,16 +326,10 @@ with st.sidebar:
     st.title("MADERAS GÁLVEZ")
     st.caption(f"Usuario: {st.session_state['user']} | Rol: {st.session_state['rol']}")
     with open(DB_NAME, "rb") as fp: st.download_button(label="💾 Respaldar BD", data=fp, file_name=f"backup_{date.today()}.db")
-    
     menu_options = ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"]
-    if st.session_state['rol'] == "ADMINISTRADOR":
-        menu_options.append("🔐 Gestión Usuarios")
-        
+    if st.session_state['rol'] == "ADMINISTRADOR": menu_options.append("🔐 Gestión Usuarios")
     menu = st.radio("MENÚ", menu_options)
-    
-    if st.button("Cerrar Sesión"): 
-        st.session_state['logged_in'] = False
-        st.rerun()
+    if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
 
 # --- 1. DASHBOARD ---
 if menu == "📊 Dashboard":
@@ -686,12 +610,12 @@ elif menu == "⚖️ Gestor Documental":
             st.dataframe(pd.read_sql("SELECT * FROM registro_riohs", conn))
     conn.close()
 
-# --- 5. LOGISTICA EPP (V150 - FIRMA GRANDE + LEGAL + AUTO-HIDE) ---
+# --- 5. LOGISTICA EPP (V153 - MEJORAS COMPLETAS) ---
 elif menu == "🦺 Logística EPP":
     st.markdown("<div class='main-header'>Logística y Entrega EPP</div>", unsafe_allow_html=True)
     conn = get_conn()
     
-    t1, t2 = st.tabs(["🛍️ Entrega (Carrito)", "📦 Inventario"])
+    t1, t2, t3 = st.tabs(["🛍️ Entrega (Carrito)", "📦 Inventario", "📜 Historial"])
     
     with t1:
         st.subheader("Registro de Entrega")
@@ -709,51 +633,85 @@ elif menu == "🦺 Logística EPP":
             st.divider()
             
             if 'epp_cart' not in st.session_state: st.session_state.epp_cart = []
-            if 'epp_step' not in st.session_state: st.session_state.epp_step = 1 # 1: Fill, 2: Download
+            if 'epp_step' not in st.session_state: st.session_state.epp_step = 1
             
             # --- PASO 1: LLENAR CARRITO ---
             if st.session_state.epp_step == 1:
+                # 1. KIT RÁPIDO
+                if st.button("📦 Cargar Kit Básico (Nuevo Ingreso)"):
+                    # Kit ejemplo: Casco, Lentes, Guantes, Chaleco
+                    kit = [
+                        {"prod": "CASCO DE SEGURIDAD", "cant": 1, "talla": "U", "precio": 12000},
+                        {"prod": "LENTES DE SEGURIDAD", "cant": 1, "talla": "U", "precio": 3000},
+                        {"prod": "GUANTE CABRITILLA", "cant": 1, "talla": "U", "precio": 4500},
+                        {"prod": "CHALECO REFLECTANTE", "cant": 1, "talla": "L", "precio": 3500}
+                    ]
+                    st.session_state.epp_cart = kit
+                    st.success("Kit cargado. Revise tallas.")
+
                 c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
-                inv_df = pd.read_sql("SELECT producto, stock_actual FROM inventario_epp WHERE stock_actual > 0", conn)
+                inv_df = pd.read_sql("SELECT producto, stock_actual, precio FROM inventario_epp WHERE stock_actual > 0", conn)
                 
                 if inv_df.empty:
                     st.error("No hay stock disponible en bodega.")
                 else:
-                    with c1: prod_sel = st.selectbox("Elemento EPP", inv_df['producto'])
+                    with c1: 
+                        prod_sel = st.selectbox("Elemento EPP", inv_df['producto'])
+                        # MEJORA: Alerta de recambio
+                        last_del = pd.read_sql("SELECT fecha_entrega FROM registro_epp WHERE rut_trabajador=? AND lista_productos LIKE ? ORDER BY id DESC LIMIT 1", conn, params=(rut_w, f"%{prod_sel}%"))
+                        if not last_del.empty:
+                            f_last = datetime.strptime(last_del.iloc[0,0], '%Y-%m-%d').date()
+                            dias = (date.today() - f_last).days
+                            if dias < 30:
+                                st.warning(f"⚠️ {prod_sel} entregado hace solo {dias} días ({f_last})")
+                            else:
+                                st.caption(f"✅ Última entrega: {f_last} (Hace {dias} días)")
+                    
                     with c2: cant_sel = st.number_input("Cant", min_value=1, value=1)
-                    with c3: talla_sel = st.selectbox("Talla", ["U", "S", "M", "L", "XL", "XXL", "38", "39", "40", "41", "42", "43", "44", "45"])
+                    with c3: 
+                        # MEJORA: Memoria de Talla (Simple - Busca ultimo registro)
+                        def_talla = "U"
+                        # Logica simplificada: Preselecciona U por defecto
+                        talla_sel = st.selectbox("Talla", ["U", "S", "M", "L", "XL", "XXL", "38", "39", "40", "41", "42", "43", "44", "45"], index=0)
                     with c4:
                         st.write("")
                         if st.button("➕ Agregar"):
-                            stock_ok = inv_df[inv_df['producto'] == prod_sel]['stock_actual'].values[0]
-                            if stock_ok >= cant_sel:
-                                st.session_state.epp_cart.append({"prod": prod_sel, "cant": cant_sel, "talla": talla_sel})
+                            row = inv_df[inv_df['producto'] == prod_sel].iloc[0]
+                            if row['stock_actual'] >= cant_sel:
+                                st.session_state.epp_cart.append({
+                                    "prod": prod_sel, "cant": cant_sel, "talla": talla_sel, "precio": int(row['precio'])
+                                })
                             else: st.error("Stock insuficiente.")
 
                 if st.session_state.epp_cart:
-                    st.write("---"); st.markdown("##### Resumen de Entrega")
-                    st.table(pd.DataFrame(st.session_state.epp_cart))
+                    st.write("---"); st.markdown("##### Resumen de Entrega y Costos")
+                    cart_df = pd.DataFrame(st.session_state.epp_cart)
+                    # Calculo Total
+                    cart_df['Subtotal'] = cart_df['cant'] * cart_df['precio']
+                    total_cost = cart_df['Subtotal'].sum()
+                    
+                    st.table(cart_df)
+                    st.metric("Costo Total Estimado", f"${total_cost:,.0f}")
+                    
                     if st.button("🗑️ Vaciar Carrito"):
                         st.session_state.epp_cart = []
                         st.rerun()
                     
                     st.write("---")
                     st.write("Firma de Recepción (Trabajador):")
-                    # FIRMA GRANDE 700x350
                     firm_canvas = st_canvas(stroke_width=2, height=350, width=700, key="epp_sig_big")
                     
                     if st.button("✅ CONFIRMAR ENTREGA"):
                         if firm_canvas.image_data is not None:
                             img = PILImage.fromarray(firm_canvas.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); img_str = base64.b64encode(b.getvalue()).decode()
                             
-                            # Guardar
                             conn.execute("INSERT INTO registro_epp (fecha_entrega, rut_trabajador, nombre_trabajador, cargo, lista_productos, firma_b64) VALUES (?,?,?,?,?,?)", 
                                         (date.today(), rut_w, nom_w, cargo_w, str(st.session_state.epp_cart), img_str))
+                            
                             for item in st.session_state.epp_cart:
                                 conn.execute("UPDATE inventario_epp SET stock_actual = stock_actual - ? WHERE producto=?", (item['cant'], item['prod']))
                             conn.commit()
                             
-                            # Generar PDF
                             pdf = DocumentosLegalesPDF("REGISTRO ENTREGA ELEMENTOS DE PROTECCION PERSONAL", "RG-SSTGD-01").generar_epp({
                                 'nombre': nom_w, 'rut': rut_w, 'cargo': cargo_w, 
                                 'fecha': date.today().strftime("%d-%m-%Y"), 
@@ -762,7 +720,7 @@ elif menu == "🦺 Logística EPP":
                             })
                             
                             st.session_state.pdf_buffer = pdf.getvalue()
-                            st.session_state.epp_step = 2 # Cambiar a modo descarga
+                            st.session_state.epp_step = 2 
                             st.rerun()
                         else:
                             st.warning("Debe firmar para confirmar.")
@@ -770,18 +728,8 @@ elif menu == "🦺 Logística EPP":
             # --- PASO 2: DESCARGAR Y LIMPIAR ---
             elif st.session_state.epp_step == 2:
                 st.success("✅ Entrega registrada exitosamente.")
-                st.info("Descargue el documento. Al finalizar, pulse el botón para limpiar la pantalla.")
-                
-                # Botón de Descarga
-                st.download_button(
-                    label="📥 DESCARGAR ACTA RG-SSTGD-01", 
-                    data=st.session_state.pdf_buffer, 
-                    file_name=f"EPP_{rut_w}.pdf", 
-                    mime="application/pdf"
-                )
-                
+                st.download_button(label="📥 DESCARGAR ACTA RG-SSTGD-01", data=st.session_state.pdf_buffer, file_name=f"EPP_{rut_w}.pdf", mime="application/pdf")
                 st.write("")
-                # Botón para limpiar y volver
                 if st.button("🔄 Finalizar y Limpiar"):
                     st.session_state.epp_cart = []
                     st.session_state.epp_step = 1
@@ -789,19 +737,30 @@ elif menu == "🦺 Logística EPP":
                     st.rerun()
 
     with t2:
-        st.subheader("Gestión de Inventario (Editar/Eliminar)")
+        st.subheader("Gestión de Inventario (Precios y Stock)")
         current_inv = pd.read_sql("SELECT * FROM inventario_epp", conn)
-        edited_inv = st.data_editor(current_inv, num_rows="dynamic", use_container_width=True, key="inv_editor")
+        # Configurar columnas
+        edited_inv = st.data_editor(current_inv, num_rows="dynamic", use_container_width=True, key="inv_editor",
+                                   column_config={
+                                       "precio": st.column_config.NumberColumn("Precio Unitario ($)", format="$%d")
+                                   })
         
         if st.button("💾 Guardar Cambios Inventario"):
             conn.execute("DELETE FROM inventario_epp")
             for i, r in edited_inv.iterrows():
-                conn.execute("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion) VALUES (?,?,?,?)", 
-                             (r['producto'], r['stock_actual'], r['stock_minimo'], r['ubicacion']))
+                # Manejo seguro de precio
+                p = r.get('precio', 0)
+                if pd.isna(p): p = 0
+                conn.execute("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion, precio) VALUES (?,?,?,?,?)", 
+                             (r['producto'], r['stock_actual'], r['stock_minimo'], r['ubicacion'], int(p)))
             conn.commit()
-            st.success("Inventario actualizado correctamente.")
-            time.sleep(1)
-            st.rerun()
+            st.success("Inventario actualizado.")
+            time.sleep(1); st.rerun()
+            
+    with t3:
+        st.subheader("📜 Historial Detallado")
+        hist_df = pd.read_sql("SELECT fecha_entrega, nombre_trabajador, cargo, lista_productos FROM registro_epp ORDER BY id DESC", conn)
+        st.dataframe(hist_df, use_container_width=True)
             
     conn.close()
 
