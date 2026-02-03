@@ -44,7 +44,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v180_fix.db' # Actualización Corrección Error Linea 917
+DB_NAME = 'sgsst_v181_roles_update.db' # Actualización de Cargos
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -183,7 +183,23 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-LISTA_CARGOS = ["GERENTE GENERAL", "PREVENCIONISTA DE RIESGOS", "JEFE DE PATIO", "OPERADOR DE ASERRADERO", "OPERADOR DE MAQUINARIA", "MOTOSIERRISTA", "ESTROBERO", "MECANICO", "ADMINISTRATIVO"]
+# --- LISTA DE CARGOS ACTUALIZADA ---
+LISTA_CARGOS = [
+    "GERENTE GENERAL", 
+    "GERENTE DE FINANZAS", 
+    "PREVENCIONISTA DE RIESGOS", 
+    "JEFE DE PATIO", 
+    "OPERADOR DE ASERRADERO", 
+    "AYUDANTE DE ASERRADERO", 
+    "OPERADOR DE MAQUINARIA", 
+    "MOTOSIERRISTA", 
+    "ESTROBERO", 
+    "MECANICO", 
+    "MECANICO LIDER", 
+    "CALIBRADOR", 
+    "PAÑOLERO", 
+    "ADMINISTRATIVO"
+]
 
 # ==============================================================================
 # 2. CAPA DE DATOS (SQL)
@@ -201,7 +217,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     
-    # --- MATRIZ IPER V179 ---
+    # --- MATRIZ IPER V181 ---
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         proceso TEXT, 
@@ -667,13 +683,14 @@ elif menu == "⚖️ Gestión DS67":
 
     conn.close()
 
-# --- 3. MATRIZ IPER (V180 - FIXED) ---
+# --- 3. MATRIZ IPER (V179 - DYNAMIC ROLES & SMART MATRIX) ---
 elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Riesgos (ISP 2024 + DS44)</div>", unsafe_allow_html=True)
     tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Matriz & Dashboard", "📂 Carga Masiva Inteligente", "➕ Crear Riesgo (Maestro)"])
     conn = get_conn()
     
     with tab_ver:
+        # CONSULTA MAESTRA
         query = """SELECT id, 
                    proceso as 'PROCESO', puesto_trabajo as 'PUESTO', tarea as 'TAREA', 
                    lugar_especifico as 'LUGAR', familia_riesgo as 'FAMILIA', codigo_riesgo as 'COD ISP', 
@@ -729,18 +746,10 @@ elif menu == "🛡️ Matriz IPER (ISP)":
         if st.button("💾 Guardar y Recalcular Matriz"):
             c = conn.cursor()
             for i, r in edited_df.iterrows():
-                
-                # Helper para evitar nulos
-                def clean_int(val, default=1):
-                    try: return int(val) if pd.notnull(val) else default
-                    except: return default
-                
-                def clean_str(val):
-                    return str(val) if pd.notnull(val) else ""
-
-                pi = clean_int(r['P_INI']); ci = clean_int(r['C_INI']); vi = pi*ci; ni = calcular_nivel_riesgo(vi)
-                pr = clean_int(r['P_RES']); cr = clean_int(r['C_RES']); vr = pr*cr; nr = calcular_nivel_riesgo(vr)
-                
+                pi = int(r['P_INI']); ci = int(r['C_INI']); vi = pi*ci; ni = calcular_nivel_riesgo(vi)
+                pr = int(r['P_RES']) if pd.notnull(r['P_RES']) else 1
+                cr = int(r['C_RES']) if pd.notnull(r['C_RES']) else 1
+                vr = pr*cr; nr = calcular_nivel_riesgo(vr)
                 c.execute("""UPDATE matriz_iper SET 
                              probabilidad=?, consecuencia=?, vep=?, nivel_riesgo=?, 
                              probabilidad_residual=?, consecuencia_residual=?, vep_residual=?, nivel_riesgo_residual=?,
@@ -748,10 +757,8 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                              factor_gema=?, lugar_especifico=?, n_hombres=?, n_mujeres=?, n_disidencias=?
                              WHERE id=?""", 
                              (pi, ci, vi, ni, pr, cr, vr, nr, 
-                              clean_str(r['MEDIDA CONTROL']), clean_str(r['FAMILIA']), clean_str(r['COD ISP']), 
-                              clean_str(r['JERARQUIA']), clean_str(r['LEGAL']),
-                              clean_str(r['GEMA']), clean_str(r['LUGAR']), 
-                              clean_int(r['H'], 0), clean_int(r['M'], 0), clean_int(r['D'], 0), r['id']))
+                              r['MEDIDA CONTROL'], r['FAMILIA'], r['COD ISP'], r['JERARQUIA'], r['LEGAL'],
+                              r['GEMA'], r['LUGAR'], r['H'], r['M'], r['D'], r['id']))
             conn.commit(); st.success("Matriz Actualizada"); st.rerun()
             
         b = io.BytesIO(); 
@@ -761,7 +768,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
     with tab_carga:
         st.subheader("Carga Masiva Inteligente (Smart Upload)")
         
-        # 1. Descarga Template ACTUALIZADO V180
+        # 1. Descarga Template ACTUALIZADO V179
         plantilla = {
             'Proceso':['Cosecha'], 'Puesto':['Operador'], 'Lugar':['Bosque'], 'Familia':['Seguridad'], 'GEMA':['Ambiente'],
             'Peligro':['Pendiente'], 'Riesgo':['Volcamiento'], 
@@ -772,7 +779,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
         }
         b2 = io.BytesIO(); 
         with pd.ExcelWriter(b2, engine='openpyxl') as w: pd.DataFrame(plantilla).to_excel(w, index=False)
-        st.download_button("1️⃣ Descargar Plantilla Maestra V180", b2.getvalue(), "plantilla_iper_master.xlsx")
+        st.download_button("1️⃣ Descargar Plantilla Maestra V179", b2.getvalue(), "plantilla_iper_master.xlsx")
         
         # 2. Carga y Validación
         up = st.file_uploader("2️⃣ Subir Excel", type=['xlsx'])
@@ -784,7 +791,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                 if 'P_Inicial' in df_up.columns and 'C_Inicial' in df_up.columns:
                     df_up['Estado'] = df_up.apply(lambda x: "⚠️ Error P/C" if x['P_Inicial'] not in [1,2,4] or x['C_Inicial'] not in [1,2,4] else "✅ OK", axis=1)
                 else:
-                    st.error("El archivo no tiene las columnas P_Inicial o C_Inicial. Descargue la plantilla V180.")
+                    st.error("El archivo no tiene las columnas P_Inicial o C_Inicial. Descargue la plantilla V179.")
                     st.stop()
                 
                 edited_up = st.data_editor(df_up, num_rows="dynamic", key="editor_up")
