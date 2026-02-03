@@ -13,7 +13,6 @@ from PIL import Image as PILImage
 import matplotlib
 import matplotlib.pyplot as plt
 import plotly.express as px
-import plotly.graph_objects as go # Nueva librería para Heatmap
 from reportlab.lib import colors
 from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import letter
@@ -44,11 +43,11 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v176_iper_visual.db' # Actualización Matriz Visual
+DB_NAME = 'sgsst_v177_smart_upload.db' # Actualización Carga Inteligente
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
-# [cite_start]--- DICCIONARIO DE RIESGOS ISP V3 (CORREGIDO FINAL) [cite: 343] ---
+# --- DICCIONARIO DE RIESGOS ISP V3 ---
 ISP_RISK_CODES = {
     "Seguridad": [
         "Caídas al mismo nivel (A1)", "Caídas a distinto nivel (A2)", "Caídas de altura (A3)", "Caídas al agua (A4)",
@@ -201,7 +200,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     
-    # --- MATRIZ IPER V176 (MAESTRA FULL) ---
+    # --- MATRIZ IPER V177 (MAESTRA) ---
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         proceso TEXT, 
@@ -667,14 +666,13 @@ elif menu == "⚖️ Gestión DS67":
 
     conn.close()
 
-# --- 3. MATRIZ IPER (V176 - MAESTRA VISUAL ISP V3) ---
+# --- 3. MATRIZ IPER (V177 - SMART UPLOAD) ---
 elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Riesgos (ISP 2024 + DS44)</div>", unsafe_allow_html=True)
-    tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Matriz & Dashboard Visual", "📂 Carga Masiva Inteligente", "➕ Crear Riesgo (Maestro)"])
+    tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Matriz & Dashboard", "📂 Carga Masiva Inteligente", "➕ Crear Riesgo (Maestro)"])
     conn = get_conn()
     
     with tab_ver:
-        # CONSULTA MAESTRA V176
         query = """SELECT id, 
                    proceso as 'PROCESO', puesto_trabajo as 'PUESTO', tarea as 'TAREA', 
                    lugar_especifico as 'LUGAR', familia_riesgo as 'FAMILIA', codigo_riesgo as 'COD ISP', 
@@ -686,33 +684,29 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                    FROM matriz_iper"""
         df_matriz = pd.read_sql(query, conn)
         
-        # --- MEJORA PERTINENTE 2: FILTROS ---
-        st.markdown("#### 🔍 Filtros de Visualización")
+        # Filtros
         cf1, cf2 = st.columns(2)
-        filtro_nivel = cf1.multiselect("Filtrar por Nivel de Riesgo (Inicial)", ["INTOLERABLE", "IMPORTANTE", "MODERADO", "TOLERABLE"])
+        filtro_nivel = cf1.multiselect("Filtrar por Nivel (Inicial)", ["INTOLERABLE", "IMPORTANTE", "MODERADO", "TOLERABLE"])
         filtro_fam = cf2.multiselect("Filtrar por Familia", list(ISP_RISK_CODES.keys()))
         
         df_view = df_matriz.copy()
         if filtro_nivel: df_view = df_view[df_view['NIVEL_INI'].isin(filtro_nivel)]
         if filtro_fam: df_view = df_view[df_view['FAMILIA'].isin(filtro_fam)]
         
-        # --- MEJORA PERTINENTE 1: DASHBOARD VISUAL (HEATMAP) ---
+        # Dashboard Visual
         with st.expander("📊 Ver Mapa de Calor y Estadísticas (Click para abrir)", expanded=False):
             g1, g2 = st.columns(2)
             with g1:
-                # Heatmap de Riesgos
                 if not df_view.empty:
-                    fig_heat = px.density_heatmap(df_view, x="P_INI", y="C_INI", title="Mapa de Calor de Riesgos (Probabilidad vs Consecuencia)",
-                                                 nbinsx=4, nbinsy=4, color_continuous_scale="Reds")
+                    fig_heat = px.density_heatmap(df_view, x="P_INI", y="C_INI", title="Mapa de Calor de Riesgos", nbinsx=4, nbinsy=4, color_continuous_scale="Reds")
                     st.plotly_chart(fig_heat, use_container_width=True)
             with g2:
-                # Grafico de Genero
                 if not df_view.empty:
                     total_h = df_view['H'].sum(); total_m = df_view['M'].sum(); total_d = df_view['D'].sum()
-                    fig_gen = px.pie(values=[total_h, total_m, total_d], names=["Hombres", "Mujeres", "Diversidad"], title="Exposición por Identidad de Género")
+                    fig_gen = px.pie(values=[total_h, total_m, total_d], names=["Hombres", "Mujeres", "Diversidad"], title="Exposición por Género")
                     st.plotly_chart(fig_gen, use_container_width=True)
 
-        st.markdown("### 📋 Detalle de Matriz")
+        # Editor
         edited_df = st.data_editor(df_view, use_container_width=True, 
             column_config={
                 "P_INI": st.column_config.NumberColumn("P (Ini)", min_value=1, max_value=4), 
@@ -731,14 +725,10 @@ elif menu == "🛡️ Matriz IPER (ISP)":
         if st.button("💾 Guardar y Recalcular Matriz Maestra"):
             c = conn.cursor()
             for i, r in edited_df.iterrows():
-                # Calculo Inicial
                 pi = int(r['P_INI']); ci = int(r['C_INI']); vi = pi*ci; ni = calcular_nivel_riesgo(vi)
-                # Calculo Residual
                 pr = int(r['P_RES']) if pd.notnull(r['P_RES']) else 1
                 cr = int(r['C_RES']) if pd.notnull(r['C_RES']) else 1
                 vr = pr*cr; nr = calcular_nivel_riesgo(vr)
-                
-                # Update Masivo
                 c.execute("""UPDATE matriz_iper SET 
                              probabilidad=?, consecuencia=?, vep=?, nivel_riesgo=?, 
                              probabilidad_residual=?, consecuencia_residual=?, vep_residual=?, nivel_riesgo_residual=?,
@@ -748,14 +738,16 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                              (pi, ci, vi, ni, pr, cr, vr, nr, 
                               r['MEDIDA CONTROL'], r['FAMILIA'], r['COD ISP'], r['JERARQUIA'], r['LEGAL'],
                               r['GEMA'], r['LUGAR'], r['H'], r['M'], r['D'], r['id']))
-            conn.commit(); st.success("Matriz Recalculada y Actualizada"); st.rerun()
+            conn.commit(); st.success("Matriz Actualizada"); st.rerun()
             
         b = io.BytesIO(); 
         with pd.ExcelWriter(b, engine='openpyxl') as w: edited_df.to_excel(w, index=False)
-        st.download_button("📥 Descargar Excel Matriz Completa", b.getvalue(), "MIPER_MASTER.xlsx")
+        st.download_button("📥 Descargar Excel", b.getvalue(), "MIPER_MASTER.xlsx")
 
     with tab_carga:
-        st.subheader("Carga Masiva Inteligente")
+        st.subheader("Carga Masiva Inteligente (Smart Upload)")
+        
+        # 1. Descarga Template
         plantilla = {
             'Proceso':['Cosecha'], 'Puesto':['Operador'], 'Lugar':['Bosque'], 'Familia':['Seguridad'], 'GEMA':['Ambiente'],
             'Peligro':['Pendiente'], 'Riesgo':['Volcamiento'], 
@@ -766,32 +758,54 @@ elif menu == "🛡️ Matriz IPER (ISP)":
         }
         b2 = io.BytesIO(); 
         with pd.ExcelWriter(b2, engine='openpyxl') as w: pd.DataFrame(plantilla).to_excel(w, index=False)
-        st.download_button("📥 Descargar Plantilla Maestra V176", b2.getvalue(), "plantilla_iper_master.xlsx")
+        st.download_button("1️⃣ Descargar Plantilla Maestra", b2.getvalue(), "plantilla_iper_master.xlsx")
         
-        up = st.file_uploader("Subir Excel", type=['xlsx'])
+        # 2. Carga y Validación
+        up = st.file_uploader("2️⃣ Subir Excel", type=['xlsx'])
         if up:
             try:
-                df = pd.read_excel(up)
-                st.write("Vista Previa:")
-                st.dataframe(df.head())
-                if st.button("Confirmar Carga"):
+                df_up = pd.read_excel(up)
+                st.info("Pre-visualización y Corrección de Datos (Edite aquí antes de guardar)")
+                
+                # Agregar columnas de validación visual
+                df_up['VEP_Inicial_Calc'] = df_up['P_Inicial'] * df_up['C_Inicial']
+                df_up['Estado'] = df_up.apply(lambda x: "⚠️ Error P/C" if x['P_Inicial'] not in [1,2,4] or x['C_Inicial'] not in [1,2,4] else "✅ OK", axis=1)
+                
+                # Editor Interactivo
+                edited_up = st.data_editor(df_up, num_rows="dynamic", key="editor_up")
+                
+                valid_count = len(edited_up[edited_up['Estado'] == "✅ OK"])
+                error_count = len(edited_up[edited_up['Estado'] != "✅ OK"])
+                
+                c_val1, c_val2 = st.columns(2)
+                c_val1.metric("Registros Válidos", valid_count)
+                c_val2.metric("Registros con Error", error_count)
+                
+                if st.button("3️⃣ Procesar Carga Definitiva"):
                     c = conn.cursor()
-                    for i, r in df.iterrows():
-                        pi = int(r.get('P_Inicial',1)); ci = int(r.get('C_Inicial',1)); vi = pi*ci; ni = calcular_nivel_riesgo(vi)
-                        pr = int(r.get('P_Residual',1)); cr = int(r.get('C_Residual',1)); vr = pr*cr; nr = calcular_nivel_riesgo(vr)
-                        
-                        c.execute("""INSERT INTO matriz_iper 
-                            (proceso, puesto_trabajo, lugar_especifico, familia_riesgo, factor_gema, peligro_factor, riesgo_asociado,
-                            n_hombres, n_mujeres, n_disidencias,
-                            probabilidad, consecuencia, vep, nivel_riesgo, 
-                            medida_control, jerarquia_control, requisito_legal,
-                            probabilidad_residual, consecuencia_residual, vep_residual, nivel_riesgo_residual) 
-                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", 
-                            (r.get('Proceso'), r.get('Puesto'), r.get('Lugar'), r.get('Familia'), r.get('GEMA'), r.get('Peligro'), r.get('Riesgo'),
-                             r.get('Hombres',0), r.get('Mujeres',0), r.get('Diversidad',0),
-                             pi, ci, vi, ni, r.get('Medida'), r.get('Jerarquia'), r.get('Legal'), pr, cr, vr, nr))
-                    conn.commit(); st.success("Carga Masiva Exitosa")
-            except Exception as e: st.error(f"Error en archivo: {e}")
+                    count_ok = 0
+                    for i, r in edited_up.iterrows():
+                        if r['Estado'] == "✅ OK": # Solo cargar válidos
+                            pi = int(r.get('P_Inicial',1)); ci = int(r.get('C_Inicial',1)); vi = pi*ci; ni = calcular_nivel_riesgo(vi)
+                            pr = int(r.get('P_Residual',1)); cr = int(r.get('C_Residual',1)); vr = pr*cr; nr = calcular_nivel_riesgo(vr)
+                            
+                            c.execute("""INSERT INTO matriz_iper 
+                                (proceso, puesto_trabajo, lugar_especifico, familia_riesgo, factor_gema, peligro_factor, riesgo_asociado,
+                                n_hombres, n_mujeres, n_disidencias,
+                                probabilidad, consecuencia, vep, nivel_riesgo, 
+                                medida_control, jerarquia_control, requisito_legal,
+                                probabilidad_residual, consecuencia_residual, vep_residual, nivel_riesgo_residual) 
+                                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", 
+                                (r.get('Proceso'), r.get('Puesto'), r.get('Lugar'), r.get('Familia'), r.get('GEMA'), r.get('Peligro'), r.get('Riesgo'),
+                                 r.get('Hombres',0), r.get('Mujeres',0), r.get('Diversidad',0),
+                                 pi, ci, vi, ni, r.get('Medida'), r.get('Jerarquia'), r.get('Legal'), pr, cr, vr, nr))
+                            count_ok += 1
+                    conn.commit()
+                    st.success(f"✅ Se cargaron exitosamente {count_ok} registros a la base de datos.")
+                    time.sleep(2)
+                    st.rerun()
+                    
+            except Exception as e: st.error(f"Error crítico en archivo: {e}")
 
     with tab_crear:
         st.subheader("Evaluación de Riesgo Maestra (Norma ISP 2024)")
@@ -805,7 +819,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
             d1, d2, d3 = st.columns(3)
             nh = d1.number_input("Hombres (Cis)", min_value=0)
             nm = d2.number_input("Mujeres (Cis)", min_value=0)
-            nd = d3.number_input("Diversidad (Trans/No Binario)", min_value=0)
+            nd = d3.number_input("Diversidades (Trans/No Binario)", min_value=0)
             
             st.markdown("##### 2. Identificación del Peligro (GEMA)")
             c4, c5, c6 = st.columns(3)
