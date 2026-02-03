@@ -13,6 +13,7 @@ from PIL import Image as PILImage
 import matplotlib
 import matplotlib.pyplot as plt
 import plotly.express as px
+import plotly.graph_objects as go
 from reportlab.lib import colors
 from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import letter
@@ -43,7 +44,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v177_smart_upload.db' # Actualización Carga Inteligente
+DB_NAME = 'sgsst_v179_dynamic_link.db' # Actualización Vínculo Dinámico
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -200,7 +201,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     
-    # --- MATRIZ IPER V177 (MAESTRA) ---
+    # --- MATRIZ IPER V179 ---
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         proceso TEXT, 
@@ -666,13 +667,14 @@ elif menu == "⚖️ Gestión DS67":
 
     conn.close()
 
-# --- 3. MATRIZ IPER (V177 - SMART UPLOAD) ---
+# --- 3. MATRIZ IPER (V179 - DYNAMIC ROLES & SMART MATRIX) ---
 elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Riesgos (ISP 2024 + DS44)</div>", unsafe_allow_html=True)
     tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Matriz & Dashboard", "📂 Carga Masiva Inteligente", "➕ Crear Riesgo (Maestro)"])
     conn = get_conn()
     
     with tab_ver:
+        # CONSULTA MAESTRA
         query = """SELECT id, 
                    proceso as 'PROCESO', puesto_trabajo as 'PUESTO', tarea as 'TAREA', 
                    lugar_especifico as 'LUGAR', familia_riesgo as 'FAMILIA', codigo_riesgo as 'COD ISP', 
@@ -685,20 +687,23 @@ elif menu == "🛡️ Matriz IPER (ISP)":
         df_matriz = pd.read_sql(query, conn)
         
         # Filtros
-        cf1, cf2 = st.columns(2)
-        filtro_nivel = cf1.multiselect("Filtrar por Nivel (Inicial)", ["INTOLERABLE", "IMPORTANTE", "MODERADO", "TOLERABLE"])
-        filtro_fam = cf2.multiselect("Filtrar por Familia", list(ISP_RISK_CODES.keys()))
+        cf1, cf2, cf3 = st.columns(3)
+        filtro_nivel = cf1.multiselect("Nivel Riesgo", ["INTOLERABLE", "IMPORTANTE", "MODERADO", "TOLERABLE"])
+        filtro_fam = cf2.multiselect("Familia Riesgo", list(ISP_RISK_CODES.keys()))
+        filtro_puesto = cf3.multiselect("Puesto Trabajo", df_matriz['PUESTO'].unique() if not df_matriz.empty else [])
         
         df_view = df_matriz.copy()
         if filtro_nivel: df_view = df_view[df_view['NIVEL_INI'].isin(filtro_nivel)]
         if filtro_fam: df_view = df_view[df_view['FAMILIA'].isin(filtro_fam)]
+        if filtro_puesto: df_view = df_view[df_view['PUESTO'].isin(filtro_puesto)]
         
         # Dashboard Visual
-        with st.expander("📊 Ver Mapa de Calor y Estadísticas (Click para abrir)", expanded=False):
+        with st.expander("📊 Ver Dashboard Visual (Click para abrir)", expanded=False):
             g1, g2 = st.columns(2)
             with g1:
                 if not df_view.empty:
-                    fig_heat = px.density_heatmap(df_view, x="P_INI", y="C_INI", title="Mapa de Calor de Riesgos", nbinsx=4, nbinsy=4, color_continuous_scale="Reds")
+                    fig_heat = px.density_heatmap(df_view, x="P_INI", y="C_INI", title="Mapa de Calor (Probabilidad vs Consecuencia)", 
+                                                 nbinsx=4, nbinsy=4, color_continuous_scale="Reds")
                     st.plotly_chart(fig_heat, use_container_width=True)
             with g2:
                 if not df_view.empty:
@@ -722,7 +727,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                 "JERARQUIA": st.column_config.SelectboxColumn("JERARQUIA", options=["Eliminación", "Sustitución", "Ingeniería", "Administrativo", "EPP"])
             }, hide_index=True, key="matriz_ed")
             
-        if st.button("💾 Guardar y Recalcular Matriz Maestra"):
+        if st.button("💾 Guardar y Recalcular Matriz"):
             c = conn.cursor()
             for i, r in edited_df.iterrows():
                 pi = int(r['P_INI']); ci = int(r['C_INI']); vi = pi*ci; ni = calcular_nivel_riesgo(vi)
@@ -742,12 +747,12 @@ elif menu == "🛡️ Matriz IPER (ISP)":
             
         b = io.BytesIO(); 
         with pd.ExcelWriter(b, engine='openpyxl') as w: edited_df.to_excel(w, index=False)
-        st.download_button("📥 Descargar Excel", b.getvalue(), "MIPER_MASTER.xlsx")
+        st.download_button("📥 Descargar Excel Filtrado", b.getvalue(), "MIPER_FILTRADA.xlsx")
 
     with tab_carga:
         st.subheader("Carga Masiva Inteligente (Smart Upload)")
         
-        # 1. Descarga Template
+        # 1. Descarga Template ACTUALIZADO V179
         plantilla = {
             'Proceso':['Cosecha'], 'Puesto':['Operador'], 'Lugar':['Bosque'], 'Familia':['Seguridad'], 'GEMA':['Ambiente'],
             'Peligro':['Pendiente'], 'Riesgo':['Volcamiento'], 
@@ -758,7 +763,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
         }
         b2 = io.BytesIO(); 
         with pd.ExcelWriter(b2, engine='openpyxl') as w: pd.DataFrame(plantilla).to_excel(w, index=False)
-        st.download_button("1️⃣ Descargar Plantilla Maestra", b2.getvalue(), "plantilla_iper_master.xlsx")
+        st.download_button("1️⃣ Descargar Plantilla Maestra V179", b2.getvalue(), "plantilla_iper_master.xlsx")
         
         # 2. Carga y Validación
         up = st.file_uploader("2️⃣ Subir Excel", type=['xlsx'])
@@ -767,25 +772,19 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                 df_up = pd.read_excel(up)
                 st.info("Pre-visualización y Corrección de Datos (Edite aquí antes de guardar)")
                 
-                # Agregar columnas de validación visual
-                df_up['VEP_Inicial_Calc'] = df_up['P_Inicial'] * df_up['C_Inicial']
-                df_up['Estado'] = df_up.apply(lambda x: "⚠️ Error P/C" if x['P_Inicial'] not in [1,2,4] or x['C_Inicial'] not in [1,2,4] else "✅ OK", axis=1)
+                if 'P_Inicial' in df_up.columns and 'C_Inicial' in df_up.columns:
+                    df_up['Estado'] = df_up.apply(lambda x: "⚠️ Error P/C" if x['P_Inicial'] not in [1,2,4] or x['C_Inicial'] not in [1,2,4] else "✅ OK", axis=1)
+                else:
+                    st.error("El archivo no tiene las columnas P_Inicial o C_Inicial. Descargue la plantilla V179.")
+                    st.stop()
                 
-                # Editor Interactivo
                 edited_up = st.data_editor(df_up, num_rows="dynamic", key="editor_up")
-                
-                valid_count = len(edited_up[edited_up['Estado'] == "✅ OK"])
-                error_count = len(edited_up[edited_up['Estado'] != "✅ OK"])
-                
-                c_val1, c_val2 = st.columns(2)
-                c_val1.metric("Registros Válidos", valid_count)
-                c_val2.metric("Registros con Error", error_count)
                 
                 if st.button("3️⃣ Procesar Carga Definitiva"):
                     c = conn.cursor()
                     count_ok = 0
                     for i, r in edited_up.iterrows():
-                        if r['Estado'] == "✅ OK": # Solo cargar válidos
+                        if r['Estado'] == "✅ OK": 
                             pi = int(r.get('P_Inicial',1)); ci = int(r.get('C_Inicial',1)); vi = pi*ci; ni = calcular_nivel_riesgo(vi)
                             pr = int(r.get('P_Residual',1)); cr = int(r.get('C_Residual',1)); vr = pr*cr; nr = calcular_nivel_riesgo(vr)
                             
@@ -801,19 +800,23 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                                  pi, ci, vi, ni, r.get('Medida'), r.get('Jerarquia'), r.get('Legal'), pr, cr, vr, nr))
                             count_ok += 1
                     conn.commit()
-                    st.success(f"✅ Se cargaron exitosamente {count_ok} registros a la base de datos.")
+                    st.success(f"✅ Se cargaron exitosamente {count_ok} registros.")
                     time.sleep(2)
                     st.rerun()
-                    
             except Exception as e: st.error(f"Error crítico en archivo: {e}")
 
     with tab_crear:
         st.subheader("Evaluación de Riesgo Maestra (Norma ISP 2024)")
         with st.form("risk_master"):
-            st.markdown("##### 1. Contexto y Demografía (Género)")
+            st.markdown("##### 1. Contexto y Demografía")
             c1, c2, c3 = st.columns(3)
             pro = c1.text_input("Proceso (Ej: Cosecha)")
-            pue = c2.text_input("Puesto de Trabajo")
+            
+            # --- VINCULO DINAMICO DE PUESTOS (V179) ---
+            roles_db = pd.read_sql("SELECT DISTINCT cargo FROM personal", conn)['cargo'].dropna().tolist()
+            all_roles = sorted(list(set(LISTA_CARGOS + roles_db)))
+            pue = c2.selectbox("Puesto de Trabajo", all_roles)
+            
             lug = c3.text_input("Lugar Específico")
             
             d1, d2, d3 = st.columns(3)
