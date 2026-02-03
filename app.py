@@ -44,7 +44,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v185_final_irl_fix.db' # Versión 185: Fix Guardado + IRL Cargo
+DB_NAME = 'sgsst_v186_final_stable.db' # Version 186 con corrección de guardado
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -217,7 +217,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     
-    # --- MATRIZ IPER V185 ---
+    # --- MATRIZ IPER V186 ---
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         proceso TEXT, 
@@ -683,7 +683,7 @@ elif menu == "⚖️ Gestión DS67":
 
     conn.close()
 
-# --- 3. MATRIZ IPER (V185 - DYNAMIC ROLES & SMART MATRIX) ---
+# --- 3. MATRIZ IPER (V185 - MAESTRA) ---
 elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Riesgos (ISP 2024 + DS44)</div>", unsafe_allow_html=True)
     tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Matriz & Dashboard", "📂 Carga Masiva Inteligente", "➕ Crear Riesgo (Maestro)"])
@@ -768,7 +768,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
     with tab_carga:
         st.subheader("Carga Masiva Inteligente (Smart Upload)")
         
-        # 1. Descarga Template ACTUALIZADO V179
+        # 1. Descarga Template
         plantilla = {
             'Proceso':['Cosecha'], 'Puesto':['Operador'], 'Lugar':['Bosque'], 'Familia':['Seguridad'], 'GEMA':['Ambiente'],
             'Peligro':['Pendiente'], 'Riesgo':['Volcamiento'], 
@@ -925,7 +925,7 @@ elif menu == "👥 Gestión Personas":
             c = conn.cursor()
             for i, r in edited.iterrows():
                 
-                # HELPER PARA EVITAR NULOS (FIX V184 ROBUST)
+                # HELPER PARA EVITAR NULOS (FIX V185 ROBUST)
                 def clean_str(val):
                     if val is None: return None
                     s = str(val).strip()
@@ -936,7 +936,7 @@ elif menu == "👥 Gestión Personas":
                 if pd.isna(fec) or str(fec)=='NaT': fec = date.today()
                 if pd.isna(f_ex) or str(f_ex)=='NaT': f_ex = None
                 
-                # --- FIX LINEA 943: clean_str en WHERE RUT ---
+                # --- FIX LINEA 947: clean_str en WHERE RUT ---
                 rut_key = clean_str(r.get('rut_old')) if pd.notnull(r.get('rut_old')) else clean_str(r.get('rut'))
                 
                 if r['rut'] != r.get('rut_old', r['rut']):
