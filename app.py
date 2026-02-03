@@ -22,7 +22,7 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 from streamlit_drawable_canvas import st_canvas
 import openpyxl 
 
-# --- LIBRERIAS PARA EMAIL (NUEVO V168) ---
+# --- LIBRERIAS PARA EMAIL ---
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -43,25 +43,19 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v168_enterprise.db' # Actualización Enterprise
+DB_NAME = 'sgsst_v169_ds67_pro.db' # Actualización DS67
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
-# --- FUNCIÓN DE ENVÍO DE CORREO (PUNTO 1 Y 3) ---
+# --- FUNCIÓN DE ENVÍO DE CORREO ---
 def enviar_correo_riohs(destinatario, nombre_trabajador, pdf_bytes, nombre_archivo):
-    """
-    Envía el PDF del RIOHS al trabajador.
-    NOTA: Para producción, configurar credenciales reales abajo.
-    """
-    # --- CONFIGURACION SMTP (REEMPLAZAR CON TUS DATOS REALES) ---
     SMTP_SERVER = "smtp.gmail.com"
     SMTP_PORT = 587
-    EMAIL_EMISOR = "tu_correo@empresa.com" # <--- PONER TU EMAIL AQUI
-    EMAIL_PASSWORD = "tu_contraseña_aplicacion" # <--- PONER TU CLAVE AQUI
+    EMAIL_EMISOR = "tu_correo@empresa.com" 
+    EMAIL_PASSWORD = "tu_contraseña_aplicacion" 
     
-    # MODO SIMULACIÓN (Para que la app no falle sin credenciales reales)
     if EMAIL_EMISOR == "tu_correo@empresa.com":
-        time.sleep(1.5) # Simula tiempo de envío
+        time.sleep(1.5) 
         return True, "Simulación: Correo enviado exitosamente (Configurar SMTP para real)"
 
     try:
@@ -70,21 +64,12 @@ def enviar_correo_riohs(destinatario, nombre_trabajador, pdf_bytes, nombre_archi
         msg['To'] = destinatario
         msg['Subject'] = f"ENTREGA RIOHS - {nombre_trabajador}"
 
-        body = f"""Estimado/a {nombre_trabajador},
-        
-        Adjunto encontrará su comprobante de recepción del Reglamento Interno de Orden, Higiene y Seguridad (RIOHS).
-        
-        Atte,
-        Departamento de Prevención.
-        """
+        body = f"Estimado/a {nombre_trabajador},\n\nAdjunto encontrará su comprobante de recepción del RIOHS.\n\nAtte,\nPrevención."
         msg.attach(MIMEText(body, 'plain'))
-
-        # Adjuntar PDF
         part = MIMEApplication(pdf_bytes, Name=nombre_archivo)
         part['Content-Disposition'] = f'attachment; filename="{nombre_archivo}"'
         msg.attach(part)
 
-        # Conexión Segura
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         server.starttls()
         server.login(EMAIL_EMISOR, EMAIL_PASSWORD)
@@ -93,6 +78,19 @@ def enviar_correo_riohs(destinatario, nombre_trabajador, pdf_bytes, nombre_archi
         return True, "Enviado Exitosamente"
     except Exception as e:
         return False, str(e)
+
+# --- FUNCIÓN PROCESAMIENTO FIRMA (Fondo Transparente) ---
+def process_signature_bg(img_data):
+    img = PILImage.fromarray(img_data.astype('uint8'), 'RGBA')
+    data = img.getdata()
+    new_data = []
+    for item in data:
+        if item[0] > 220 and item[1] > 220 and item[2] > 220:
+            new_data.append((255, 255, 255, 0)) 
+        else:
+            new_data.append(item) 
+    img.putdata(new_data)
+    return img
 
 # --- MODO KIOSCO (FIRMA MÓVIL) ---
 query_params = st.query_params
@@ -119,7 +117,7 @@ if "mobile_sign" in query_params and query_params["mobile_sign"] == "true":
                                 conn.execute("UPDATE asistencia_capacitacion SET estado='FIRMADO', firma_b64=? WHERE capacitacion_id=? AND trabajador_rut=?", (img_str, cap_id_mobile, rut_input))
                                 conn.commit()
                                 st.success("✅ Firma registrada. Gracias.")
-                            else: st.error("❌ RUT no inscrito en esta capacitación.")
+                            else: st.error("❌ RUT no inscrito.")
                         else: st.warning("⚠️ Faltan datos.")
             else: st.error("Capacitación no encontrada.")
         except: st.error("Error de conexión con DB Móvil.")
@@ -178,6 +176,9 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS contratistas (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_empresa TEXT, razon_social TEXT, estado_documental TEXT, fecha_vencimiento_f30 DATE)''')
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, usuario TEXT, accion TEXT, detalle TEXT)''')
+    
+    # NUEVA TABLA DS67
+    c.execute('''CREATE TABLE IF NOT EXISTS periodos_ds67 (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre_periodo TEXT, fecha_inicio DATE, fecha_fin DATE, masa_imponible INTEGER, dias_perdidos INTEGER, invalideces INTEGER, muertes INTEGER, tasa_siniestralidad REAL, cotizacion_adicional REAL)''')
 
     check_and_add_column(c, "personal", "contacto_emergencia", "TEXT")
     check_and_add_column(c, "personal", "fono_emergencia", "TEXT")
@@ -185,11 +186,14 @@ def init_db():
     check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE")
     check_and_add_column(c, "inventario_epp", "precio", "INTEGER")
     
-    # RIOHS Columns V168
+    # RIOHS Columns
     check_and_add_column(c, "registro_riohs", "nombre_difusor", "TEXT")
     check_and_add_column(c, "registro_riohs", "firma_difusor_b64", "TEXT")
     check_and_add_column(c, "registro_riohs", "email_copia", "TEXT")
-    check_and_add_column(c, "registro_riohs", "estado_envio", "TEXT") # NUEVO PUNTO 3
+    check_and_add_column(c, "registro_riohs", "estado_envio", "TEXT")
+    
+    # DS67 en incidentes
+    check_and_add_column(c, "incidentes", "dias_perdidos", "INTEGER") # Para calcular automáticamente
 
     c.execute("SELECT count(*) FROM usuarios")
     if c.fetchone()[0] == 0:
@@ -248,6 +252,24 @@ def get_incidentes_mes():
     try: mes = datetime.now().strftime('%m'); res = pd.read_sql(f"SELECT count(*) FROM incidentes WHERE strftime('%m', fecha)='{mes}'", conn).iloc[0,0]
     except: res = 0
     conn.close(); return res
+
+# --- LOGICA DS67 ---
+def calcular_tasa_siniestralidad(dias_perdidos, invalideces, muertes, masa_imponible):
+    # Formula DS67 simplificada para simulación
+    # Tasa = ((Total Días Perdidos + Factores Invalidez) / Promedio Masa Imponible) * 100
+    factor_invalidez = (invalideces * 2500) + (muertes * 2500) # Factor ejemplo estándar
+    if masa_imponible > 0:
+        tasa = ((dias_perdidos + factor_invalidez) / masa_imponible) * 100
+        return round(tasa, 2)
+    return 0.0
+
+def determinar_tramo_cotizacion(tasa):
+    # Tabla DS67 Simplificada (Ejemplo)
+    if tasa < 33: return 0.0
+    elif tasa < 66: return 0.34
+    elif tasa < 99: return 0.68
+    elif tasa < 132: return 1.02
+    else: return 3.40 # Tope ejemplo
 
 # ==============================================================================
 # 3. MOTOR DOCUMENTAL
@@ -320,7 +342,6 @@ class DocumentosLegalesPDF:
     def generar_riohs(self, data):
         self._header()
         
-        # 1. TEXTO LEGAL
         legal_1 = """Se deja expresa constancia, de acuerdo a lo establecido en el artículo 156 del Código del Trabajo y DS 44 de la Ley 16.744 que, he recibido en forma gratuita un ejemplar del Reglamento Interno de Orden, Higiene y Seguridad de SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA."""
         self.elements.append(Paragraph(legal_1, ParagraphStyle('L1', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
         self.elements.append(Spacer(1, 10))
@@ -333,7 +354,6 @@ class DocumentosLegalesPDF:
         self.elements.append(Paragraph(legal_3, ParagraphStyle('L3', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
         self.elements.append(Spacer(1, 15))
         
-        # 2. TEXTO DE DECISIÓN
         if "Digital" in data.get('tipo_entrega', ''):
             email_val = data.get('email', 'N/A')
             texto_decision = f"<b>EL TRABAJADOR DECIDIO LA RECEPCION DEL RELGAMENTO INTERNO DE ORDEN HIGIENE Y SEGURIDAD DE MANERA DIGITAL AL SIGUIENTE CORREO: {email_val}</b>"
@@ -347,14 +367,10 @@ class DocumentosLegalesPDF:
         self.elements.append(Paragraph(legal_4, ParagraphStyle('L4', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
         self.elements.append(Spacer(1, 20))
         
-        # 3. DATOS TRABAJADOR
         sig_img = Paragraph("", self.styles['Normal'])
         if data.get('firma_b64'):
-            if data.get('firma_b64') == "PENDIENTE_DIGITAL":
-                sig_img = Paragraph("ENVÍO DIGITAL MASIVO - PENDIENTE DE ACUSE", ParagraphStyle('P', fontSize=8, alignment=TA_CENTER, textColor=colors.red))
-            else:
-                try: sig_img = RLImage(io.BytesIO(base64.b64decode(data['firma_b64'])), width=200, height=80)
-                except: pass
+            try: sig_img = RLImage(io.BytesIO(base64.b64decode(data['firma_b64'])), width=200, height=80)
+            except: pass
             
         t_data = [
             ["NOMBRE COMPLETO", data['nombre']],
@@ -374,7 +390,6 @@ class DocumentosLegalesPDF:
         self.elements.append(t_worker)
         self.elements.append(Spacer(1, 20))
         
-        # 4. DATOS DIFUSOR
         sig_dif = Paragraph("", self.styles['Normal'])
         if data.get('firma_difusor'):
             try: sig_dif = RLImage(io.BytesIO(base64.b64decode(data['firma_difusor'])), width=180, height=70)
@@ -470,7 +485,7 @@ with st.sidebar:
     st.title("MADERAS GÁLVEZ")
     st.caption(f"Usuario: {st.session_state['user']} | Rol: {st.session_state['rol']}")
     with open(DB_NAME, "rb") as fp: st.download_button(label="💾 Respaldar BD", data=fp, file_name=f"backup_{date.today()}.db")
-    menu_options = ["📊 Dashboard", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"]
+    menu_options = ["📊 Dashboard", "⚖️ Gestión DS67", "🛡️ Matriz IPER (ISP)", "👥 Gestión Personas", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes & DIAT", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas"]
     if st.session_state['rol'] == "ADMINISTRADOR": menu_options.append("🔐 Gestión Usuarios")
     menu = st.radio("MENÚ", menu_options)
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
@@ -514,7 +529,56 @@ if menu == "📊 Dashboard":
                 st.plotly_chart(fig2, use_container_width=True)
     conn.close()
 
-# --- 2. MATRIZ IPER ---
+# --- 2. GESTION DS67 (NUEVO MODULO V169) ---
+elif menu == "⚖️ Gestión DS67":
+    st.markdown("<div class='main-header'>Gestión de Siniestralidad (DS 67)</div>", unsafe_allow_html=True)
+    conn = get_conn()
+    
+    t1, t2, t3 = st.tabs(["📊 Simulación", "📅 Periodos", "📋 Historial"])
+    
+    with t1:
+        st.subheader("Simulador de Tasa y Cotización Adicional")
+        c1, c2 = st.columns(2)
+        with c1:
+            masa_prom = st.number_input("Promedio Masa Imponible Anual (Trabajadores)", min_value=1, value=100)
+            dias_p = st.number_input("Total Días Perdidos (Periodo Eval)", min_value=0, value=0)
+        with c2:
+            inval_p = st.number_input("Invalideces (70% o más) / Muertes", min_value=0, value=0)
+            cot_actual = st.number_input("Cotización Adicional Actual (%)", value=0.0)
+            
+        if st.button("Calcular Tasa"):
+            tasa = calcular_tasa_siniestralidad(dias_p, inval_p, 0, masa_prom) # Muertes sumadas en invalidez para simplificar input
+            nueva_cot = determinar_tramo_cotizacion(tasa)
+            
+            st.divider()
+            k1, k2, k3 = st.columns(3)
+            k1.metric("Tasa Siniestralidad", f"{tasa:.2f}")
+            k2.metric("Nueva Cotización", f"{nueva_cot}%", delta=f"{round(nueva_cot - cot_actual, 2)}%", delta_color="inverse")
+            
+            if nueva_cot > cot_actual:
+                st.error(f"⚠️ Alerta: Su cotización subirá al {nueva_cot}%. Gestión de riesgos necesaria.")
+            elif nueva_cot < cot_actual:
+                st.success(f"✅ Felicidades: Su cotización bajará al {nueva_cot}%.")
+            else:
+                st.info("Su cotización se mantiene.")
+
+    with t2:
+        st.subheader("Registro de Periodos de Evaluación")
+        with st.form("ds67_p"):
+            np = st.text_input("Nombre Periodo (Ej: 2023-2025)")
+            f1 = st.date_input("Inicio")
+            f2 = st.date_input("Fin")
+            if st.form_submit_button("Guardar Periodo"):
+                conn.execute("INSERT INTO periodos_ds67 (nombre_periodo, fecha_inicio, fecha_fin) VALUES (?,?,?)", (np, f1, f2))
+                conn.commit()
+                st.success("Guardado")
+
+    with t3:
+        st.dataframe(pd.read_sql("SELECT * FROM periodos_ds67", conn))
+    
+    conn.close()
+
+# --- 3. MATRIZ IPER ---
 elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Riesgos (ISP 2024)</div>", unsafe_allow_html=True)
     tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Ver Matriz", "📂 Carga Masiva", "➕ Crear Riesgo"])
@@ -568,7 +632,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                 conn.commit(); st.success("Guardado"); st.rerun()
     conn.close()
 
-# --- 3. GESTION PERSONAS ---
+# --- 4. GESTION PERSONAS ---
 elif menu == "👥 Gestión Personas":
     st.markdown("<div class='main-header'>Gestión de Capital Humano</div>", unsafe_allow_html=True)
     conn = get_conn()
@@ -724,7 +788,7 @@ elif menu == "👥 Gestión Personas":
                 st.rerun()
     conn.close()
 
-# --- 4. GESTOR DOCUMENTAL (V168 - RIOHS PRO CON EMAIL, CAMPAÑA MASIVA Y TRAZABILIDAD) ---
+# --- 5. GESTOR DOCUMENTAL ---
 elif menu == "⚖️ Gestor Documental":
     st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
@@ -744,7 +808,6 @@ elif menu == "⚖️ Gestor Documental":
         
         with t2:
             st.subheader("Entrega de Reglamento Interno (RIOHS)")
-            # --- PESTAÑAS INTERNAS V168: INDIVIDUAL vs MASIVO ---
             tab_ind, tab_mass = st.tabs(["Entrega Individual", "📢 Campaña Masiva"])
             
             with tab_ind:
@@ -767,19 +830,18 @@ elif menu == "⚖️ Gestor Documental":
                     c3, c4 = st.columns(2)
                     with c3:
                         st.write("Firma Trabajador:")
-                        sig_worker = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_w_riohs_v168")
+                        sig_worker = st_canvas(stroke_width=2, stroke_color="black", background_color="#eeeeee", height=150, width=400, key="sig_w_riohs_v168")
                     with c4:
                         st.write("Firma Difusor:")
-                        sig_diffuser = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_d_riohs_v168")
+                        sig_diffuser = st_canvas(stroke_width=2, stroke_color="black", background_color="#eeeeee", height=150, width=400, key="sig_d_riohs_v168")
                     
                     if st.form_submit_button("Registrar Entrega RIOHS"):
                         if sig_worker.image_data is not None and sig_diffuser.image_data is not None and nom_dif:
-                            img_w = PILImage.fromarray(sig_worker.image_data.astype('uint8'), 'RGBA'); b_w = io.BytesIO(); img_w.save(b_w, format='PNG'); str_w = base64.b64encode(b_w.getvalue()).decode()
-                            img_d = PILImage.fromarray(sig_diffuser.image_data.astype('uint8'), 'RGBA'); b_d = io.BytesIO(); img_d.save(b_d, format='PNG'); str_d = base64.b64encode(b_d.getvalue()).decode()
+                            img_w = process_signature_bg(sig_worker.image_data); b_w = io.BytesIO(); img_w.save(b_w, format='PNG'); str_w = base64.b64encode(b_w.getvalue()).decode()
+                            img_d = process_signature_bg(sig_diffuser.image_data); b_d = io.BytesIO(); img_d.save(b_d, format='PNG'); str_d = base64.b64encode(b_d.getvalue()).decode()
                             
                             tipo_db = "Digital" if "Digital" in tipo_ent else "Físico"
                             
-                            # Generar PDF
                             pdf = DocumentosLegalesPDF("REGISTRO DE ENTREGA DE REGLAMENTO INTERNO DE ORDEN, HIGIENE Y SEGURIDAD", "RG-SSTGD-03").generar_riohs({
                                 'nombre': nom_w, 'rut': rut_w, 'cargo': worker_data['cargo'], 
                                 'fecha': date.today().strftime("%d-%m-%Y"), 
@@ -788,7 +850,6 @@ elif menu == "⚖️ Gestor Documental":
                             })
                             pdf_bytes = pdf.getvalue()
                             
-                            # Enviar Email si es Digital
                             estado_envio = "N/A"
                             if tipo_db == "Digital":
                                 exito, msg = enviar_correo_riohs(email_w, nom_w, pdf_bytes, f"RIOHS_{rut_w}.pdf")
@@ -805,42 +866,32 @@ elif menu == "⚖️ Gestor Documental":
                         else:
                             st.warning("⚠️ Faltan firmas.")
 
-            # --- NUEVA PESTAÑA DE CAMPAÑA MASIVA (PUNTO 2) ---
             with tab_mass:
-                st.info("📢 Esta herramienta enviará el RIOHS a todos los trabajadores activos con email registrado.")
+                st.info("📢 Campaña Masiva de RIOHS Digital")
                 difusor_mass = st.text_input("Nombre del Difusor (Campaña Masiva):")
-                st.write("Firma del Difusor (Para todos los documentos):")
-                sig_mass = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_mass_v168")
+                st.write("Firma del Difusor:")
+                sig_mass = st_canvas(stroke_width=2, stroke_color="black", background_color="#eeeeee", height=150, width=400, key="sig_mass_v168")
                 
-                if st.button("🚀 INICIAR CAMPAÑA DE ENVÍO MASIVO", type="primary"):
+                if st.button("🚀 INICIAR CAMPAÑA", type="primary"):
                     if difusor_mass and sig_mass.image_data is not None:
-                        # Preparar firma difusor
-                        img_d = PILImage.fromarray(sig_mass.image_data.astype('uint8'), 'RGBA'); b_d = io.BytesIO(); img_d.save(b_d, format='PNG'); str_d = base64.b64encode(b_d.getvalue()).decode()
-                        
-                        # Buscar destinatarios
+                        img_d = process_signature_bg(sig_mass.image_data); b_d = io.BytesIO(); img_d.save(b_d, format='PNG'); str_d = base64.b64encode(b_d.getvalue()).decode()
                         targets = pd.read_sql("SELECT rut, nombre, cargo, email FROM personal WHERE estado='ACTIVO' AND email IS NOT NULL AND email != ''", conn)
                         
                         prog_bar = st.progress(0); status_txt = st.empty()
                         count = 0
                         
                         for i, t in targets.iterrows():
-                            # Generar PDF con firma pendiente
                             pdf = DocumentosLegalesPDF("REGISTRO DE ENTREGA DE REGLAMENTO INTERNO DE ORDEN, HIGIENE Y SEGURIDAD", "RG-SSTGD-03").generar_riohs({
                                 'nombre': t['nombre'], 'rut': t['rut'], 'cargo': t['cargo'], 
                                 'fecha': date.today().strftime("%d-%m-%Y"), 
-                                'firma_b64': "PENDIENTE_DIGITAL", # Marca especial para PDF
+                                'firma_b64': "PENDIENTE_DIGITAL", 
                                 'tipo_entrega': "Digital", 'email': t['email'],
                                 'nombre_difusor': difusor_mass, 'firma_difusor': str_d
                             })
-                            
-                            # Enviar
                             exito, msg = enviar_correo_riohs(t['email'], t['nombre'], pdf.getvalue(), f"RIOHS_{t['rut']}.pdf")
                             st_env = "ENVIADO" if exito else "ERROR"
-                            
-                            # Guardar registro
                             conn.execute("""INSERT INTO registro_riohs (fecha_entrega, rut_trabajador, nombre_trabajador, tipo_entrega, firma_b64, nombre_difusor, firma_difusor_b64, email_copia, estado_envio) VALUES (?,?,?,?,?,?,?,?,?)""", 
                                 (date.today(), t['rut'], t['nombre'], "Digital", "PENDIENTE_DIGITAL", difusor_mass, str_d, t['email'], st_env))
-                            
                             count += 1
                             prog_bar.progress((i + 1) / len(targets))
                             status_txt.text(f"Procesando: {t['nombre']} - {st_env}")
@@ -854,7 +905,7 @@ elif menu == "⚖️ Gestor Documental":
             st.dataframe(pd.read_sql("SELECT id, fecha_entrega, nombre_trabajador, tipo_entrega, email_copia, estado_envio FROM registro_riohs ORDER BY id DESC", conn))
     conn.close()
 
-# --- 5. LOGISTICA EPP ---
+# --- 6. LOGISTICA EPP ---
 elif menu == "🦺 Logística EPP":
     st.markdown("<div class='main-header'>Logística y Entrega EPP</div>", unsafe_allow_html=True)
     conn = get_conn()
@@ -920,11 +971,12 @@ elif menu == "🦺 Logística EPP":
                     if st.button("🗑️ Vaciar Carrito"): st.session_state.epp_cart = []; st.rerun()
                     
                     st.write("---"); st.write("Firma de Recepción (Trabajador):")
-                    firm_canvas = st_canvas(stroke_width=2, height=350, width=700, key="epp_sig_big")
+                    firm_canvas = st_canvas(stroke_width=2, height=350, width=700, key="epp_sig_big", background_color="#eeeeee")
                     
                     if st.button("✅ CONFIRMAR ENTREGA"):
                         if firm_canvas.image_data is not None:
-                            img = PILImage.fromarray(firm_canvas.image_data.astype('uint8'), 'RGBA'); b = io.BytesIO(); img.save(b, format='PNG'); img_str = base64.b64encode(b.getvalue()).decode()
+                            img = process_signature_bg(firm_canvas.image_data)
+                            b = io.BytesIO(); img.save(b, format='PNG'); img_str = base64.b64encode(b.getvalue()).decode()
                             conn.execute("INSERT INTO registro_epp (fecha_entrega, rut_trabajador, nombre_trabajador, cargo, lista_productos, firma_b64) VALUES (?,?,?,?,?,?)", (date.today(), rut_w, nom_w, cargo_w, str(st.session_state.epp_cart), img_str))
                             for item in st.session_state.epp_cart:
                                 conn.execute("UPDATE inventario_epp SET stock_actual = stock_actual - ? WHERE producto=?", (item['cant'], item['prod']))
@@ -961,7 +1013,7 @@ elif menu == "🦺 Logística EPP":
             
     conn.close()
 
-# --- 6. CAPACITACIONES (CON QR FIXED) ---
+# --- 7. CAPACITACIONES ---
 elif menu == "🎓 Capacitaciones":
     st.markdown("<div class='main-header'>Capacitaciones</div>", unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["Nueva", "QR Firma", "Historial"])
@@ -1001,7 +1053,7 @@ elif menu == "🎓 Capacitaciones":
             st.download_button("PDF", pdf.getvalue(), "Lista.pdf")
     conn.close()
 
-# --- 7. OTROS ---
+# --- 8. OTROS ---
 elif menu == "🚨 Incidentes & DIAT":
     st.title("Incidentes"); conn = get_conn()
     with st.form("inc"):
@@ -1018,7 +1070,7 @@ elif menu == "🧯 Extintores":
 elif menu == "🏗️ Contratistas":
     st.title("Contratistas"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM contratistas", conn), key="con", num_rows="dynamic"); conn.close()
 
-# --- 8. GESTIÓN USUARIOS ---
+# --- 9. GESTIÓN USUARIOS ---
 elif menu == "🔐 Gestión Usuarios":
     st.markdown("<div class='main-header'>Administración de Usuarios y Accesos</div>", unsafe_allow_html=True)
     conn = get_conn()
