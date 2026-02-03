@@ -43,7 +43,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v169_ds67_pro.db' # Actualización DS67
+DB_NAME = 'sgsst_v170_ds67_advanced.db' # Actualización DS67 Mensual
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -79,7 +79,7 @@ def enviar_correo_riohs(destinatario, nombre_trabajador, pdf_bytes, nombre_archi
     except Exception as e:
         return False, str(e)
 
-# --- FUNCIÓN PROCESAMIENTO FIRMA (Fondo Transparente) ---
+# --- FUNCIÓN PROCESAMIENTO FIRMA ---
 def process_signature_bg(img_data):
     img = PILImage.fromarray(img_data.astype('uint8'), 'RGBA')
     data = img.getdata()
@@ -92,7 +92,7 @@ def process_signature_bg(img_data):
     img.putdata(new_data)
     return img
 
-# --- MODO KIOSCO (FIRMA MÓVIL) ---
+# --- MODO KIOSCO ---
 query_params = st.query_params
 if "mobile_sign" in query_params and query_params["mobile_sign"] == "true":
     cap_id_mobile = query_params.get("cap_id", None)
@@ -136,7 +136,6 @@ st.markdown(f"""
     .alert-icon {{font-size: 1.5rem; margin-right: 15px;}}
     .alert-high {{background-color: #fff5f5; border-left: 5px solid #c53030; color: #c53030;}}
     
-    /* FIX: BORDE VISIBLE PARA LOS CUADROS DE FIRMA */
     div[data-testid="stCanvas"] {{
         border: 2px solid #a0a0a0 !important;
         border-radius: 5px;
@@ -177,8 +176,20 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, usuario TEXT, accion TEXT, detalle TEXT)''')
     
-    # NUEVA TABLA DS67
-    c.execute('''CREATE TABLE IF NOT EXISTS periodos_ds67 (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre_periodo TEXT, fecha_inicio DATE, fecha_fin DATE, masa_imponible INTEGER, dias_perdidos INTEGER, invalideces INTEGER, muertes INTEGER, tasa_siniestralidad REAL, cotizacion_adicional REAL)''')
+    # --- TABLAS DS67 AVANZADAS ---
+    c.execute('''CREATE TABLE IF NOT EXISTS periodos_ds67 (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre_periodo TEXT, fecha_inicio DATE, fecha_fin DATE)''')
+    
+    # Tabla Mensual (Bitácora)
+    c.execute('''CREATE TABLE IF NOT EXISTS detalle_mensual_ds67 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        periodo_id INTEGER,
+        mes INTEGER,
+        anio INTEGER,
+        masa_imponible INTEGER,
+        dias_perdidos INTEGER,
+        invalideces_muertes INTEGER,
+        observacion TEXT
+    )''')
 
     check_and_add_column(c, "personal", "contacto_emergencia", "TEXT")
     check_and_add_column(c, "personal", "fono_emergencia", "TEXT")
@@ -186,14 +197,12 @@ def init_db():
     check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE")
     check_and_add_column(c, "inventario_epp", "precio", "INTEGER")
     
-    # RIOHS Columns
     check_and_add_column(c, "registro_riohs", "nombre_difusor", "TEXT")
     check_and_add_column(c, "registro_riohs", "firma_difusor_b64", "TEXT")
     check_and_add_column(c, "registro_riohs", "email_copia", "TEXT")
     check_and_add_column(c, "registro_riohs", "estado_envio", "TEXT")
     
-    # DS67 en incidentes
-    check_and_add_column(c, "incidentes", "dias_perdidos", "INTEGER") # Para calcular automáticamente
+    check_and_add_column(c, "incidentes", "dias_perdidos", "INTEGER")
 
     c.execute("SELECT count(*) FROM usuarios")
     if c.fetchone()[0] == 0:
@@ -253,23 +262,19 @@ def get_incidentes_mes():
     except: res = 0
     conn.close(); return res
 
-# --- LOGICA DS67 ---
-def calcular_tasa_siniestralidad(dias_perdidos, invalideces, muertes, masa_imponible):
-    # Formula DS67 simplificada para simulación
-    # Tasa = ((Total Días Perdidos + Factores Invalidez) / Promedio Masa Imponible) * 100
-    factor_invalidez = (invalideces * 2500) + (muertes * 2500) # Factor ejemplo estándar
-    if masa_imponible > 0:
-        tasa = ((dias_perdidos + factor_invalidez) / masa_imponible) * 100
-        return round(tasa, 2)
-    return 0.0
-
+# --- LOGICA DS67 AVANZADA ---
 def determinar_tramo_cotizacion(tasa):
-    # Tabla DS67 Simplificada (Ejemplo)
     if tasa < 33: return 0.0
     elif tasa < 66: return 0.34
     elif tasa < 99: return 0.68
     elif tasa < 132: return 1.02
-    else: return 3.40 # Tope ejemplo
+    elif tasa < 165: return 1.36
+    elif tasa < 198: return 1.70
+    elif tasa < 231: return 2.04
+    elif tasa < 264: return 2.38
+    elif tasa < 297: return 2.72
+    elif tasa < 330: return 3.06
+    else: return 3.40
 
 # ==============================================================================
 # 3. MOTOR DOCUMENTAL
@@ -315,6 +320,33 @@ class DocumentosLegalesPDF:
         t = Table(data, colWidths=[300])
         t.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'BOTTOM')]))
         self.elements.append(Spacer(1, 20)); self.elements.append(t)
+
+    def generar_reporte_ds67(self, data_ds67):
+        self._header()
+        self.elements.append(Paragraph(f"INFORME MENSUAL DE SINIESTRALIDAD DS67 - {data_ds67['periodo']}", self.styles['Heading2']))
+        self.elements.append(Spacer(1, 10))
+        
+        t_res = Table([
+            ["MASA IMPONIBLE PROMEDIO", str(data_ds67['masa'])],
+            ["TOTAL DÍAS PERDIDOS", str(data_ds67['dias'])],
+            ["INVALIDECES / MUERTES", str(data_ds67['inv'])],
+            ["TASA SINIESTRALIDAD EFECTIVA", f"{data_ds67['tasa']:.2f}"],
+            ["COTIZACIÓN ADICIONAL PROYECTADA", f"{data_ds67['cot']:.2f}%"]
+        ], colWidths=[300, 150])
+        t_res.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (0,4), HexColor(COLOR_PRIMARY)), ('TEXTCOLOR', (0,0), (0,4), colors.white)]))
+        self.elements.append(t_res)
+        self.elements.append(Spacer(1, 20))
+        self.elements.append(Paragraph("Detalle Mensual:", self.styles['Heading3']))
+        
+        det = [["MES/AÑO", "MASA", "DIAS PERDIDOS", "INVALIDEZ"]]
+        for d in data_ds67['detalle']:
+            det.append([f"{d['mes']}/{d['anio']}", str(d['masa']), str(d['dias']), str(d['inv'])])
+            
+        t_det = Table(det, colWidths=[100, 100, 100, 100])
+        t_det.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (-1,0), colors.lightgrey)]))
+        self.elements.append(t_det)
+        
+        self.doc.build(self.elements); self.buffer.seek(0); return self.buffer
 
     def generar_epp(self, data):
         self._header()
@@ -529,53 +561,100 @@ if menu == "📊 Dashboard":
                 st.plotly_chart(fig2, use_container_width=True)
     conn.close()
 
-# --- 2. GESTION DS67 (NUEVO MODULO V169) ---
+# --- 2. GESTION DS67 AVANZADA ---
 elif menu == "⚖️ Gestión DS67":
     st.markdown("<div class='main-header'>Gestión de Siniestralidad (DS 67)</div>", unsafe_allow_html=True)
     conn = get_conn()
     
-    t1, t2, t3 = st.tabs(["📊 Simulación", "📅 Periodos", "📋 Historial"])
+    t1, t2, t3 = st.tabs(["📅 Periodos Evaluación", "📝 Registro Mensual (Bitácora)", "📊 Reporte y Tasa"])
     
     with t1:
-        st.subheader("Simulador de Tasa y Cotización Adicional")
-        c1, c2 = st.columns(2)
-        with c1:
-            masa_prom = st.number_input("Promedio Masa Imponible Anual (Trabajadores)", min_value=1, value=100)
-            dias_p = st.number_input("Total Días Perdidos (Periodo Eval)", min_value=0, value=0)
-        with c2:
-            inval_p = st.number_input("Invalideces (70% o más) / Muertes", min_value=0, value=0)
-            cot_actual = st.number_input("Cotización Adicional Actual (%)", value=0.0)
-            
-        if st.button("Calcular Tasa"):
-            tasa = calcular_tasa_siniestralidad(dias_p, inval_p, 0, masa_prom) # Muertes sumadas en invalidez para simplificar input
-            nueva_cot = determinar_tramo_cotizacion(tasa)
-            
-            st.divider()
-            k1, k2, k3 = st.columns(3)
-            k1.metric("Tasa Siniestralidad", f"{tasa:.2f}")
-            k2.metric("Nueva Cotización", f"{nueva_cot}%", delta=f"{round(nueva_cot - cot_actual, 2)}%", delta_color="inverse")
-            
-            if nueva_cot > cot_actual:
-                st.error(f"⚠️ Alerta: Su cotización subirá al {nueva_cot}%. Gestión de riesgos necesaria.")
-            elif nueva_cot < cot_actual:
-                st.success(f"✅ Felicidades: Su cotización bajará al {nueva_cot}%.")
-            else:
-                st.info("Su cotización se mantiene.")
+        st.subheader("Configuración de Periodos (Ej: Proceso 2025)")
+        with st.form("new_period_ds67"):
+            p_name = st.text_input("Nombre del Proceso (Ej: 2023-2025)")
+            f_start = st.date_input("Fecha Inicio", value=date(2023, 7, 1))
+            f_end = st.date_input("Fecha Fin", value=date(2025, 6, 30))
+            if st.form_submit_button("Crear Periodo"):
+                conn.execute("INSERT INTO periodos_ds67 (nombre_periodo, fecha_inicio, fecha_fin) VALUES (?,?,?)", (p_name, f_start, f_end))
+                conn.commit()
+                st.success("Periodo creado.")
+        st.write("Periodos Activos:")
+        st.dataframe(pd.read_sql("SELECT * FROM periodos_ds67", conn))
 
     with t2:
-        st.subheader("Registro de Periodos de Evaluación")
-        with st.form("ds67_p"):
-            np = st.text_input("Nombre Periodo (Ej: 2023-2025)")
-            f1 = st.date_input("Inicio")
-            f2 = st.date_input("Fin")
-            if st.form_submit_button("Guardar Periodo"):
-                conn.execute("INSERT INTO periodos_ds67 (nombre_periodo, fecha_inicio, fecha_fin) VALUES (?,?,?)", (np, f1, f2))
+        st.subheader("Carga de Información Mensual")
+        periods = pd.read_sql("SELECT id, nombre_periodo FROM periodos_ds67", conn)
+        if not periods.empty:
+            sel_p_id = st.selectbox("Seleccione Periodo", periods['id'].astype(str) + " - " + periods['nombre_periodo'])
+            pid = sel_p_id.split(" - ")[0]
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                mes_sel = st.selectbox("Mes", range(1, 13))
+                anio_sel = st.number_input("Año", min_value=2020, max_value=2030, value=2024)
+                masa_input = st.number_input("Masa Imponible (N° Trabajadores)", min_value=0, value=100)
+            
+            with c2:
+                # AUTO CALCULO DE DIAS PERDIDOS DESDE INCIDENTES
+                dias_auto = 0
+                try:
+                    query_inc = f"SELECT SUM(dias_perdidos) FROM incidentes WHERE strftime('%m', fecha) = '{mes_sel:02d}' AND strftime('%Y', fecha) = '{anio_sel}'"
+                    dias_res = pd.read_sql(query_inc, conn).iloc[0,0]
+                    if dias_res: dias_auto = int(dias_res)
+                except: pass
+                
+                st.info(f"Días perdidos detectados en Incidentes: {dias_auto}")
+                dias_input = st.number_input("Días Perdidos (Confirmar)", value=dias_auto)
+                inv_input = st.number_input("Invalideces / Muertes (Cantidad)", min_value=0, value=0)
+            
+            if st.button("Guardar Registro Mensual"):
+                conn.execute("INSERT INTO detalle_mensual_ds67 (periodo_id, mes, anio, masa_imponible, dias_perdidos, invalideces_muertes) VALUES (?,?,?,?,?,?)",
+                             (pid, mes_sel, anio_sel, masa_input, dias_input, inv_input))
                 conn.commit()
-                st.success("Guardado")
+                st.success("Mes registrado.")
+                
+            st.divider()
+            st.write("Registros del Periodo:")
+            st.dataframe(pd.read_sql("SELECT * FROM detalle_mensual_ds67 WHERE periodo_id=?", conn, params=(pid,)))
 
     with t3:
-        st.dataframe(pd.read_sql("SELECT * FROM periodos_ds67", conn))
-    
+        st.subheader("Dashboard de Siniestralidad")
+        if not periods.empty:
+            sel_rep = st.selectbox("Periodo a Evaluar", periods['id'].astype(str) + " - " + periods['nombre_periodo'], key="rep_sel")
+            pid_rep = sel_rep.split(" - ")[0]
+            
+            data_raw = pd.read_sql("SELECT * FROM detalle_mensual_ds67 WHERE periodo_id=?", conn, params=(pid_rep,))
+            
+            if not data_raw.empty:
+                # CALCULOS MUTUALIDAD
+                total_masa = data_raw['masa_imponible'].sum()
+                avg_masa = data_raw['masa_imponible'].mean()
+                total_dias = data_raw['dias_perdidos'].sum()
+                total_inv = data_raw['invalideces_muertes'].sum()
+                factor_inv = total_inv * 2500 # VALOR LEY DS67
+                
+                tasa_siniestralidad = ((total_dias + factor_inv) / avg_masa) * 100 if avg_masa > 0 else 0
+                cotizacion = determinar_tramo_cotizacion(tasa_siniestralidad)
+                
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("Promedio Masa", f"{avg_masa:.1f}")
+                k2.metric("Total Días Perdidos", total_dias)
+                k3.metric("Tasa Siniestralidad", f"{tasa_siniestralidad:.2f}")
+                k4.metric("Cotización Adicional", f"{cotizacion}%")
+                
+                st.write("Evolución Mensual:")
+                st.bar_chart(data_raw, x="mes", y="dias_perdidos")
+                
+                if st.button("Generar Reporte Oficial PDF"):
+                    pdf = DocumentosLegalesPDF("REPORTE TASA DE SINIESTRALIDAD DS67", "INF-DS67-01").generar_reporte_ds67({
+                        'periodo': sel_rep, 'masa': round(avg_masa, 1), 'dias': total_dias, 
+                        'inv': total_inv, 'tasa': tasa_siniestralidad, 'cot': cotizacion,
+                        'detalle': data_raw.to_dict('records')
+                    })
+                    st.download_button("Descargar Informe", pdf.getvalue(), "Informe_DS67.pdf")
+            else:
+                st.warning("No hay datos mensuales cargados para este periodo.")
+
     conn.close()
 
 # --- 3. MATRIZ IPER ---
@@ -788,7 +867,7 @@ elif menu == "👥 Gestión Personas":
                 st.rerun()
     conn.close()
 
-# --- 5. GESTOR DOCUMENTAL ---
+# --- 5. GESTOR DOCUMENTAL (V168 - RIOHS PRO CON EMAIL, CAMPAÑA MASIVA Y TRAZABILIDAD) ---
 elif menu == "⚖️ Gestor Documental":
     st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
@@ -1013,7 +1092,7 @@ elif menu == "🦺 Logística EPP":
             
     conn.close()
 
-# --- 7. CAPACITACIONES ---
+# --- 7. CAPACITACIONES (CON QR FIXED) ---
 elif menu == "🎓 Capacitaciones":
     st.markdown("<div class='main-header'>Capacitaciones</div>", unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["Nueva", "QR Firma", "Historial"])
