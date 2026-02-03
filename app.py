@@ -13,6 +13,7 @@ from PIL import Image as PILImage
 import matplotlib
 import matplotlib.pyplot as plt
 import plotly.express as px
+import plotly.graph_objects as go # Nueva librería para Heatmap
 from reportlab.lib import colors
 from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import letter
@@ -43,40 +44,32 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v175_iper_normativa.db' # Actualización Normativa V175
+DB_NAME = 'sgsst_v176_iper_visual.db' # Actualización Matriz Visual
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
-# --- DICCIONARIO DE RIESGOS ISP V3 (CORREGIDO Y AMPLIADO) ---
+# [cite_start]--- DICCIONARIO DE RIESGOS ISP V3 (CORREGIDO FINAL) [cite: 343] ---
 ISP_RISK_CODES = {
     "Seguridad": [
-        "Caídas al mismo nivel (A1)", "Caídas a distinto nivel (A2)", "Caídas de altura (A3)",
-        "Caídas al agua (A4)",
-        "Atrapamiento (B1)", "Golpeado por/contra (B2)", "Cortes/Punzonantes (B3)", 
-        "Choque contra objetos (B4)",
+        "Caídas al mismo nivel (A1)", "Caídas a distinto nivel (A2)", "Caídas de altura (A3)", "Caídas al agua (A4)",
+        "Atrapamiento (B1)", "Golpeado por/contra (B2)", "Cortes/Punzonantes (B3)", "Choque contra objetos (B4)",
         "Contacto con personas (C1)", "Contacto con animales/insectos (C2)",
         "Contacto con objetos calientes (E1)", "Contacto con objetos fríos (E2)",
         "Contacto eléctrico Baja Tensión (F1/F3)", "Contacto eléctrico Alta Tensión (F2/F4)",
         "Contacto sustancias cáusticas (G1)", "Otras sustancias químicas (G2)",
-        "Proyección de partículas (H2)",
-        "Atropellos (I1)", "Choque/Colisión Vehicular (I2)"
+        "Proyección de partículas (H2)", "Atropellos (I1)", "Choque/Colisión Vehicular (I2)"
     ],
-    "Higiene (Salud Ocupacional)": [
-        "Aerosoles Sólidos (Sílice/Polvos) (O1)", "Aerosoles Líquidos (Nieblas) (O2)",
-        "Gases y Vapores (O3)",
-        "Ruido (PREXOR) (P1)", 
-        "Vibraciones Cuerpo Entero (P2)", "Vibraciones Mano-Brazo (P3)",
+    "Higiene Ocupacional": [
+        "Aerosoles Sólidos (Sílice/Polvos) (O1)", "Aerosoles Líquidos (Nieblas) (O2)", "Gases y Vapores (O3)",
+        "Ruido (PREXOR) (P1)", "Vibraciones Cuerpo Entero (P2)", "Vibraciones Mano-Brazo (P3)",
         "Radiaciones Ionizantes (P4)", "Radiaciones No Ionizantes (UV/Solar) (P5)", 
-        "Calor (P6)", "Frío (P7)",
-        "Altas Presiones (P8)", "Bajas Presiones (Hipobaria) (P9)",
+        "Calor (P6)", "Frío (P7)", "Altas Presiones (P8)", "Bajas Presiones (Hipobaria) (P9)",
         "Agentes Biológicos (Fluidos) (Q1)", "Agentes Biológicos (Virus/Bacterias) (Q2)"
     ],
-    "Músculo Esqueléticos (TMERT)": [
-        "Manejo Manual de Cargas (R1)", "Manejo de Pacientes (R2)",
-        "Trabajo Repetitivo (S1)", 
+    "Músculo Esqueléticos": [
+        "Manejo Manual de Cargas (R1)", "Manejo de Pacientes (R2)", "Trabajo Repetitivo (S1)", 
         "Postura de Pie (T1)", "Postura Sentado (T2)", "En Cuclillas (T3)", "Arrodillado (T4)",
-        "Tronco Inclinado/Torsión (T5)", "Cabeza/Cuello Flexión (T6)",
-        "Fuera del Alcance Funcional (T7)", "Posturas Estáticas (T8)"
+        "Tronco Inclinado/Torsión (T5)", "Cabeza/Cuello Flexión (T6)", "Fuera del Alcance (T7)", "Posturas Estáticas (T8)"
     ],
     "Psicosociales (ISTAS21)": [
         "Carga de Trabajo (D1)", "Exigencias Emocionales (D2)", "Desarrollo Profesional (D3)",
@@ -208,7 +201,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     
-    # --- MATRIZ IPER V175 (NORMATIVA 2024 COMPLIANT) ---
+    # --- MATRIZ IPER V176 (MAESTRA FULL) ---
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         proceso TEXT, 
@@ -291,7 +284,7 @@ def init_db():
         c.execute("SELECT count(*) FROM matriz_iper")
         if c.fetchone()[0] == 0:
             c.execute("INSERT INTO matriz_iper (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, genero_obs, familia_riesgo, lugar_especifico, n_hombres, n_mujeres, n_disidencias, requisito_legal, probabilidad_residual, consecuencia_residual, vep_residual, nivel_riesgo_residual) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                 ("Cosecha", "Operativo", "Operador", "Tala", "SI", "Pendiente", "Volcamiento", "Seguridad", 2, 4, 8, "IMPORTANTE", "Cabina ROPS", "Sin Obs", "Seguridad", "Bosque", 5, 0, 0, "DS 594", 1, 4, 4, "MODERADO"))
+                 ("Cosecha", "Operativo", "Operador", "Tala", "SI", "Pendiente", "Volcamiento", "Seguridad", 2, 4, 8, "IMPORTANTE", "Cabina ROPS", "Sin Obs", "Seguridad", "Bosque", 5, 0, 0, "DS 594 Art 11", 1, 4, 4, "MODERADO"))
     conn.commit(); conn.close()
     st.session_state['db_setup_complete'] = True
 
@@ -674,29 +667,53 @@ elif menu == "⚖️ Gestión DS67":
 
     conn.close()
 
-# --- 3. MATRIZ IPER (V175 - MAESTRA NORMATIVA) ---
+# --- 3. MATRIZ IPER (V176 - MAESTRA VISUAL ISP V3) ---
 elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Riesgos (ISP 2024 + DS44)</div>", unsafe_allow_html=True)
-    tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Ver Matriz Completa", "📂 Carga Masiva Inteligente", "➕ Crear Riesgo (Maestro)"])
+    tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Matriz & Dashboard Visual", "📂 Carga Masiva Inteligente", "➕ Crear Riesgo (Maestro)"])
     conn = get_conn()
     
     with tab_ver:
-        # CONSULTA MAESTRA V175
+        # CONSULTA MAESTRA V176
         query = """SELECT id, 
                    proceso as 'PROCESO', puesto_trabajo as 'PUESTO', tarea as 'TAREA', 
                    lugar_especifico as 'LUGAR', familia_riesgo as 'FAMILIA', codigo_riesgo as 'COD ISP', 
                    factor_gema as 'GEMA', peligro_factor as 'PELIGRO', riesgo_asociado as 'RIESGO',
-                   n_hombres as 'HOMBRES', n_mujeres as 'MUJERES', n_disidencias as 'DIVERSIDAD',
+                   n_hombres as 'H', n_mujeres as 'M', n_disidencias as 'D',
                    probabilidad as 'P_INI', consecuencia as 'C_INI', vep as 'VEP_INI', nivel_riesgo as 'NIVEL_INI',
                    medida_control as 'MEDIDA CONTROL', jerarquia_control as 'JERARQUIA', requisito_legal as 'LEGAL',
                    probabilidad_residual as 'P_RES', consecuencia_residual as 'C_RES', vep_residual as 'VEP_RES', nivel_riesgo_residual as 'NIVEL_RES'
                    FROM matriz_iper"""
         df_matriz = pd.read_sql(query, conn)
         
-        st.markdown("### 📊 Matriz de Identificación de Peligros y Evaluación de Riesgos (MIPER)")
-        st.markdown("Visualización completa incluyendo **Género**, **GEMA**, **Evaluación Pura** y **Evaluación Residual**.")
+        # --- MEJORA PERTINENTE 2: FILTROS ---
+        st.markdown("#### 🔍 Filtros de Visualización")
+        cf1, cf2 = st.columns(2)
+        filtro_nivel = cf1.multiselect("Filtrar por Nivel de Riesgo (Inicial)", ["INTOLERABLE", "IMPORTANTE", "MODERADO", "TOLERABLE"])
+        filtro_fam = cf2.multiselect("Filtrar por Familia", list(ISP_RISK_CODES.keys()))
         
-        edited_df = st.data_editor(df_matriz, use_container_width=True, 
+        df_view = df_matriz.copy()
+        if filtro_nivel: df_view = df_view[df_view['NIVEL_INI'].isin(filtro_nivel)]
+        if filtro_fam: df_view = df_view[df_view['FAMILIA'].isin(filtro_fam)]
+        
+        # --- MEJORA PERTINENTE 1: DASHBOARD VISUAL (HEATMAP) ---
+        with st.expander("📊 Ver Mapa de Calor y Estadísticas (Click para abrir)", expanded=False):
+            g1, g2 = st.columns(2)
+            with g1:
+                # Heatmap de Riesgos
+                if not df_view.empty:
+                    fig_heat = px.density_heatmap(df_view, x="P_INI", y="C_INI", title="Mapa de Calor de Riesgos (Probabilidad vs Consecuencia)",
+                                                 nbinsx=4, nbinsy=4, color_continuous_scale="Reds")
+                    st.plotly_chart(fig_heat, use_container_width=True)
+            with g2:
+                # Grafico de Genero
+                if not df_view.empty:
+                    total_h = df_view['H'].sum(); total_m = df_view['M'].sum(); total_d = df_view['D'].sum()
+                    fig_gen = px.pie(values=[total_h, total_m, total_d], names=["Hombres", "Mujeres", "Diversidad"], title="Exposición por Identidad de Género")
+                    st.plotly_chart(fig_gen, use_container_width=True)
+
+        st.markdown("### 📋 Detalle de Matriz")
+        edited_df = st.data_editor(df_view, use_container_width=True, 
             column_config={
                 "P_INI": st.column_config.NumberColumn("P (Ini)", min_value=1, max_value=4), 
                 "C_INI": st.column_config.NumberColumn("C (Ini)", min_value=1, max_value=4), 
@@ -730,7 +747,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                              WHERE id=?""", 
                              (pi, ci, vi, ni, pr, cr, vr, nr, 
                               r['MEDIDA CONTROL'], r['FAMILIA'], r['COD ISP'], r['JERARQUIA'], r['LEGAL'],
-                              r['GEMA'], r['LUGAR'], r['HOMBRES'], r['MUJERES'], r['DIVERSIDAD'], r['id']))
+                              r['GEMA'], r['LUGAR'], r['H'], r['M'], r['D'], r['id']))
             conn.commit(); st.success("Matriz Recalculada y Actualizada"); st.rerun()
             
         b = io.BytesIO(); 
@@ -749,7 +766,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
         }
         b2 = io.BytesIO(); 
         with pd.ExcelWriter(b2, engine='openpyxl') as w: pd.DataFrame(plantilla).to_excel(w, index=False)
-        st.download_button("📥 Descargar Plantilla Maestra V175", b2.getvalue(), "plantilla_iper_master.xlsx")
+        st.download_button("📥 Descargar Plantilla Maestra V176", b2.getvalue(), "plantilla_iper_master.xlsx")
         
         up = st.file_uploader("Subir Excel", type=['xlsx'])
         if up:
@@ -788,7 +805,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
             d1, d2, d3 = st.columns(3)
             nh = d1.number_input("Hombres (Cis)", min_value=0)
             nm = d2.number_input("Mujeres (Cis)", min_value=0)
-            nd = d3.number_input("Diversidades (Trans/No Binario)", min_value=0)
+            nd = d3.number_input("Diversidad (Trans/No Binario)", min_value=0)
             
             st.markdown("##### 2. Identificación del Peligro (GEMA)")
             c4, c5, c6 = st.columns(3)
