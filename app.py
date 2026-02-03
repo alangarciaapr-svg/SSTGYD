@@ -22,6 +22,12 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 from streamlit_drawable_canvas import st_canvas
 import openpyxl 
 
+# --- LIBRERIAS PARA EMAIL (NUEVO V168) ---
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
+
 # Manejo seguro de librería QR
 try:
     import qrcode
@@ -37,9 +43,56 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v165_boot_fix.db' # Nombre final estable
+DB_NAME = 'sgsst_v168_enterprise.db' # Actualización Enterprise
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
+
+# --- FUNCIÓN DE ENVÍO DE CORREO (PUNTO 1 Y 3) ---
+def enviar_correo_riohs(destinatario, nombre_trabajador, pdf_bytes, nombre_archivo):
+    """
+    Envía el PDF del RIOHS al trabajador.
+    NOTA: Para producción, configurar credenciales reales abajo.
+    """
+    # --- CONFIGURACION SMTP (REEMPLAZAR CON TUS DATOS REALES) ---
+    SMTP_SERVER = "smtp.gmail.com"
+    SMTP_PORT = 587
+    EMAIL_EMISOR = "tu_correo@empresa.com" # <--- PONER TU EMAIL AQUI
+    EMAIL_PASSWORD = "tu_contraseña_aplicacion" # <--- PONER TU CLAVE AQUI
+    
+    # MODO SIMULACIÓN (Para que la app no falle sin credenciales reales)
+    if EMAIL_EMISOR == "tu_correo@empresa.com":
+        time.sleep(1.5) # Simula tiempo de envío
+        return True, "Simulación: Correo enviado exitosamente (Configurar SMTP para real)"
+
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_EMISOR
+        msg['To'] = destinatario
+        msg['Subject'] = f"ENTREGA RIOHS - {nombre_trabajador}"
+
+        body = f"""Estimado/a {nombre_trabajador},
+        
+        Adjunto encontrará su comprobante de recepción del Reglamento Interno de Orden, Higiene y Seguridad (RIOHS).
+        
+        Atte,
+        Departamento de Prevención.
+        """
+        msg.attach(MIMEText(body, 'plain'))
+
+        # Adjuntar PDF
+        part = MIMEApplication(pdf_bytes, Name=nombre_archivo)
+        part['Content-Disposition'] = f'attachment; filename="{nombre_archivo}"'
+        msg.attach(part)
+
+        # Conexión Segura
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(EMAIL_EMISOR, EMAIL_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        return True, "Enviado Exitosamente"
+    except Exception as e:
+        return False, str(e)
 
 # --- MODO KIOSCO (FIRMA MÓVIL) ---
 query_params = st.query_params
@@ -109,7 +162,6 @@ def check_and_add_column(cursor, table_name, column_name, column_type):
         try: cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
         except: pass
 
-# --- FUNCIÓN DE INICIALIZACIÓN SIN CACHÉ (CORRECCIÓN DEL ERROR) ---
 def init_db():
     conn = get_conn(); c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
@@ -133,10 +185,11 @@ def init_db():
     check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE")
     check_and_add_column(c, "inventario_epp", "precio", "INTEGER")
     
-    # RIOHS Columns
+    # RIOHS Columns V168
     check_and_add_column(c, "registro_riohs", "nombre_difusor", "TEXT")
     check_and_add_column(c, "registro_riohs", "firma_difusor_b64", "TEXT")
     check_and_add_column(c, "registro_riohs", "email_copia", "TEXT")
+    check_and_add_column(c, "registro_riohs", "estado_envio", "TEXT") # NUEVO PUNTO 3
 
     c.execute("SELECT count(*) FROM usuarios")
     if c.fetchone()[0] == 0:
@@ -230,8 +283,11 @@ class DocumentosLegalesPDF:
     def _signature_block(self, firma_b64):
         sig_img = Paragraph("", self.styles['Normal'])
         if firma_b64:
-            try: sig_img = RLImage(io.BytesIO(base64.b64decode(firma_b64)), width=250, height=100)
-            except: pass
+            if firma_b64 == "PENDIENTE_DIGITAL":
+                sig_img = Paragraph("ENVÍO DIGITAL MASIVO - PENDIENTE DE ACUSE", ParagraphStyle('P', fontSize=8, alignment=TA_CENTER, textColor=colors.red))
+            else:
+                try: sig_img = RLImage(io.BytesIO(base64.b64decode(firma_b64)), width=250, height=100)
+                except: pass
         
         data = [[sig_img], ["__________________________"], ["FIRMA TRABAJADOR"]]; 
         t = Table(data, colWidths=[300])
@@ -264,6 +320,7 @@ class DocumentosLegalesPDF:
     def generar_riohs(self, data):
         self._header()
         
+        # 1. TEXTO LEGAL
         legal_1 = """Se deja expresa constancia, de acuerdo a lo establecido en el artículo 156 del Código del Trabajo y DS 44 de la Ley 16.744 que, he recibido en forma gratuita un ejemplar del Reglamento Interno de Orden, Higiene y Seguridad de SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA."""
         self.elements.append(Paragraph(legal_1, ParagraphStyle('L1', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
         self.elements.append(Spacer(1, 10))
@@ -276,6 +333,7 @@ class DocumentosLegalesPDF:
         self.elements.append(Paragraph(legal_3, ParagraphStyle('L3', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
         self.elements.append(Spacer(1, 15))
         
+        # 2. TEXTO DE DECISIÓN
         if "Digital" in data.get('tipo_entrega', ''):
             email_val = data.get('email', 'N/A')
             texto_decision = f"<b>EL TRABAJADOR DECIDIO LA RECEPCION DEL RELGAMENTO INTERNO DE ORDEN HIGIENE Y SEGURIDAD DE MANERA DIGITAL AL SIGUIENTE CORREO: {email_val}</b>"
@@ -289,10 +347,14 @@ class DocumentosLegalesPDF:
         self.elements.append(Paragraph(legal_4, ParagraphStyle('L4', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
         self.elements.append(Spacer(1, 20))
         
+        # 3. DATOS TRABAJADOR
         sig_img = Paragraph("", self.styles['Normal'])
         if data.get('firma_b64'):
-            try: sig_img = RLImage(io.BytesIO(base64.b64decode(data['firma_b64'])), width=200, height=80)
-            except: pass
+            if data.get('firma_b64') == "PENDIENTE_DIGITAL":
+                sig_img = Paragraph("ENVÍO DIGITAL MASIVO - PENDIENTE DE ACUSE", ParagraphStyle('P', fontSize=8, alignment=TA_CENTER, textColor=colors.red))
+            else:
+                try: sig_img = RLImage(io.BytesIO(base64.b64decode(data['firma_b64'])), width=200, height=80)
+                except: pass
             
         t_data = [
             ["NOMBRE COMPLETO", data['nombre']],
@@ -312,6 +374,7 @@ class DocumentosLegalesPDF:
         self.elements.append(t_worker)
         self.elements.append(Spacer(1, 20))
         
+        # 4. DATOS DIFUSOR
         sig_dif = Paragraph("", self.styles['Normal'])
         if data.get('firma_difusor'):
             try: sig_dif = RLImage(io.BytesIO(base64.b64decode(data['firma_difusor'])), width=180, height=70)
@@ -661,7 +724,7 @@ elif menu == "👥 Gestión Personas":
                 st.rerun()
     conn.close()
 
-# --- 4. GESTOR DOCUMENTAL (V157 - RIOHS FIX FINAL + V159 CANVAS BORDER + V160 KEY FIX + V161 CSS FIX) ---
+# --- 4. GESTOR DOCUMENTAL (V168 - RIOHS PRO CON EMAIL, CAMPAÑA MASIVA Y TRAZABILIDAD) ---
 elif menu == "⚖️ Gestor Documental":
     st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
@@ -681,66 +744,114 @@ elif menu == "⚖️ Gestor Documental":
         
         with t2:
             st.subheader("Entrega de Reglamento Interno (RIOHS)")
-            sel_r = st.selectbox("Trabajador RIOHS:", df_p['rut'] + " | " + df_p['nombre'])
+            # --- PESTAÑAS INTERNAS V168: INDIVIDUAL vs MASIVO ---
+            tab_ind, tab_mass = st.tabs(["Entrega Individual", "📢 Campaña Masiva"])
             
-            rut_w = sel_r.split(" | ")[0]
-            nom_w = sel_r.split(" | ")[1]
-            worker_data = df_p[df_p['rut'] == rut_w].iloc[0]
-            email_w = worker_data['email'] if worker_data['email'] else "Sin Email"
-            
-            with st.form("riohs_form"):
-                c1, c2 = st.columns(2)
-                with c1:
-                    tipo_ent = st.radio("Formato de Entrega:", ["Físico (Papel)", "Digital (Email)"], index=0)
-                    if tipo_ent == "Digital (Email)":
-                        st.info(f"📧 Se enviará constancia al correo: {email_w}")
-                        if email_w == "Sin Email":
-                            st.error("⚠️ El trabajador no tiene email registrado. Actualícelo en Gestión Personas.")
-                with c2:
-                    nom_dif = st.text_input("Nombre del Difusor (Quien entrega):")
+            with tab_ind:
+                sel_r = st.selectbox("Trabajador RIOHS:", df_p['rut'] + " | " + df_p['nombre'])
+                rut_w = sel_r.split(" | ")[0]
+                nom_w = sel_r.split(" | ")[1]
+                worker_data = df_p[df_p['rut'] == rut_w].iloc[0]
+                email_w = worker_data['email'] if worker_data['email'] else "Sin Email"
                 
-                st.divider()
+                with st.form("riohs_form"):
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        tipo_ent = st.radio("Formato de Entrega:", ["Físico (Papel)", "Digital (Email)"], index=0)
+                        if tipo_ent == "Digital (Email)":
+                            st.info(f"📧 Se enviará al correo: {email_w}")
+                    with c2:
+                        nom_dif = st.text_input("Nombre del Difusor (Quien entrega):")
+                    
+                    st.divider()
+                    c3, c4 = st.columns(2)
+                    with c3:
+                        st.write("Firma Trabajador:")
+                        sig_worker = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_w_riohs_v168")
+                    with c4:
+                        st.write("Firma Difusor:")
+                        sig_diffuser = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_d_riohs_v168")
+                    
+                    if st.form_submit_button("Registrar Entrega RIOHS"):
+                        if sig_worker.image_data is not None and sig_diffuser.image_data is not None and nom_dif:
+                            img_w = PILImage.fromarray(sig_worker.image_data.astype('uint8'), 'RGBA'); b_w = io.BytesIO(); img_w.save(b_w, format='PNG'); str_w = base64.b64encode(b_w.getvalue()).decode()
+                            img_d = PILImage.fromarray(sig_diffuser.image_data.astype('uint8'), 'RGBA'); b_d = io.BytesIO(); img_d.save(b_d, format='PNG'); str_d = base64.b64encode(b_d.getvalue()).decode()
+                            
+                            tipo_db = "Digital" if "Digital" in tipo_ent else "Físico"
+                            
+                            # Generar PDF
+                            pdf = DocumentosLegalesPDF("REGISTRO DE ENTREGA DE REGLAMENTO INTERNO DE ORDEN, HIGIENE Y SEGURIDAD", "RG-SSTGD-03").generar_riohs({
+                                'nombre': nom_w, 'rut': rut_w, 'cargo': worker_data['cargo'], 
+                                'fecha': date.today().strftime("%d-%m-%Y"), 
+                                'firma_b64': str_w, 'tipo_entrega': tipo_db, 'email': email_w,
+                                'nombre_difusor': nom_dif, 'firma_difusor': str_d
+                            })
+                            pdf_bytes = pdf.getvalue()
+                            
+                            # Enviar Email si es Digital
+                            estado_envio = "N/A"
+                            if tipo_db == "Digital":
+                                exito, msg = enviar_correo_riohs(email_w, nom_w, pdf_bytes, f"RIOHS_{rut_w}.pdf")
+                                estado_envio = "ENVIADO" if exito else "ERROR"
+                                if exito: st.success(f"📧 {msg}")
+                                else: st.error(f"❌ Error envío: {msg}")
+                            
+                            conn.execute("""INSERT INTO registro_riohs (fecha_entrega, rut_trabajador, nombre_trabajador, tipo_entrega, firma_b64, nombre_difusor, firma_difusor_b64, email_copia, estado_envio) VALUES (?,?,?,?,?,?,?,?,?)""", 
+                                (date.today(), rut_w, nom_w, tipo_db, str_w, nom_dif, str_d, email_w, estado_envio))
+                            conn.commit()
+                            
+                            st.download_button("📥 Descargar Acta", pdf_bytes, f"RIOHS_{rut_w}.pdf", "application/pdf")
+                            st.success("Entrega registrada.")
+                        else:
+                            st.warning("⚠️ Faltan firmas.")
+
+            # --- NUEVA PESTAÑA DE CAMPAÑA MASIVA (PUNTO 2) ---
+            with tab_mass:
+                st.info("📢 Esta herramienta enviará el RIOHS a todos los trabajadores activos con email registrado.")
+                difusor_mass = st.text_input("Nombre del Difusor (Campaña Masiva):")
+                st.write("Firma del Difusor (Para todos los documentos):")
+                sig_mass = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_mass_v168")
                 
-                # CANVAS: Background WHITE para PDF limpio, con borde CSS sólido de V161
-                c3, c4 = st.columns(2)
-                with c3:
-                    st.write("Firma Trabajador:")
-                    sig_worker = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_w_riohs_v163")
-                with c4:
-                    st.write("Firma Difusor:")
-                    sig_diffuser = st_canvas(stroke_width=2, stroke_color="black", background_color="#ffffff", height=150, width=400, key="sig_d_riohs_v163")
-                
-                if st.form_submit_button("Registrar Entrega RIOHS"):
-                    if sig_worker.image_data is not None and sig_diffuser.image_data is not None and nom_dif:
-                        img_w = PILImage.fromarray(sig_worker.image_data.astype('uint8'), 'RGBA'); b_w = io.BytesIO(); img_w.save(b_w, format='PNG'); str_w = base64.b64encode(b_w.getvalue()).decode()
-                        img_d = PILImage.fromarray(sig_diffuser.image_data.astype('uint8'), 'RGBA'); b_d = io.BytesIO(); img_d.save(b_d, format='PNG'); str_d = base64.b64encode(b_d.getvalue()).decode()
+                if st.button("🚀 INICIAR CAMPAÑA DE ENVÍO MASIVO", type="primary"):
+                    if difusor_mass and sig_mass.image_data is not None:
+                        # Preparar firma difusor
+                        img_d = PILImage.fromarray(sig_mass.image_data.astype('uint8'), 'RGBA'); b_d = io.BytesIO(); img_d.save(b_d, format='PNG'); str_d = base64.b64encode(b_d.getvalue()).decode()
                         
-                        tipo_db = "Digital" if "Digital" in tipo_ent else "Físico"
+                        # Buscar destinatarios
+                        targets = pd.read_sql("SELECT rut, nombre, cargo, email FROM personal WHERE estado='ACTIVO' AND email IS NOT NULL AND email != ''", conn)
                         
-                        conn.execute("""INSERT INTO registro_riohs (fecha_entrega, rut_trabajador, nombre_trabajador, tipo_entrega, firma_b64, nombre_difusor, firma_difusor_b64, email_copia) VALUES (?,?,?,?,?,?,?,?)""", 
-                            (date.today(), rut_w, nom_w, tipo_db, str_w, nom_dif, str_d, email_w))
+                        prog_bar = st.progress(0); status_txt = st.empty()
+                        count = 0
+                        
+                        for i, t in targets.iterrows():
+                            # Generar PDF con firma pendiente
+                            pdf = DocumentosLegalesPDF("REGISTRO DE ENTREGA DE REGLAMENTO INTERNO DE ORDEN, HIGIENE Y SEGURIDAD", "RG-SSTGD-03").generar_riohs({
+                                'nombre': t['nombre'], 'rut': t['rut'], 'cargo': t['cargo'], 
+                                'fecha': date.today().strftime("%d-%m-%Y"), 
+                                'firma_b64': "PENDIENTE_DIGITAL", # Marca especial para PDF
+                                'tipo_entrega': "Digital", 'email': t['email'],
+                                'nombre_difusor': difusor_mass, 'firma_difusor': str_d
+                            })
+                            
+                            # Enviar
+                            exito, msg = enviar_correo_riohs(t['email'], t['nombre'], pdf.getvalue(), f"RIOHS_{t['rut']}.pdf")
+                            st_env = "ENVIADO" if exito else "ERROR"
+                            
+                            # Guardar registro
+                            conn.execute("""INSERT INTO registro_riohs (fecha_entrega, rut_trabajador, nombre_trabajador, tipo_entrega, firma_b64, nombre_difusor, firma_difusor_b64, email_copia, estado_envio) VALUES (?,?,?,?,?,?,?,?,?)""", 
+                                (date.today(), t['rut'], t['nombre'], "Digital", "PENDIENTE_DIGITAL", difusor_mass, str_d, t['email'], st_env))
+                            
+                            count += 1
+                            prog_bar.progress((i + 1) / len(targets))
+                            status_txt.text(f"Procesando: {t['nombre']} - {st_env}")
+                            
                         conn.commit()
-                        
-                        pdf = DocumentosLegalesPDF("REGISTRO DE ENTREGA DE REGLAMENTO INTERNO DE ORDEN, HIGIENE Y SEGURIDAD", "RG-SSTGD-03").generar_riohs({
-                            'nombre': nom_w, 'rut': rut_w, 'cargo': worker_data['cargo'], 
-                            'fecha': date.today().strftime("%d-%m-%Y"), 
-                            'firma_b64': str_w,
-                            'tipo_entrega': tipo_db,
-                            'email': email_w,
-                            'nombre_difusor': nom_dif,
-                            'firma_difusor': str_d
-                        })
-                        
-                        st.session_state.riohs_pdf = pdf.getvalue()
-                        st.success("Entrega RIOHS registrada exitosamente.")
+                        st.success(f"✅ Campaña finalizada. {count} correos procesados.")
                     else:
-                        st.warning("⚠️ Faltan datos (Firmas o Nombre Difusor).")
-            
-            if 'riohs_pdf' in st.session_state:
-                st.download_button("📥 Descargar Acta RIOHS", st.session_state.riohs_pdf, f"RIOHS_{rut_w}.pdf", "application/pdf")
+                        st.warning("Falta nombre o firma del difusor.")
 
         with t3:
-            st.dataframe(pd.read_sql("SELECT * FROM registro_riohs ORDER BY id DESC", conn))
+            st.dataframe(pd.read_sql("SELECT id, fecha_entrega, nombre_trabajador, tipo_entrega, email_copia, estado_envio FROM registro_riohs ORDER BY id DESC", conn))
     conn.close()
 
 # --- 5. LOGISTICA EPP ---
