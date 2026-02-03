@@ -44,7 +44,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v179_dynamic_link.db' # Actualización Vínculo Dinámico
+DB_NAME = 'sgsst_v180_fix.db' # Actualización Corrección Error Linea 917
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -667,14 +667,13 @@ elif menu == "⚖️ Gestión DS67":
 
     conn.close()
 
-# --- 3. MATRIZ IPER (V179 - DYNAMIC ROLES & SMART MATRIX) ---
+# --- 3. MATRIZ IPER (V180 - FIXED) ---
 elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Riesgos (ISP 2024 + DS44)</div>", unsafe_allow_html=True)
     tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Matriz & Dashboard", "📂 Carga Masiva Inteligente", "➕ Crear Riesgo (Maestro)"])
     conn = get_conn()
     
     with tab_ver:
-        # CONSULTA MAESTRA
         query = """SELECT id, 
                    proceso as 'PROCESO', puesto_trabajo as 'PUESTO', tarea as 'TAREA', 
                    lugar_especifico as 'LUGAR', familia_riesgo as 'FAMILIA', codigo_riesgo as 'COD ISP', 
@@ -730,10 +729,18 @@ elif menu == "🛡️ Matriz IPER (ISP)":
         if st.button("💾 Guardar y Recalcular Matriz"):
             c = conn.cursor()
             for i, r in edited_df.iterrows():
-                pi = int(r['P_INI']); ci = int(r['C_INI']); vi = pi*ci; ni = calcular_nivel_riesgo(vi)
-                pr = int(r['P_RES']) if pd.notnull(r['P_RES']) else 1
-                cr = int(r['C_RES']) if pd.notnull(r['C_RES']) else 1
-                vr = pr*cr; nr = calcular_nivel_riesgo(vr)
+                
+                # Helper para evitar nulos
+                def clean_int(val, default=1):
+                    try: return int(val) if pd.notnull(val) else default
+                    except: return default
+                
+                def clean_str(val):
+                    return str(val) if pd.notnull(val) else ""
+
+                pi = clean_int(r['P_INI']); ci = clean_int(r['C_INI']); vi = pi*ci; ni = calcular_nivel_riesgo(vi)
+                pr = clean_int(r['P_RES']); cr = clean_int(r['C_RES']); vr = pr*cr; nr = calcular_nivel_riesgo(vr)
+                
                 c.execute("""UPDATE matriz_iper SET 
                              probabilidad=?, consecuencia=?, vep=?, nivel_riesgo=?, 
                              probabilidad_residual=?, consecuencia_residual=?, vep_residual=?, nivel_riesgo_residual=?,
@@ -741,8 +748,10 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                              factor_gema=?, lugar_especifico=?, n_hombres=?, n_mujeres=?, n_disidencias=?
                              WHERE id=?""", 
                              (pi, ci, vi, ni, pr, cr, vr, nr, 
-                              r['MEDIDA CONTROL'], r['FAMILIA'], r['COD ISP'], r['JERARQUIA'], r['LEGAL'],
-                              r['GEMA'], r['LUGAR'], r['H'], r['M'], r['D'], r['id']))
+                              clean_str(r['MEDIDA CONTROL']), clean_str(r['FAMILIA']), clean_str(r['COD ISP']), 
+                              clean_str(r['JERARQUIA']), clean_str(r['LEGAL']),
+                              clean_str(r['GEMA']), clean_str(r['LUGAR']), 
+                              clean_int(r['H'], 0), clean_int(r['M'], 0), clean_int(r['D'], 0), r['id']))
             conn.commit(); st.success("Matriz Actualizada"); st.rerun()
             
         b = io.BytesIO(); 
@@ -752,7 +761,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
     with tab_carga:
         st.subheader("Carga Masiva Inteligente (Smart Upload)")
         
-        # 1. Descarga Template ACTUALIZADO V179
+        # 1. Descarga Template ACTUALIZADO V180
         plantilla = {
             'Proceso':['Cosecha'], 'Puesto':['Operador'], 'Lugar':['Bosque'], 'Familia':['Seguridad'], 'GEMA':['Ambiente'],
             'Peligro':['Pendiente'], 'Riesgo':['Volcamiento'], 
@@ -763,7 +772,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
         }
         b2 = io.BytesIO(); 
         with pd.ExcelWriter(b2, engine='openpyxl') as w: pd.DataFrame(plantilla).to_excel(w, index=False)
-        st.download_button("1️⃣ Descargar Plantilla Maestra V179", b2.getvalue(), "plantilla_iper_master.xlsx")
+        st.download_button("1️⃣ Descargar Plantilla Maestra V180", b2.getvalue(), "plantilla_iper_master.xlsx")
         
         # 2. Carga y Validación
         up = st.file_uploader("2️⃣ Subir Excel", type=['xlsx'])
@@ -775,7 +784,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                 if 'P_Inicial' in df_up.columns and 'C_Inicial' in df_up.columns:
                     df_up['Estado'] = df_up.apply(lambda x: "⚠️ Error P/C" if x['P_Inicial'] not in [1,2,4] or x['C_Inicial'] not in [1,2,4] else "✅ OK", axis=1)
                 else:
-                    st.error("El archivo no tiene las columnas P_Inicial o C_Inicial. Descargue la plantilla V179.")
+                    st.error("El archivo no tiene las columnas P_Inicial o C_Inicial. Descargue la plantilla V180.")
                     st.stop()
                 
                 edited_up = st.data_editor(df_up, num_rows="dynamic", key="editor_up")
@@ -785,8 +794,13 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                     count_ok = 0
                     for i, r in edited_up.iterrows():
                         if r['Estado'] == "✅ OK": 
-                            pi = int(r.get('P_Inicial',1)); ci = int(r.get('C_Inicial',1)); vi = pi*ci; ni = calcular_nivel_riesgo(vi)
-                            pr = int(r.get('P_Residual',1)); cr = int(r.get('C_Residual',1)); vr = pr*cr; nr = calcular_nivel_riesgo(vr)
+                            # Safe Int Conversion
+                            def s_int(val): return int(val) if pd.notnull(val) else 1
+                            def s_str(val): return str(val) if pd.notnull(val) else ""
+                            def s_int_0(val): return int(val) if pd.notnull(val) else 0
+
+                            pi = s_int(r.get('P_Inicial')); ci = s_int(r.get('C_Inicial')); vi = pi*ci; ni = calcular_nivel_riesgo(vi)
+                            pr = s_int(r.get('P_Residual')); cr = s_int(r.get('C_Residual')); vr = pr*cr; nr = calcular_nivel_riesgo(vr)
                             
                             c.execute("""INSERT INTO matriz_iper 
                                 (proceso, puesto_trabajo, lugar_especifico, familia_riesgo, factor_gema, peligro_factor, riesgo_asociado,
@@ -795,9 +809,9 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                                 medida_control, jerarquia_control, requisito_legal,
                                 probabilidad_residual, consecuencia_residual, vep_residual, nivel_riesgo_residual) 
                                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", 
-                                (r.get('Proceso'), r.get('Puesto'), r.get('Lugar'), r.get('Familia'), r.get('GEMA'), r.get('Peligro'), r.get('Riesgo'),
-                                 r.get('Hombres',0), r.get('Mujeres',0), r.get('Diversidad',0),
-                                 pi, ci, vi, ni, r.get('Medida'), r.get('Jerarquia'), r.get('Legal'), pr, cr, vr, nr))
+                                (s_str(r.get('Proceso')), s_str(r.get('Puesto')), s_str(r.get('Lugar')), s_str(r.get('Familia')), s_str(r.get('GEMA')), s_str(r.get('Peligro')), s_str(r.get('Riesgo')),
+                                 s_int_0(r.get('Hombres')), s_int_0(r.get('Mujeres')), s_int_0(r.get('Diversidad')),
+                                 pi, ci, vi, ni, s_str(r.get('Medida')), s_str(r.get('Jerarquia')), s_str(r.get('Legal')), pr, cr, vr, nr))
                             count_ok += 1
                     conn.commit()
                     st.success(f"✅ Se cargaron exitosamente {count_ok} registros.")
@@ -903,19 +917,23 @@ elif menu == "👥 Gestión Personas":
         if st.button("💾 Guardar Cambios"):
             c = conn.cursor()
             for i, r in edited.iterrows():
+                
+                # HELPER PARA EVITAR NULOS (FIX V180)
+                def clean_str(val): return str(val) if pd.notnull(val) else ""
+                
                 fec = r['fecha_contrato']; f_ex = r['vigencia_examen_medico']
                 if pd.isna(fec) or str(fec)=='NaT': fec = date.today()
                 if pd.isna(f_ex) or str(f_ex)=='NaT': f_ex = None
                 
                 if r['rut'] != r['rut_old']:
                     c.execute("UPDATE personal SET rut=?, nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=?, contacto_emergencia=?, fono_emergencia=? WHERE rut=?", 
-                              (r['rut'], r['nombre'], r['cargo'], r['centro_costo'], r['email'], r['estado'], fec, f_ex, r['contacto_emergencia'], r['fono_emergencia'], r['rut_old']))
+                              (clean_str(r['rut']), clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['email']), clean_str(r['estado']), fec, f_ex, clean_str(r['contacto_emergencia']), clean_str(r['fono_emergencia']), r['rut_old']))
                     c.execute("UPDATE asistencia_capacitacion SET trabajador_rut=? WHERE trabajador_rut=?", (r['rut'], r['rut_old']))
                     c.execute("UPDATE registro_epp SET rut_trabajador=? WHERE rut_trabajador=?", (r['rut'], r['rut_old']))
                     c.execute("UPDATE registro_riohs SET rut_trabajador=? WHERE rut_trabajador=?", (r['rut'], r['rut_old']))
                 else:
                     c.execute("UPDATE personal SET nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=?, contacto_emergencia=?, fono_emergencia=? WHERE rut=?", 
-                              (r['nombre'], r['cargo'], r['centro_costo'], r['email'], r['estado'], fec, f_ex, r['contacto_emergencia'], r['fono_emergencia'], r['rut']))
+                              (clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['email']), clean_str(r['estado']), fec, f_ex, clean_str(r['contacto_emergencia']), clean_str(r['fono_emergencia']), r['rut']))
             conn.commit(); st.success("Guardado"); time.sleep(1); st.rerun()
 
     with tab_carga:
