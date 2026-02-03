@@ -44,7 +44,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v181_roles_update.db' # Actualización de Cargos
+DB_NAME = 'sgsst_v182_stable_fix.db' # Actualización Corrección Guardado
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -194,7 +194,7 @@ LISTA_CARGOS = [
     "OPERADOR DE MAQUINARIA", 
     "MOTOSIERRISTA", 
     "ESTROBERO", 
-    "MECANICO", 
+    "AYUDANTE MECANICO", # Modificado de "MECANICO"
     "MECANICO LIDER", 
     "CALIBRADOR", 
     "PAÑOLERO", 
@@ -217,7 +217,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     
-    # --- MATRIZ IPER V181 ---
+    # --- MATRIZ IPER V182 ---
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         proceso TEXT, 
