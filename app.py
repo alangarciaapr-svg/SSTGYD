@@ -43,31 +43,51 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v173_matrix_expert.db' # Actualización Matriz Experta
+DB_NAME = 'sgsst_v175_iper_normativa.db' # Actualización Normativa V175
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
-# --- DICCIONARIO DE RIESGOS ISP V3 (ANEXO 3) ---
+# --- DICCIONARIO DE RIESGOS ISP V3 (CORREGIDO Y AMPLIADO) ---
 ISP_RISK_CODES = {
     "Seguridad": [
         "Caídas al mismo nivel (A1)", "Caídas a distinto nivel (A2)", "Caídas de altura (A3)",
-        "Atrapamiento (B1)", "Golpeado por/contra (B2)", "Cortes/Punzonantes (B3)",
-        "Contacto con objetos calientes/fríos (E1/E2)", "Contacto eléctrico (F1/F2)",
-        "Incendio/Explosión (J/H1)", "Atropello/Colisión (I1/I2)", "Proyección de partículas (H2)"
+        "Caídas al agua (A4)",
+        "Atrapamiento (B1)", "Golpeado por/contra (B2)", "Cortes/Punzonantes (B3)", 
+        "Choque contra objetos (B4)",
+        "Contacto con personas (C1)", "Contacto con animales/insectos (C2)",
+        "Contacto con objetos calientes (E1)", "Contacto con objetos fríos (E2)",
+        "Contacto eléctrico Baja Tensión (F1/F3)", "Contacto eléctrico Alta Tensión (F2/F4)",
+        "Contacto sustancias cáusticas (G1)", "Otras sustancias químicas (G2)",
+        "Proyección de partículas (H2)",
+        "Atropellos (I1)", "Choque/Colisión Vehicular (I2)"
     ],
-    "Higiene": [
-        "Ruido (PREXOR) (P1)", "Sílice (PLANESI) (O1)", "Vibraciones (P2/P3)",
-        "Radiación UV (P5)", "Temperaturas Extremas (P6/P7)", "Agentes Químicos (G1/G2)",
-        "Agentes Biológicos (Q1/Q2)"
+    "Higiene (Salud Ocupacional)": [
+        "Aerosoles Sólidos (Sílice/Polvos) (O1)", "Aerosoles Líquidos (Nieblas) (O2)",
+        "Gases y Vapores (O3)",
+        "Ruido (PREXOR) (P1)", 
+        "Vibraciones Cuerpo Entero (P2)", "Vibraciones Mano-Brazo (P3)",
+        "Radiaciones Ionizantes (P4)", "Radiaciones No Ionizantes (UV/Solar) (P5)", 
+        "Calor (P6)", "Frío (P7)",
+        "Altas Presiones (P8)", "Bajas Presiones (Hipobaria) (P9)",
+        "Agentes Biológicos (Fluidos) (Q1)", "Agentes Biológicos (Virus/Bacterias) (Q2)"
     ],
-    "Musculoesquelético (TMERT)": [
-        "Manejo Manual de Cargas (R1)", "Trabajo Repetitivo (S1)", 
-        "Posturas Forzadas (T1-T8)", "Manejo de Pacientes (R2)"
+    "Músculo Esqueléticos (TMERT)": [
+        "Manejo Manual de Cargas (R1)", "Manejo de Pacientes (R2)",
+        "Trabajo Repetitivo (S1)", 
+        "Postura de Pie (T1)", "Postura Sentado (T2)", "En Cuclillas (T3)", "Arrodillado (T4)",
+        "Tronco Inclinado/Torsión (T5)", "Cabeza/Cuello Flexión (T6)",
+        "Fuera del Alcance Funcional (T7)", "Posturas Estáticas (T8)"
     ],
-    "Psicosocial (ISTAS21)": [
+    "Psicosociales (ISTAS21)": [
         "Carga de Trabajo (D1)", "Exigencias Emocionales (D2)", "Desarrollo Profesional (D3)",
         "Reconocimiento y Claridad (D4)", "Conflicto de Rol (D5)", "Calidad de Liderazgo (D6)",
-        "Compañerismo (D7)", "Inseguridad (D8)", "Doble Presencia (D9)", "Violencia y Acoso (D12)"
+        "Compañerismo (D7)", "Inseguridad (D8)", "Doble Presencia (D9)", 
+        "Confianza y Justicia (D10)", "Vulnerabilidad (D11)", "Violencia y Acoso (D12)"
+    ],
+    "Desastres y Emergencias": [
+        "Incendios (J)", "Explosiones (H1)", 
+        "Ambientes Deficiencia Oxígeno (K1)", "Gases Tóxicos Emergencia (K2)",
+        "Sismos / Terremotos (Natural)", "Inundaciones / Aluviones (Natural)"
     ]
 }
 
@@ -188,8 +208,37 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     
-    # --- MATRIZ IPER V173 EXPERT (INICIAL + RESIDUAL) ---
-    c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (id INTEGER PRIMARY KEY AUTOINCREMENT, proceso TEXT, tipo_proceso TEXT, puesto_trabajo TEXT, tarea TEXT, es_rutinaria TEXT, peligro_factor TEXT, riesgo_asociado TEXT, tipo_riesgo TEXT, probabilidad INTEGER, consecuencia INTEGER, vep INTEGER, nivel_riesgo TEXT, medida_control TEXT, genero_obs TEXT)''')
+    # --- MATRIZ IPER V175 (NORMATIVA 2024 COMPLIANT) ---
+    c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, 
+        proceso TEXT, 
+        tipo_proceso TEXT, 
+        puesto_trabajo TEXT, 
+        tarea TEXT, 
+        es_rutinaria TEXT, 
+        lugar_especifico TEXT,
+        familia_riesgo TEXT,
+        codigo_riesgo TEXT,
+        factor_gema TEXT,
+        peligro_factor TEXT, 
+        riesgo_asociado TEXT, 
+        tipo_riesgo TEXT, 
+        probabilidad INTEGER, 
+        consecuencia INTEGER, 
+        vep INTEGER, 
+        nivel_riesgo TEXT, 
+        medida_control TEXT, 
+        jerarquia_control TEXT,
+        requisito_legal TEXT,
+        probabilidad_residual INTEGER,
+        consecuencia_residual INTEGER,
+        vep_residual INTEGER,
+        nivel_riesgo_residual TEXT,
+        genero_obs TEXT,
+        n_hombres INTEGER,
+        n_mujeres INTEGER,
+        n_disidencias INTEGER
+    )''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, tema TEXT, tipo_actividad TEXT, responsable_rut TEXT, estado TEXT, duracion INTEGER, lugar TEXT, metodologia TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (id INTEGER PRIMARY KEY AUTOINCREMENT, capacitacion_id INTEGER, trabajador_rut TEXT, nombre_trabajador TEXT, cargo_trabajador TEXT, estado TEXT, firma_b64 TEXT)''')
@@ -205,6 +254,12 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS periodos_ds67 (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre_periodo TEXT, fecha_inicio DATE, fecha_fin DATE)''')
     c.execute('''CREATE TABLE IF NOT EXISTS detalle_mensual_ds67 (id INTEGER PRIMARY KEY AUTOINCREMENT, periodo_id INTEGER, mes INTEGER, anio INTEGER, masa_imponible INTEGER, dias_perdidos INTEGER, invalideces_muertes INTEGER, observacion TEXT)''')
 
+    # FIX COLUMNAS
+    for col in ["n_hombres", "n_mujeres", "n_disidencias", "probabilidad_residual", "consecuencia_residual", "vep_residual"]:
+        check_and_add_column(c, "matriz_iper", col, "INTEGER")
+    for col in ["lugar_especifico", "familia_riesgo", "codigo_riesgo", "factor_gema", "jerarquia_control", "requisito_legal", "nivel_riesgo_residual"]:
+        check_and_add_column(c, "matriz_iper", col, "TEXT")
+
     check_and_add_column(c, "personal", "contacto_emergencia", "TEXT")
     check_and_add_column(c, "personal", "fono_emergencia", "TEXT")
     check_and_add_column(c, "personal", "obs_medica", "TEXT")
@@ -215,23 +270,6 @@ def init_db():
     check_and_add_column(c, "registro_riohs", "email_copia", "TEXT")
     check_and_add_column(c, "registro_riohs", "estado_envio", "TEXT")
     check_and_add_column(c, "incidentes", "dias_perdidos", "INTEGER")
-    
-    # --- COLUMNAS MATRIZ V173 ---
-    check_and_add_column(c, "matriz_iper", "lugar_especifico", "TEXT")
-    check_and_add_column(c, "matriz_iper", "familia_riesgo", "TEXT") 
-    check_and_add_column(c, "matriz_iper", "codigo_riesgo", "TEXT") 
-    check_and_add_column(c, "matriz_iper", "factor_gema", "TEXT") 
-    check_and_add_column(c, "matriz_iper", "jerarquia_control", "TEXT")
-    check_and_add_column(c, "matriz_iper", "n_hombres", "INTEGER")
-    check_and_add_column(c, "matriz_iper", "n_mujeres", "INTEGER")
-    check_and_add_column(c, "matriz_iper", "n_disidencias", "INTEGER")
-    
-    # --- NUEVOS CAMPOS: RESIDUAL Y LEGAL (V173) ---
-    check_and_add_column(c, "matriz_iper", "probabilidad_residual", "INTEGER")
-    check_and_add_column(c, "matriz_iper", "consecuencia_residual", "INTEGER")
-    check_and_add_column(c, "matriz_iper", "vep_residual", "INTEGER")
-    check_and_add_column(c, "matriz_iper", "nivel_riesgo_residual", "TEXT")
-    check_and_add_column(c, "matriz_iper", "requisito_legal", "TEXT")
 
     c.execute("SELECT count(*) FROM usuarios")
     if c.fetchone()[0] == 0:
@@ -292,7 +330,7 @@ def get_incidentes_mes():
     except: res = 0
     conn.close(); return res
 
-# --- LOGICA DS67 ---
+# --- LOGICA DS67 AVANZADA ---
 def determinar_tramo_cotizacion(tasa):
     if tasa < 33: return 0.0
     elif tasa < 66: return 0.34
@@ -636,148 +674,166 @@ elif menu == "⚖️ Gestión DS67":
 
     conn.close()
 
-# --- 3. MATRIZ IPER (V173 - EXPERT MATRIX: INICIAL VS RESIDUAL + LEGAL) ---
+# --- 3. MATRIZ IPER (V175 - MAESTRA NORMATIVA) ---
 elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Riesgos (ISP 2024 + DS44)</div>", unsafe_allow_html=True)
-    tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Ver Matriz Completa", "📂 Carga Masiva Inteligente", "➕ Crear Riesgo"])
+    tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Ver Matriz Completa", "📂 Carga Masiva Inteligente", "➕ Crear Riesgo (Maestro)"])
     conn = get_conn()
     
     with tab_ver:
-        # CONSULTA EXPERTA V173
-        query = """SELECT id, proceso as 'PROCESO', puesto_trabajo as 'PUESTO', tarea as 'TAREA', 
-                   familia_riesgo as 'FAMILIA', codigo_riesgo as 'COD ISP', 
-                   probabilidad as 'P_INICIAL', consecuencia as 'C_INICIAL', vep as 'VEP_INICIAL', nivel_riesgo as 'NIVEL_INICIAL',
-                   medida_control as 'MEDIDA DE CONTROL', jerarquia_control as 'JERARQUIA', requisito_legal as 'LEGAL',
-                   probabilidad_residual as 'P_RESIDUAL', consecuencia_residual as 'C_RESIDUAL', vep_residual as 'VEP_RESIDUAL', nivel_riesgo_residual as 'NIVEL_RESIDUAL'
+        # CONSULTA MAESTRA V175
+        query = """SELECT id, 
+                   proceso as 'PROCESO', puesto_trabajo as 'PUESTO', tarea as 'TAREA', 
+                   lugar_especifico as 'LUGAR', familia_riesgo as 'FAMILIA', codigo_riesgo as 'COD ISP', 
+                   factor_gema as 'GEMA', peligro_factor as 'PELIGRO', riesgo_asociado as 'RIESGO',
+                   n_hombres as 'HOMBRES', n_mujeres as 'MUJERES', n_disidencias as 'DIVERSIDAD',
+                   probabilidad as 'P_INI', consecuencia as 'C_INI', vep as 'VEP_INI', nivel_riesgo as 'NIVEL_INI',
+                   medida_control as 'MEDIDA CONTROL', jerarquia_control as 'JERARQUIA', requisito_legal as 'LEGAL',
+                   probabilidad_residual as 'P_RES', consecuencia_residual as 'C_RES', vep_residual as 'VEP_RES', nivel_riesgo_residual as 'NIVEL_RES'
                    FROM matriz_iper"""
         df_matriz = pd.read_sql(query, conn)
         
-        st.markdown("### 📊 Matriz de Identificación de Peligros y Evaluación de Riesgos")
-        st.markdown("Esta vista permite comparar el **Riesgo Puro (Inicial)** frente al **Riesgo Residual** tras aplicar controles.")
+        st.markdown("### 📊 Matriz de Identificación de Peligros y Evaluación de Riesgos (MIPER)")
+        st.markdown("Visualización completa incluyendo **Género**, **GEMA**, **Evaluación Pura** y **Evaluación Residual**.")
         
         edited_df = st.data_editor(df_matriz, use_container_width=True, 
             column_config={
-                "P_INICIAL": st.column_config.NumberColumn("P (Ini)", min_value=1, max_value=4), 
-                "C_INICIAL": st.column_config.NumberColumn("C (Ini)", min_value=1, max_value=4), 
-                "VEP_INICIAL": st.column_config.NumberColumn("VEP (Ini)", disabled=True), 
-                "NIVEL_INICIAL": st.column_config.TextColumn("Nivel (Ini)", disabled=True),
-                
-                "P_RESIDUAL": st.column_config.NumberColumn("P (Res)", min_value=1, max_value=4), 
-                "C_RESIDUAL": st.column_config.NumberColumn("C (Res)", min_value=1, max_value=4), 
-                "VEP_RESIDUAL": st.column_config.NumberColumn("VEP (Res)", disabled=True), 
-                "NIVEL_RESIDUAL": st.column_config.TextColumn("Nivel (Res)", disabled=True),
-                
+                "P_INI": st.column_config.NumberColumn("P (Ini)", min_value=1, max_value=4), 
+                "C_INI": st.column_config.NumberColumn("C (Ini)", min_value=1, max_value=4), 
+                "VEP_INI": st.column_config.NumberColumn("VEP (Ini)", disabled=True), 
+                "NIVEL_INI": st.column_config.TextColumn("Nivel (Ini)", disabled=True),
+                "P_RES": st.column_config.NumberColumn("P (Res)", min_value=1, max_value=4), 
+                "C_RES": st.column_config.NumberColumn("C (Res)", min_value=1, max_value=4), 
+                "VEP_RES": st.column_config.NumberColumn("VEP (Res)", disabled=True), 
+                "NIVEL_RES": st.column_config.TextColumn("Nivel (Res)", disabled=True),
                 "FAMILIA": st.column_config.SelectboxColumn("FAMILIA", options=list(ISP_RISK_CODES.keys())),
+                "GEMA": st.column_config.SelectboxColumn("GEMA", options=["Gente", "Equipos", "Materiales", "Ambiente"]),
                 "JERARQUIA": st.column_config.SelectboxColumn("JERARQUIA", options=["Eliminación", "Sustitución", "Ingeniería", "Administrativo", "EPP"])
             }, hide_index=True, key="matriz_ed")
             
-        if st.button("💾 Guardar y Recalcular (Inicial y Residual)"):
+        if st.button("💾 Guardar y Recalcular Matriz Maestra"):
             c = conn.cursor()
             for i, r in edited_df.iterrows():
                 # Calculo Inicial
-                pi = int(r['P_INICIAL']); ci = int(r['C_INICIAL']); vi = pi*ci; ni = calcular_nivel_riesgo(vi)
+                pi = int(r['P_INI']); ci = int(r['C_INI']); vi = pi*ci; ni = calcular_nivel_riesgo(vi)
                 # Calculo Residual
-                pr = int(r['P_RESIDUAL']) if pd.notnull(r['P_RESIDUAL']) else 1
-                cr = int(r['C_RESIDUAL']) if pd.notnull(r['C_RESIDUAL']) else 1
+                pr = int(r['P_RES']) if pd.notnull(r['P_RES']) else 1
+                cr = int(r['C_RES']) if pd.notnull(r['C_RES']) else 1
                 vr = pr*cr; nr = calcular_nivel_riesgo(vr)
                 
+                # Update Masivo
                 c.execute("""UPDATE matriz_iper SET 
                              probabilidad=?, consecuencia=?, vep=?, nivel_riesgo=?, 
                              probabilidad_residual=?, consecuencia_residual=?, vep_residual=?, nivel_riesgo_residual=?,
-                             medida_control=?, familia_riesgo=?, codigo_riesgo=?, jerarquia_control=?, requisito_legal=?
+                             medida_control=?, familia_riesgo=?, codigo_riesgo=?, jerarquia_control=?, requisito_legal=?,
+                             factor_gema=?, lugar_especifico=?, n_hombres=?, n_mujeres=?, n_disidencias=?
                              WHERE id=?""", 
                              (pi, ci, vi, ni, pr, cr, vr, nr, 
-                              r['MEDIDA DE CONTROL'], r['FAMILIA'], r['COD ISP'], r['JERARQUIA'], r['LEGAL'], r['id']))
+                              r['MEDIDA CONTROL'], r['FAMILIA'], r['COD ISP'], r['JERARQUIA'], r['LEGAL'],
+                              r['GEMA'], r['LUGAR'], r['HOMBRES'], r['MUJERES'], r['DIVERSIDAD'], r['id']))
             conn.commit(); st.success("Matriz Recalculada y Actualizada"); st.rerun()
             
         b = io.BytesIO(); 
         with pd.ExcelWriter(b, engine='openpyxl') as w: edited_df.to_excel(w, index=False)
-        st.download_button("📥 Descargar Excel Matriz Completa", b.getvalue(), "MIPER_EXPERT.xlsx")
+        st.download_button("📥 Descargar Excel Matriz Completa", b.getvalue(), "MIPER_MASTER.xlsx")
 
     with tab_carga:
         st.subheader("Carga Masiva Inteligente")
         plantilla = {
-            'Proceso':['Cosecha'], 'Puesto':['Operador'], 'Lugar':['Bosque'], 'Familia':['Seguridad'], 
-            'P_Inicial':[4], 'C_Inicial':[4], 'Medida':['Cabina ROPS'], 'Jerarquia':['Ingeniería'], 'Legal':['DS 594 Art 12'],
+            'Proceso':['Cosecha'], 'Puesto':['Operador'], 'Lugar':['Bosque'], 'Familia':['Seguridad'], 'GEMA':['Ambiente'],
+            'Peligro':['Pendiente'], 'Riesgo':['Volcamiento'], 
+            'Hombres':[5], 'Mujeres':[1], 'Diversidad':[0],
+            'P_Inicial':[4], 'C_Inicial':[4], 
+            'Medida':['Cabina ROPS'], 'Jerarquia':['Ingeniería'], 'Legal':['DS 594 Art 12'],
             'P_Residual':[1], 'C_Residual':[4]
         }
         b2 = io.BytesIO(); 
         with pd.ExcelWriter(b2, engine='openpyxl') as w: pd.DataFrame(plantilla).to_excel(w, index=False)
-        st.download_button("📥 Descargar Plantilla V173", b2.getvalue(), "plantilla_iper_expert.xlsx")
+        st.download_button("📥 Descargar Plantilla Maestra V175", b2.getvalue(), "plantilla_iper_master.xlsx")
         
         up = st.file_uploader("Subir Excel", type=['xlsx'])
         if up:
             try:
                 df = pd.read_excel(up)
-                st.write("Vista Previa de Datos a Cargar:")
+                st.write("Vista Previa:")
                 st.dataframe(df.head())
-                
                 if st.button("Confirmar Carga"):
                     c = conn.cursor()
                     for i, r in df.iterrows():
-                        # Calculos automáticos
                         pi = int(r.get('P_Inicial',1)); ci = int(r.get('C_Inicial',1)); vi = pi*ci; ni = calcular_nivel_riesgo(vi)
                         pr = int(r.get('P_Residual',1)); cr = int(r.get('C_Residual',1)); vr = pr*cr; nr = calcular_nivel_riesgo(vr)
                         
                         c.execute("""INSERT INTO matriz_iper 
-                            (proceso, puesto_trabajo, lugar_especifico, familia_riesgo, 
+                            (proceso, puesto_trabajo, lugar_especifico, familia_riesgo, factor_gema, peligro_factor, riesgo_asociado,
+                            n_hombres, n_mujeres, n_disidencias,
                             probabilidad, consecuencia, vep, nivel_riesgo, 
                             medida_control, jerarquia_control, requisito_legal,
                             probabilidad_residual, consecuencia_residual, vep_residual, nivel_riesgo_residual) 
-                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", 
-                            (r.get('Proceso'), r.get('Puesto'), r.get('Lugar'), r.get('Familia'),
-                             pi, ci, vi, ni, r.get('Medida'), r.get('Jerarquia'), r.get('Legal'),
-                             pr, cr, vr, nr))
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", 
+                            (r.get('Proceso'), r.get('Puesto'), r.get('Lugar'), r.get('Familia'), r.get('GEMA'), r.get('Peligro'), r.get('Riesgo'),
+                             r.get('Hombres',0), r.get('Mujeres',0), r.get('Diversidad',0),
+                             pi, ci, vi, ni, r.get('Medida'), r.get('Jerarquia'), r.get('Legal'), pr, cr, vr, nr))
                     conn.commit(); st.success("Carga Masiva Exitosa")
             except Exception as e: st.error(f"Error en archivo: {e}")
 
     with tab_crear:
-        st.subheader("Evaluación de Riesgo Experta (Paso a Paso)")
-        with st.form("risk_expert"):
-            st.markdown("##### 1. Identificación")
+        st.subheader("Evaluación de Riesgo Maestra (Norma ISP 2024)")
+        with st.form("risk_master"):
+            st.markdown("##### 1. Contexto y Demografía (Género)")
             c1, c2, c3 = st.columns(3)
-            pro = c1.text_input("Proceso")
-            pue = c2.text_input("Puesto")
-            lug = c3.text_input("Lugar")
+            pro = c1.text_input("Proceso (Ej: Cosecha)")
+            pue = c2.text_input("Puesto de Trabajo")
+            lug = c3.text_input("Lugar Específico")
             
-            c4, c5 = st.columns(2)
-            fam = c4.selectbox("Familia", list(ISP_RISK_CODES.keys()))
-            cod = c5.selectbox("Riesgo Específico", ISP_RISK_CODES[fam])
+            d1, d2, d3 = st.columns(3)
+            nh = d1.number_input("Hombres (Cis)", min_value=0)
+            nm = d2.number_input("Mujeres (Cis)", min_value=0)
+            nd = d3.number_input("Diversidades (Trans/No Binario)", min_value=0)
+            
+            st.markdown("##### 2. Identificación del Peligro (GEMA)")
+            c4, c5, c6 = st.columns(3)
+            fam = c4.selectbox("Familia Riesgo", list(ISP_RISK_CODES.keys()))
+            cod = c5.selectbox("Riesgo Específico (ISP)", ISP_RISK_CODES[fam])
+            gema = c6.selectbox("Factor GEMA", ["Gente", "Equipos", "Materiales", "Ambiente"])
+            
+            pel = st.text_input("Peligro / Factor Específico")
+            rie = st.text_input("Riesgo Asociado (Consecuencia Potencial)")
             
             st.markdown("---")
-            st.markdown("##### 2. Evaluación de Riesgo PURO (Sin Controles)")
+            st.markdown("##### 3. Evaluación PURA (Inicial)")
             e1, e2 = st.columns(2)
-            pi = e1.selectbox("Probabilidad Inicial", [1,2,4], key="pi")
-            ci = e2.selectbox("Consecuencia Inicial", [1,2,4], key="ci")
-            st.warning(f"Riesgo Inicial: {pi*ci} ({calcular_nivel_riesgo(pi*ci)})")
+            pi = e1.selectbox("Probabilidad Inicial", [1,2,4], key="pi_m")
+            ci = e2.selectbox("Consecuencia Inicial", [1,2,4], key="ci_m")
+            st.warning(f"Nivel Inicial: {pi*ci} ({calcular_nivel_riesgo(pi*ci)})")
             
             st.markdown("---")
-            st.markdown("##### 3. Medidas de Control y Marco Legal")
+            st.markdown("##### 4. Control y Marco Legal")
             med = st.text_area("Medida de Control")
             l1, l2 = st.columns(2)
-            jc = l1.selectbox("Jerarquía", ["Eliminación", "Sustitución", "Ingeniería", "Administrativo", "EPP"])
-            leg = l2.text_input("Requisito Legal / Protocolo (Ej: DS 594, PREXOR)")
+            jc = l1.selectbox("Jerarquía Control", ["Eliminación", "Sustitución", "Ingeniería", "Administrativo", "EPP"])
+            leg = l2.text_input("Requisito Legal (Ej: DS 594 Art 53)")
             
             st.markdown("---")
-            st.markdown("##### 4. Evaluación de Riesgo RESIDUAL (Con Controles)")
+            st.markdown("##### 5. Evaluación RESIDUAL (Final)")
             e3, e4 = st.columns(2)
-            pr = e3.selectbox("Probabilidad Residual", [1,2,4], key="pr")
-            cr = e4.selectbox("Consecuencia Residual", [1,2,4], key="cr")
-            st.success(f"Riesgo Residual: {pr*cr} ({calcular_nivel_riesgo(pr*cr)})")
+            pr = e3.selectbox("Probabilidad Residual", [1,2,4], key="pr_m")
+            cr = e4.selectbox("Consecuencia Residual", [1,2,4], key="cr_m")
+            st.success(f"Nivel Residual: {pr*cr} ({calcular_nivel_riesgo(pr*cr)})")
             
-            if st.form_submit_button("Guardar Evaluación Completa"):
+            if st.form_submit_button("Guardar Evaluación Maestra"):
                 vi = pi*ci; ni = calcular_nivel_riesgo(vi)
                 vr = pr*cr; nr = calcular_nivel_riesgo(vr)
                 cod_clean = cod.split("(")[-1].replace(")", "")
                 
                 conn.execute("""INSERT INTO matriz_iper 
-                    (proceso, puesto_trabajo, lugar_especifico, familia_riesgo, codigo_riesgo,
+                    (proceso, puesto_trabajo, lugar_especifico, familia_riesgo, codigo_riesgo, factor_gema, peligro_factor, riesgo_asociado, 
+                    n_hombres, n_mujeres, n_disidencias,
                     probabilidad, consecuencia, vep, nivel_riesgo, 
                     medida_control, jerarquia_control, requisito_legal,
                     probabilidad_residual, consecuencia_residual, vep_residual, nivel_riesgo_residual) 
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", 
-                    (pro, pue, lug, fam, cod_clean, pi, ci, vi, ni, med, jc, leg, pr, cr, vr, nr))
-                conn.commit(); st.success("Riesgo Guardado"); st.rerun()
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", 
+                    (pro, pue, lug, fam, cod_clean, gema, pel, rie, nh, nm, nd, pi, ci, vi, ni, med, jc, leg, pr, cr, vr, nr))
+                conn.commit(); st.success("Riesgo Maestro Guardado"); st.rerun()
             
     conn.close()
 
