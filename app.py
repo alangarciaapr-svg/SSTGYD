@@ -44,7 +44,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v182_stable_fix.db' # Actualización Corrección Guardado
+DB_NAME = 'sgsst_v183_final_fix.db' # Actualización Final con Corrección de RUT
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -183,7 +183,7 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-# --- LISTA DE CARGOS ACTUALIZADA ---
+# --- LISTA DE CARGOS ACTUALIZADA (V183) ---
 LISTA_CARGOS = [
     "GERENTE GENERAL", 
     "GERENTE DE FINANZAS", 
@@ -194,7 +194,7 @@ LISTA_CARGOS = [
     "OPERADOR DE MAQUINARIA", 
     "MOTOSIERRISTA", 
     "ESTROBERO", 
-    "AYUDANTE MECANICO", # Modificado de "MECANICO"
+    "AYUDANTE MECANICO", # CORREGIDO DE MECANICO
     "MECANICO LIDER", 
     "CALIBRADOR", 
     "PAÑOLERO", 
@@ -217,7 +217,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     
-    # --- MATRIZ IPER V182 ---
+    # --- MATRIZ IPER V183 ---
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         proceso TEXT, 
@@ -925,7 +925,7 @@ elif menu == "👥 Gestión Personas":
             c = conn.cursor()
             for i, r in edited.iterrows():
                 
-                # HELPER PARA EVITAR NULOS (FIX V180)
+                # HELPER PARA EVITAR NULOS (FIX V180 & V183)
                 def clean_str(val): return str(val) if pd.notnull(val) else ""
                 
                 fec = r['fecha_contrato']; f_ex = r['vigencia_examen_medico']
@@ -934,13 +934,14 @@ elif menu == "👥 Gestión Personas":
                 
                 if r['rut'] != r['rut_old']:
                     c.execute("UPDATE personal SET rut=?, nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=?, contacto_emergencia=?, fono_emergencia=? WHERE rut=?", 
-                              (clean_str(r['rut']), clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['email']), clean_str(r['estado']), fec, f_ex, clean_str(r['contacto_emergencia']), clean_str(r['fono_emergencia']), r['rut_old']))
-                    c.execute("UPDATE asistencia_capacitacion SET trabajador_rut=? WHERE trabajador_rut=?", (r['rut'], r['rut_old']))
-                    c.execute("UPDATE registro_epp SET rut_trabajador=? WHERE rut_trabajador=?", (r['rut'], r['rut_old']))
-                    c.execute("UPDATE registro_riohs SET rut_trabajador=? WHERE rut_trabajador=?", (r['rut'], r['rut_old']))
+                              (clean_str(r['rut']), clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['email']), clean_str(r['estado']), fec, f_ex, clean_str(r['contacto_emergencia']), clean_str(r['fono_emergencia']), clean_str(r['rut_old'])))
+                    c.execute("UPDATE asistencia_capacitacion SET trabajador_rut=? WHERE trabajador_rut=?", (clean_str(r['rut']), clean_str(r['rut_old'])))
+                    c.execute("UPDATE registro_epp SET rut_trabajador=? WHERE rut_trabajador=?", (clean_str(r['rut']), clean_str(r['rut_old'])))
+                    c.execute("UPDATE registro_riohs SET rut_trabajador=? WHERE rut_trabajador=?", (clean_str(r['rut']), clean_str(r['rut_old'])))
                 else:
+                    # FIX LINEA 942: clean_str aplicado al RUT del WHERE
                     c.execute("UPDATE personal SET nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=?, contacto_emergencia=?, fono_emergencia=? WHERE rut=?", 
-                              (clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['email']), clean_str(r['estado']), fec, f_ex, clean_str(r['contacto_emergencia']), clean_str(r['fono_emergencia']), r['rut']))
+                              (clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['email']), clean_str(r['estado']), fec, f_ex, clean_str(r['contacto_emergencia']), clean_str(r['fono_emergencia']), clean_str(r['rut'])))
             conn.commit(); st.success("Guardado"); time.sleep(1); st.rerun()
 
     with tab_carga:
