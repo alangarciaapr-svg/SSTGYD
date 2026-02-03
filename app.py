@@ -43,7 +43,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v170_ds67_advanced.db' # Actualización DS67 Mensual
+DB_NAME = 'sgsst_v171_iper_v3.db' # Actualización Matriz ISP V3
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -163,7 +163,10 @@ def init_db():
     conn = get_conn(); c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
+    
+    # --- MATRIZ IPER ACTUALIZADA V171 (ISP 2024 COMPLIANT) ---
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (id INTEGER PRIMARY KEY AUTOINCREMENT, proceso TEXT, tipo_proceso TEXT, puesto_trabajo TEXT, tarea TEXT, es_rutinaria TEXT, peligro_factor TEXT, riesgo_asociado TEXT, tipo_riesgo TEXT, probabilidad INTEGER, consecuencia INTEGER, vep INTEGER, nivel_riesgo TEXT, medida_control TEXT, genero_obs TEXT)''')
+    
     c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, tema TEXT, tipo_actividad TEXT, responsable_rut TEXT, estado TEXT, duracion INTEGER, lugar TEXT, metodologia TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS asistencia_capacitacion (id INTEGER PRIMARY KEY AUTOINCREMENT, capacitacion_id INTEGER, trabajador_rut TEXT, nombre_trabajador TEXT, cargo_trabajador TEXT, estado TEXT, firma_b64 TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_entrega DATE, rut_trabajador TEXT, nombre_trabajador TEXT, cargo TEXT, lista_productos TEXT, firma_b64 TEXT)''')
@@ -175,34 +178,27 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS contratistas (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_empresa TEXT, razon_social TEXT, estado_documental TEXT, fecha_vencimiento_f30 DATE)''')
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, usuario TEXT, accion TEXT, detalle TEXT)''')
-    
-    # --- TABLAS DS67 AVANZADAS ---
     c.execute('''CREATE TABLE IF NOT EXISTS periodos_ds67 (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre_periodo TEXT, fecha_inicio DATE, fecha_fin DATE)''')
-    
-    # Tabla Mensual (Bitácora)
-    c.execute('''CREATE TABLE IF NOT EXISTS detalle_mensual_ds67 (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        periodo_id INTEGER,
-        mes INTEGER,
-        anio INTEGER,
-        masa_imponible INTEGER,
-        dias_perdidos INTEGER,
-        invalideces_muertes INTEGER,
-        observacion TEXT
-    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS detalle_mensual_ds67 (id INTEGER PRIMARY KEY AUTOINCREMENT, periodo_id INTEGER, mes INTEGER, anio INTEGER, masa_imponible INTEGER, dias_perdidos INTEGER, invalideces_muertes INTEGER, observacion TEXT)''')
 
+    # COLUMNAS BASE
     check_and_add_column(c, "personal", "contacto_emergencia", "TEXT")
     check_and_add_column(c, "personal", "fono_emergencia", "TEXT")
     check_and_add_column(c, "personal", "obs_medica", "TEXT")
     check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE")
     check_and_add_column(c, "inventario_epp", "precio", "INTEGER")
-    
     check_and_add_column(c, "registro_riohs", "nombre_difusor", "TEXT")
     check_and_add_column(c, "registro_riohs", "firma_difusor_b64", "TEXT")
     check_and_add_column(c, "registro_riohs", "email_copia", "TEXT")
     check_and_add_column(c, "registro_riohs", "estado_envio", "TEXT")
-    
     check_and_add_column(c, "incidentes", "dias_perdidos", "INTEGER")
+    
+    # --- COLUMNAS NUEVAS PARA MATRIZ ISP V3 (V171) ---
+    check_and_add_column(c, "matriz_iper", "lugar_especifico", "TEXT")
+    check_and_add_column(c, "matriz_iper", "familia_riesgo", "TEXT") # Seguridad, Higiene, etc.
+    check_and_add_column(c, "matriz_iper", "n_hombres", "INTEGER")
+    check_and_add_column(c, "matriz_iper", "n_mujeres", "INTEGER")
+    check_and_add_column(c, "matriz_iper", "n_disidencias", "INTEGER")
 
     c.execute("SELECT count(*) FROM usuarios")
     if c.fetchone()[0] == 0:
@@ -223,8 +219,8 @@ def init_db():
         
         c.execute("SELECT count(*) FROM matriz_iper")
         if c.fetchone()[0] == 0:
-            c.execute("INSERT INTO matriz_iper (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, genero_obs) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                 ("Cosecha", "Operativo", "Operador", "Tala", "SI", "Pendiente", "Volcamiento", "Seguridad", 2, 4, 8, "IMPORTANTE", "Cabina ROPS", "Sin Obs"))
+            c.execute("INSERT INTO matriz_iper (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, genero_obs, familia_riesgo, lugar_especifico, n_hombres, n_mujeres, n_disidencias) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                 ("Cosecha", "Operativo", "Operador", "Tala", "SI", "Pendiente", "Volcamiento", "Seguridad", 2, 4, 8, "IMPORTANTE", "Cabina ROPS", "Sin Obs", "Seguridad", "Bosque", 5, 0, 0))
     conn.commit(); conn.close()
 
 def registrar_auditoria(usuario, accion, detalle):
@@ -325,32 +321,17 @@ class DocumentosLegalesPDF:
         self._header()
         self.elements.append(Paragraph(f"INFORME MENSUAL DE SINIESTRALIDAD DS67 - {data_ds67['periodo']}", self.styles['Heading2']))
         self.elements.append(Spacer(1, 10))
-        
-        t_res = Table([
-            ["MASA IMPONIBLE PROMEDIO", str(data_ds67['masa'])],
-            ["TOTAL DÍAS PERDIDOS", str(data_ds67['dias'])],
-            ["INVALIDECES / MUERTES", str(data_ds67['inv'])],
-            ["TASA SINIESTRALIDAD EFECTIVA", f"{data_ds67['tasa']:.2f}"],
-            ["COTIZACIÓN ADICIONAL PROYECTADA", f"{data_ds67['cot']:.2f}%"]
-        ], colWidths=[300, 150])
+        t_res = Table([["MASA IMPONIBLE PROMEDIO", str(data_ds67['masa'])], ["TOTAL DÍAS PERDIDOS", str(data_ds67['dias'])], ["INVALIDECES / MUERTES", str(data_ds67['inv'])], ["TASA SINIESTRALIDAD EFECTIVA", f"{data_ds67['tasa']:.2f}"], ["COTIZACIÓN ADICIONAL PROYECTADA", f"{data_ds67['cot']:.2f}%"]], colWidths=[300, 150])
         t_res.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (0,4), HexColor(COLOR_PRIMARY)), ('TEXTCOLOR', (0,0), (0,4), colors.white)]))
-        self.elements.append(t_res)
-        self.elements.append(Spacer(1, 20))
-        self.elements.append(Paragraph("Detalle Mensual:", self.styles['Heading3']))
-        
+        self.elements.append(t_res); self.elements.append(Spacer(1, 20)); self.elements.append(Paragraph("Detalle Mensual:", self.styles['Heading3']))
         det = [["MES/AÑO", "MASA", "DIAS PERDIDOS", "INVALIDEZ"]]
-        for d in data_ds67['detalle']:
-            det.append([f"{d['mes']}/{d['anio']}", str(d['masa']), str(d['dias']), str(d['inv'])])
-            
-        t_det = Table(det, colWidths=[100, 100, 100, 100])
-        t_det.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (-1,0), colors.lightgrey)]))
-        self.elements.append(t_det)
-        
-        self.doc.build(self.elements); self.buffer.seek(0); return self.buffer
+        for d in data_ds67['detalle']: det.append([f"{d['mes']}/{d['anio']}", str(d['masa']), str(d['dias']), str(d['inv'])])
+        t_det = Table(det, colWidths=[100, 100, 100, 100]); t_det.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (-1,0), colors.lightgrey)]))
+        self.elements.append(t_det); self.doc.build(self.elements); self.buffer.seek(0); return self.buffer
 
     def generar_epp(self, data):
         self._header()
-        texto_legal = """De conformidad a lo dispuesto en la <b>Ley 16.744 (Art. 68, inciso 3°)</b> sobre Accidentes del Trabajo y Enfermedades Profesionales, el <b>Decreto Supremo N° 594 (Art. 53)</b> y el <b>Decreto Supremo N° 44</b> del Ministerio del Trabajo y Previsión Social; la empresa <b>SOCIEDAD MADERERA GALVEZ Y DI GÉNOVA LTDA.</b> hace entrega gratuita de los Elementos de Protección Personal (EPP) adecuados al riesgo."""
+        texto_legal = """De conformidad a lo dispuesto en la <b>Ley 16.744 (Art. 68, inciso 3°)</b> sobre Accidentes del Trabajo y Enfermedades Profesionales..."""
         self.elements.append(Paragraph(texto_legal, ParagraphStyle('Legal', fontSize=11, leading=14, alignment=TA_JUSTIFY)))
         self.elements.append(Spacer(1, 20))
         d_info = [[f"NOMBRE: {data['nombre']}", f"RUT: {data['rut']}"], [f"CARGO: {data['cargo']}", f"FECHA: {data['fecha']}"]]
@@ -361,30 +342,22 @@ class DocumentosLegalesPDF:
         try: items = ast.literal_eval(data['lista'])
         except: items = []
         t_data = [["CANT", "ELEMENTO / PRODUCTO", "TALLA"]]
-        for i in items:
-            talla = i.get('talla', 'U') if i.get('talla') else 'U'
-            t_data.append([str(i.get('cant','1')), i.get('prod','EPP'), talla])
+        for i in items: t_data.append([str(i.get('cant','1')), i.get('prod','EPP'), i.get('talla', 'U')])
         t_prod = Table(t_data, colWidths=[60, 400, 80])
         t_prod.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (-1,0), HexColor(COLOR_PRIMARY)), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
         self.elements.append(t_prod); self.elements.append(Spacer(1, 20))
-        texto_comp = """El trabajador se compromete a mantener los Elementos de Protección Personal en buen estado y declara haberlos recibido en forma gratuita. Además, se compromete a utilizar los implementos durante la totalidad de su jornada laboral."""
+        texto_comp = """El trabajador se compromete a mantener los Elementos de Protección Personal en buen estado..."""
         self.elements.append(Paragraph(texto_comp, ParagraphStyle('Comp', fontSize=11, alignment=TA_JUSTIFY)))
         self._signature_block(data['firma_b64']); self.doc.build(self.elements); self.buffer.seek(0); return self.buffer
 
     def generar_riohs(self, data):
         self._header()
-        
-        legal_1 = """Se deja expresa constancia, de acuerdo a lo establecido en el artículo 156 del Código del Trabajo y DS 44 de la Ley 16.744 que, he recibido en forma gratuita un ejemplar del Reglamento Interno de Orden, Higiene y Seguridad de SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA."""
-        self.elements.append(Paragraph(legal_1, ParagraphStyle('L1', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
-        self.elements.append(Spacer(1, 10))
-        
-        legal_2 = """Declaro bajo mi firma haber recibido, leído y comprendido el presente Reglamento Interno de Orden, Higiene y Seguridad, del cual doy fe de conocer el contenido de éste y me hago responsable de su estricto cumplimiento en cada uno de sus artículos, no pudiendo alegar desconocimiento de su texto a contar de esta fecha."""
-        self.elements.append(Paragraph(legal_2, ParagraphStyle('L2', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
-        self.elements.append(Spacer(1, 10))
-        
-        legal_3 = """Este reglamento puede entregarse en electronico conforme se expresa en ordinario N°1086, del 06/03/15, departamento juridico, de la direccion del trabajo, siendo mi decision que la entrega de este documento se haga de acuerdo a lo siguiente:"""
-        self.elements.append(Paragraph(legal_3, ParagraphStyle('L3', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
-        self.elements.append(Spacer(1, 15))
+        legal_1 = """Se deja expresa constancia, de acuerdo a lo establecido en el artículo 156 del Código del Trabajo..."""
+        self.elements.append(Paragraph(legal_1, ParagraphStyle('L1', fontSize=10, leading=12, alignment=TA_JUSTIFY))); self.elements.append(Spacer(1, 10))
+        legal_2 = """Declaro bajo mi firma haber recibido, leído y comprendido el presente Reglamento Interno..."""
+        self.elements.append(Paragraph(legal_2, ParagraphStyle('L2', fontSize=10, leading=12, alignment=TA_JUSTIFY))); self.elements.append(Spacer(1, 10))
+        legal_3 = """Este reglamento puede entregarse en electronico conforme se expresa en ordinario N°1086..."""
+        self.elements.append(Paragraph(legal_3, ParagraphStyle('L3', fontSize=10, leading=12, alignment=TA_JUSTIFY))); self.elements.append(Spacer(1, 15))
         
         if "Digital" in data.get('tipo_entrega', ''):
             email_val = data.get('email', 'N/A')
@@ -394,54 +367,26 @@ class DocumentosLegalesPDF:
             
         self.elements.append(Paragraph(texto_decision, ParagraphStyle('Decision', fontSize=10, leading=14, alignment=TA_CENTER, fontName='Helvetica-Bold')))
         self.elements.append(Spacer(1, 20))
-        
-        legal_4 = """Asumo mi responsabilidad de dar lectura a su contenido y cumplir con las obligaciones, prohibiciones, normas de orden, higiene y seguridad que en el estan escritas, como asi tambien las dispocisiones y procedimientos que en forma posterior se emitan y/o modifiquen y que formen parte de este reglamento o que expresamente lo indique."""
-        self.elements.append(Paragraph(legal_4, ParagraphStyle('L4', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
-        self.elements.append(Spacer(1, 20))
+        legal_4 = """Asumo mi responsabilidad de dar lectura a su contenido y cumplir con las obligaciones..."""
+        self.elements.append(Paragraph(legal_4, ParagraphStyle('L4', fontSize=10, leading=12, alignment=TA_JUSTIFY))); self.elements.append(Spacer(1, 20))
         
         sig_img = Paragraph("", self.styles['Normal'])
         if data.get('firma_b64'):
             try: sig_img = RLImage(io.BytesIO(base64.b64decode(data['firma_b64'])), width=200, height=80)
             except: pass
-            
-        t_data = [
-            ["NOMBRE COMPLETO", data['nombre']],
-            ["RUT", data['rut']],
-            ["CARGO", data['cargo']],
-            ["FECHA DE ENTREGA", data['fecha']],
-            ["FIRMA", sig_img]
-        ]
+        t_data = [["NOMBRE COMPLETO", data['nombre']], ["RUT", data['rut']], ["CARGO", data['cargo']], ["FECHA DE ENTREGA", data['fecha']], ["FIRMA", sig_img]]
         t_worker = Table(t_data, colWidths=[150, 350], rowHeights=[25, 25, 25, 25, 90])
-        t_worker.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-            ('BACKGROUND', (0,0), (0,-1), HexColor(COLOR_PRIMARY)),
-            ('TEXTCOLOR', (0,0), (0,-1), colors.white),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('ALIGN', (1,4), (1,4), 'CENTER')
-        ]))
-        self.elements.append(t_worker)
-        self.elements.append(Spacer(1, 20))
+        t_worker.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (0,-1), HexColor(COLOR_PRIMARY)), ('TEXTCOLOR', (0,0), (0,-1), colors.white), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (1,4), (1,4), 'CENTER')]))
+        self.elements.append(t_worker); self.elements.append(Spacer(1, 20))
         
         sig_dif = Paragraph("", self.styles['Normal'])
         if data.get('firma_difusor'):
             try: sig_dif = RLImage(io.BytesIO(base64.b64decode(data['firma_difusor'])), width=180, height=70)
             except: pass
-            
-        t_difusor = [
-            ["NOMBRE DIFUSOR", data.get('nombre_difusor', '___________________________')],
-            ["FIRMA Y TIMBRE", sig_dif]
-        ]
+        t_difusor = [["NOMBRE DIFUSOR", data.get('nombre_difusor', '___________________________')], ["FIRMA Y TIMBRE", sig_dif]]
         t_dif = Table(t_difusor, colWidths=[150, 350], rowHeights=[25, 80])
-        t_dif.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-            ('BACKGROUND', (0,0), (0,-1), HexColor(COLOR_PRIMARY)),
-            ('TEXTCOLOR', (0,0), (0,-1), colors.white),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('ALIGN', (1,1), (1,1), 'CENTER')
-        ]))
-        self.elements.append(t_dif)
-        
-        self.doc.build(self.elements); self.buffer.seek(0); return self.buffer
+        t_dif.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (0,-1), HexColor(COLOR_PRIMARY)), ('TEXTCOLOR', (0,0), (0,-1), colors.white), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (1,1), (1,1), 'CENTER')]))
+        self.elements.append(t_dif); self.doc.build(self.elements); self.buffer.seek(0); return self.buffer
 
     def generar_irl(self, data, riesgos):
         self._header(); self.elements.append(Paragraph(f"IRL: {data['nombre']}", self.styles['Heading3']))
@@ -662,31 +607,46 @@ elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Riesgos (ISP 2024)</div>", unsafe_allow_html=True)
     tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Ver Matriz", "📂 Carga Masiva", "➕ Crear Riesgo"])
     conn = get_conn()
+    
     with tab_ver:
-        query = """SELECT id, proceso as 'PROCESO', puesto_trabajo as 'PUESTO', tarea as 'TAREA', es_rutinaria as 'RUTINARIA', peligro_factor as 'PELIGRO (GEMA)', riesgo_asociado as 'RIESGO', probabilidad as 'P', consecuencia as 'C', vep as 'VEP', nivel_riesgo as 'NIVEL', medida_control as 'MEDIDAS DE CONTROL' FROM matriz_iper"""
+        # CONSULTA ACTUALIZADA PARA NUEVOS CAMPOS V171
+        query = """SELECT id, proceso as 'PROCESO', puesto_trabajo as 'PUESTO', tarea as 'TAREA', 
+                   familia_riesgo as 'FAMILIA', lugar_especifico as 'LUGAR',
+                   n_hombres as 'HOMBRES', n_mujeres as 'MUJERES', n_disidencias as 'DISIDENCIAS',
+                   peligro_factor as 'PELIGRO (GEMA)', riesgo_asociado as 'RIESGO', 
+                   probabilidad as 'P', consecuencia as 'C', vep as 'VEP', nivel_riesgo as 'NIVEL', medida_control as 'MEDIDAS DE CONTROL' FROM matriz_iper"""
         df_matriz = pd.read_sql(query, conn)
         edited_df = st.data_editor(df_matriz, use_container_width=True, 
             column_config={
                 "P": st.column_config.NumberColumn("P", min_value=1, max_value=4), 
                 "C": st.column_config.NumberColumn("C", min_value=1, max_value=4), 
                 "VEP": st.column_config.NumberColumn("VEP", disabled=True), 
-                "NIVEL": st.column_config.TextColumn("NIVEL", disabled=True)
+                "NIVEL": st.column_config.TextColumn("NIVEL", disabled=True),
+                "FAMILIA": st.column_config.SelectboxColumn("FAMILIA", options=["Seguridad", "Higiene", "Psicosocial", "TMERT"])
             }, hide_index=True, key="matriz_ed")
+            
         if st.button("💾 Guardar y Recalcular"):
             c = conn.cursor()
             for i, r in edited_df.iterrows():
+                # Logica VEP (Solo Seguridad) o Mantener
                 np = int(r['P']); nc = int(r['C']); nvep = np*nc; nniv = calcular_nivel_riesgo(nvep)
-                c.execute("UPDATE matriz_iper SET probabilidad=?, consecuencia=?, vep=?, nivel_riesgo=?, medida_control=? WHERE id=?", (np, nc, nvep, nniv, r['MEDIDAS DE CONTROL'], r['id']))
+                c.execute("""UPDATE matriz_iper SET 
+                             probabilidad=?, consecuencia=?, vep=?, nivel_riesgo=?, medida_control=?, 
+                             familia_riesgo=?, lugar_especifico=?, n_hombres=?, n_mujeres=?, n_disidencias=?
+                             WHERE id=?""", 
+                             (np, nc, nvep, nniv, r['MEDIDAS DE CONTROL'], 
+                              r['FAMILIA'], r['LUGAR'], r['HOMBRES'], r['MUJERES'], r['DISIDENCIAS'], r['id']))
             conn.commit(); st.success("Actualizado"); st.rerun()
+            
         b = io.BytesIO(); 
         with pd.ExcelWriter(b, engine='openpyxl') as w: edited_df.to_excel(w, index=False)
-        st.download_button("📥 Excel Matriz", b.getvalue(), "MIPER.xlsx")
+        st.download_button("📥 Excel Matriz", b.getvalue(), "MIPER_V3.xlsx")
 
     with tab_carga:
-        plantilla = {'Proceso':['Cosecha'], 'Puesto':['Operador'], 'Peligro':['Pendiente'], 'Riesgo':['Volcamiento'], 'Probabilidad':[2], 'Consecuencia':[4], 'Medida':['ROPS']}
+        plantilla = {'Proceso':['Cosecha'], 'Puesto':['Operador'], 'Lugar':['Bosque'], 'Familia':['Seguridad'], 'Peligro':['Pendiente'], 'Riesgo':['Volcamiento'], 'Probabilidad':[2], 'Consecuencia':[4], 'Medida':['ROPS'], 'Hombres':[5], 'Mujeres':[0]}
         b2 = io.BytesIO(); 
         with pd.ExcelWriter(b2, engine='openpyxl') as w: pd.DataFrame(plantilla).to_excel(w, index=False)
-        st.download_button("📥 Plantilla Carga", b2.getvalue(), "plantilla_iper.xlsx")
+        st.download_button("📥 Plantilla Carga V3", b2.getvalue(), "plantilla_iper_v3.xlsx")
         up = st.file_uploader("Subir Excel", type=['xlsx'])
         if up:
             try:
@@ -695,20 +655,45 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                     c = conn.cursor()
                     for i, r in df.iterrows():
                         p = int(r.get('Probabilidad',1)); co = int(r.get('Consecuencia',1)); v = p*co; n = calcular_nivel_riesgo(v)
-                        c.execute("INSERT INTO matriz_iper (proceso, puesto_trabajo, peligro_factor, riesgo_asociado, probabilidad, consecuencia, vep, nivel_riesgo, medida_control) VALUES (?,?,?,?,?,?,?,?,?)", (r.get('Proceso',''), r.get('Puesto',''), r.get('Peligro',''), r.get('Riesgo',''), p, co, v, n, r.get('Medida','')))
+                        c.execute("INSERT INTO matriz_iper (proceso, puesto_trabajo, lugar_especifico, familia_riesgo, peligro_factor, riesgo_asociado, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, n_hombres, n_mujeres, n_disidencias) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", 
+                                 (r.get('Proceso',''), r.get('Puesto',''), r.get('Lugar',''), r.get('Familia','Seguridad'), r.get('Peligro',''), r.get('Riesgo',''), p, co, v, n, r.get('Medida',''), r.get('Hombres',0), r.get('Mujeres',0), r.get('Disidencias',0)))
                     conn.commit(); st.success("Cargado")
             except: st.error("Error en archivo")
 
     with tab_crear:
-        with st.form("risk"):
-            c1, c2 = st.columns(2); pro = c1.text_input("Proceso"); pue = c2.text_input("Puesto")
-            c3, c4 = st.columns(2); pel = c3.text_input("Peligro"); rie = c4.text_input("Riesgo")
-            c5, c6 = st.columns(2); pr = c5.selectbox("P", [1,2,4]); co = c6.selectbox("C", [1,2,4])
-            med = st.text_area("Medida")
-            if st.form_submit_button("Guardar"):
+        st.subheader("Ingreso de Riesgo (Norma ISP 2024)")
+        with st.form("risk_v3"):
+            c1, c2, c3 = st.columns(3)
+            pro = c1.text_input("Proceso")
+            pue = c2.text_input("Puesto de Trabajo")
+            lug = c3.text_input("Lugar Específico")
+            
+            c4, c5 = st.columns(2)
+            fam = c4.selectbox("Familia de Riesgo", ["Seguridad", "Higiene", "Psicosocial", "TMERT", "Desastres"])
+            pel = c5.text_input("Peligro / Factor (GEMA)")
+            rie = st.text_input("Riesgo Asociado")
+            
+            st.markdown("##### Desglose de Personal Expuesto (Género)")
+            d1, d2, d3 = st.columns(3)
+            nh = d1.number_input("N° Hombres", min_value=0)
+            nm = d2.number_input("N° Mujeres", min_value=0)
+            nd = d3.number_input("N° Disidencias", min_value=0)
+            
+            st.markdown("##### Evaluación (Seguridad)")
+            e1, e2 = st.columns(2)
+            pr = e1.selectbox("Probabilidad", [1,2,4])
+            co = e2.selectbox("Consecuencia", [1,2,4])
+            
+            med = st.text_area("Medida de Control (Con enfoque de género si aplica)")
+            
+            if st.form_submit_button("Guardar Riesgo"):
                 v = pr*co; ni = calcular_nivel_riesgo(v)
-                conn.execute("INSERT INTO matriz_iper (proceso, puesto_trabajo, peligro_factor, riesgo_asociado, probabilidad, consecuencia, vep, nivel_riesgo, medida_control) VALUES (?,?,?,?,?,?,?,?,?)", (pro, pue, pel, rie, pr, co, v, ni, med))
-                conn.commit(); st.success("Guardado"); st.rerun()
+                conn.execute("""INSERT INTO matriz_iper 
+                    (proceso, puesto_trabajo, lugar_especifico, familia_riesgo, peligro_factor, riesgo_asociado, 
+                    probabilidad, consecuencia, vep, nivel_riesgo, medida_control, n_hombres, n_mujeres, n_disidencias) 
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", 
+                    (pro, pue, lug, fam, pel, rie, pr, co, v, ni, med, nh, nm, nd))
+                conn.commit(); st.success("Riesgo Guardado bajo norma ISP V3"); st.rerun()
     conn.close()
 
 # --- 4. GESTION PERSONAS ---
