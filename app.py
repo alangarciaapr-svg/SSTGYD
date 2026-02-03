@@ -44,7 +44,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v184_robust_save.db' # Actualización Blindaje Guardado
+DB_NAME = 'sgsst_v185_final_irl_fix.db' # Versión 185: Fix Guardado + IRL Cargo
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -217,7 +217,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     
-    # --- MATRIZ IPER V184 ---
+    # --- MATRIZ IPER V185 ---
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         proceso TEXT, 
@@ -683,7 +683,7 @@ elif menu == "⚖️ Gestión DS67":
 
     conn.close()
 
-# --- 3. MATRIZ IPER (V184 - FIXED SAVE) ---
+# --- 3. MATRIZ IPER (V185 - DYNAMIC ROLES & SMART MATRIX) ---
 elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Riesgos (ISP 2024 + DS44)</div>", unsafe_allow_html=True)
     tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Matriz & Dashboard", "📂 Carga Masiva Inteligente", "➕ Crear Riesgo (Maestro)"])
@@ -925,27 +925,29 @@ elif menu == "👥 Gestión Personas":
             c = conn.cursor()
             for i, r in edited.iterrows():
                 
-                # HELPER PARA EVITAR NULOS (FIX V180 & V184)
+                # HELPER PARA EVITAR NULOS (FIX V184 ROBUST)
                 def clean_str(val):
                     if val is None: return None
                     s = str(val).strip()
-                    if s == "" or s.lower() == "nan" or s.lower() == "nat" or s.lower() == "none": return None
+                    if s == "" or s.lower() in ["nan", "nat", "none"]: return None
                     return s
                 
                 fec = r['fecha_contrato']; f_ex = r['vigencia_examen_medico']
                 if pd.isna(fec) or str(fec)=='NaT': fec = date.today()
                 if pd.isna(f_ex) or str(f_ex)=='NaT': f_ex = None
                 
-                if r['rut'] != r['rut_old']:
-                    c.execute("UPDATE personal SET rut=?, nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=?, contacto_emergencia=?, fono_emergencia=? WHERE rut=?", 
-                              (clean_str(r['rut']), clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['email']), clean_str(r['estado']), fec, f_ex, clean_str(r['contacto_emergencia']), clean_str(r['fono_emergencia']), clean_str(r['rut_old'])))
-                    c.execute("UPDATE asistencia_capacitacion SET trabajador_rut=? WHERE trabajador_rut=?", (clean_str(r['rut']), clean_str(r['rut_old'])))
-                    c.execute("UPDATE registro_epp SET rut_trabajador=? WHERE rut_trabajador=?", (clean_str(r['rut']), clean_str(r['rut_old'])))
-                    c.execute("UPDATE registro_riohs SET rut_trabajador=? WHERE rut_trabajador=?", (clean_str(r['rut']), clean_str(r['rut_old'])))
+                # --- FIX LINEA 943: clean_str en WHERE RUT ---
+                rut_key = clean_str(r.get('rut_old')) if pd.notnull(r.get('rut_old')) else clean_str(r.get('rut'))
+                
+                if r['rut'] != r.get('rut_old', r['rut']):
+                     c.execute("UPDATE personal SET rut=?, nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=?, contacto_emergencia=?, fono_emergencia=? WHERE rut=?", 
+                              (clean_str(r['rut']), clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['email']), clean_str(r['estado']), fec, f_ex, clean_str(r['contacto_emergencia']), clean_str(r['fono_emergencia']), rut_key))
+                     c.execute("UPDATE asistencia_capacitacion SET trabajador_rut=? WHERE trabajador_rut=?", (clean_str(r['rut']), rut_key))
+                     c.execute("UPDATE registro_epp SET rut_trabajador=? WHERE rut_trabajador=?", (clean_str(r['rut']), rut_key))
+                     c.execute("UPDATE registro_riohs SET rut_trabajador=? WHERE rut_trabajador=?", (clean_str(r['rut']), rut_key))
                 else:
-                    # FIX V184: clean_str aplicado al RUT del WHERE
                     c.execute("UPDATE personal SET nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=?, contacto_emergencia=?, fono_emergencia=? WHERE rut=?", 
-                              (clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['email']), clean_str(r['estado']), fec, f_ex, clean_str(r['contacto_emergencia']), clean_str(r['fono_emergencia']), clean_str(r['rut'])))
+                              (clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['email']), clean_str(r['estado']), fec, f_ex, clean_str(r['contacto_emergencia']), clean_str(r['fono_emergencia']), rut_key))
             conn.commit(); st.success("Guardado"); time.sleep(1); st.rerun()
 
     with tab_carga:
@@ -1057,7 +1059,7 @@ elif menu == "👥 Gestión Personas":
                 st.rerun()
     conn.close()
 
-# --- 5. GESTOR DOCUMENTAL (V168 - RIOHS PRO CON EMAIL, CAMPAÑA MASIVA Y TRAZABILIDAD) ---
+# --- 5. GESTOR DOCUMENTAL (V185 - IRL DINAMICO) ---
 elif menu == "⚖️ Gestor Documental":
     st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
@@ -1067,12 +1069,27 @@ elif menu == "⚖️ Gestor Documental":
         st.warning("⚠️ No hay trabajadores registrados. Vaya a 'Gestión Personas' para agregar.")
     else:
         with t1:
-            sel = st.selectbox("Trabajador:", df_p['rut'] + " - " + df_p['nombre'])
+            # --- VINCULACION AUTOMATICA IRL-MATRIZ (V185) ---
+            sel = st.selectbox("Trabajador:", df_p['rut'] + " - " + df_p['nombre'] + " (" + df_p['cargo'] + ")")
+            
             if st.button("Generar IRL"):
-                rut = sel.split(" - ")[0]; cargo = df_p[df_p['rut']==rut]['cargo'].values[0]
-                riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper WHERE puesto_trabajo LIKE ?", conn, params=(f'%{cargo}%',))
-                if riesgos.empty: riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper LIMIT 3", conn)
-                pdf = DocumentosLegalesPDF("IRL", "RG-GD-04").generar_irl({'nombre': sel.split(" - ")[1]}, riesgos.values.tolist())
+                rut_sel = sel.split(" - ")[0]
+                
+                # Obtener Cargo Real
+                w_data = pd.read_sql("SELECT nombre, cargo FROM personal WHERE rut=?", conn, params=(rut_sel,)).iloc[0]
+                cargo_real = w_data['cargo']
+                
+                # Buscar Riesgos del Cargo en Matriz
+                riesgos_df = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper WHERE puesto_trabajo=?", conn, params=(cargo_real,))
+                
+                if riesgos_df.empty:
+                    st.warning(f"⚠️ No se encontraron riesgos específicos para el cargo: {cargo_real} en la Matriz IPER. Se usarán genéricos.")
+                    riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper LIMIT 3", conn)
+                else:
+                    riesgos = riesgos_df
+                    st.success(f"✅ Se encontraron {len(riesgos)} riesgos asociados al cargo {cargo_real}.")
+                
+                pdf = DocumentosLegalesPDF("IRL", "RG-GD-04").generar_irl({'nombre': w_data['nombre']}, riesgos.values.tolist())
                 st.download_button("Descargar IRL", pdf.getvalue(), "IRL.pdf")
         
         with t2:
