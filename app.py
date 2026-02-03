@@ -43,9 +43,33 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v171_iper_v3.db' # Actualización Matriz ISP V3
+DB_NAME = 'sgsst_v172_iper_pro.db' # Actualización Matriz Avanzada
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
+
+# --- DICCIONARIO DE RIESGOS ISP V3 (ANEXO 3) ---
+ISP_RISK_CODES = {
+    "Seguridad": [
+        "Caídas al mismo nivel (A1)", "Caídas a distinto nivel (A2)", "Caídas de altura (A3)",
+        "Atrapamiento (B1)", "Golpeado por/contra (B2)", "Cortes/Punzonantes (B3)",
+        "Contacto con objetos calientes/fríos (E1/E2)", "Contacto eléctrico (F1/F2)",
+        "Incendio/Explosión (J/H1)", "Atropello/Colisión (I1/I2)", "Proyección de partículas (H2)"
+    ],
+    "Higiene": [
+        "Ruido (PREXOR) (P1)", "Sílice (PLANESI) (O1)", "Vibraciones (P2/P3)",
+        "Radiación UV (P5)", "Temperaturas Extremas (P6/P7)", "Agentes Químicos (G1/G2)",
+        "Agentes Biológicos (Q1/Q2)"
+    ],
+    "Musculoesquelético (TMERT)": [
+        "Manejo Manual de Cargas (R1)", "Trabajo Repetitivo (S1)", 
+        "Posturas Forzadas (T1-T8)", "Manejo de Pacientes (R2)"
+    ],
+    "Psicosocial (ISTAS21)": [
+        "Carga de Trabajo (D1)", "Exigencias Emocionales (D2)", "Desarrollo Profesional (D3)",
+        "Reconocimiento y Claridad (D4)", "Conflicto de Rol (D5)", "Calidad de Liderazgo (D6)",
+        "Compañerismo (D7)", "Inseguridad (D8)", "Doble Presencia (D9)", "Violencia y Acoso (D12)"
+    ]
+}
 
 # --- FUNCIÓN DE ENVÍO DE CORREO ---
 def enviar_correo_riohs(destinatario, nombre_trabajador, pdf_bytes, nombre_archivo):
@@ -164,7 +188,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     
-    # --- MATRIZ IPER ACTUALIZADA V171 (ISP 2024 COMPLIANT) ---
+    # --- MATRIZ IPER V172 PRO ---
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (id INTEGER PRIMARY KEY AUTOINCREMENT, proceso TEXT, tipo_proceso TEXT, puesto_trabajo TEXT, tarea TEXT, es_rutinaria TEXT, peligro_factor TEXT, riesgo_asociado TEXT, tipo_riesgo TEXT, probabilidad INTEGER, consecuencia INTEGER, vep INTEGER, nivel_riesgo TEXT, medida_control TEXT, genero_obs TEXT)''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS capacitaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, tema TEXT, tipo_actividad TEXT, responsable_rut TEXT, estado TEXT, duracion INTEGER, lugar TEXT, metodologia TEXT)''')
@@ -181,21 +205,25 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS periodos_ds67 (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre_periodo TEXT, fecha_inicio DATE, fecha_fin DATE)''')
     c.execute('''CREATE TABLE IF NOT EXISTS detalle_mensual_ds67 (id INTEGER PRIMARY KEY AUTOINCREMENT, periodo_id INTEGER, mes INTEGER, anio INTEGER, masa_imponible INTEGER, dias_perdidos INTEGER, invalideces_muertes INTEGER, observacion TEXT)''')
 
-    # COLUMNAS BASE
     check_and_add_column(c, "personal", "contacto_emergencia", "TEXT")
     check_and_add_column(c, "personal", "fono_emergencia", "TEXT")
     check_and_add_column(c, "personal", "obs_medica", "TEXT")
     check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE")
     check_and_add_column(c, "inventario_epp", "precio", "INTEGER")
+    
     check_and_add_column(c, "registro_riohs", "nombre_difusor", "TEXT")
     check_and_add_column(c, "registro_riohs", "firma_difusor_b64", "TEXT")
     check_and_add_column(c, "registro_riohs", "email_copia", "TEXT")
     check_and_add_column(c, "registro_riohs", "estado_envio", "TEXT")
+    
     check_and_add_column(c, "incidentes", "dias_perdidos", "INTEGER")
     
-    # --- COLUMNAS NUEVAS PARA MATRIZ ISP V3 (V171) ---
+    # --- COLUMNAS NUEVAS PARA MATRIZ ISP V3 (V171+) ---
     check_and_add_column(c, "matriz_iper", "lugar_especifico", "TEXT")
-    check_and_add_column(c, "matriz_iper", "familia_riesgo", "TEXT") # Seguridad, Higiene, etc.
+    check_and_add_column(c, "matriz_iper", "familia_riesgo", "TEXT") 
+    check_and_add_column(c, "matriz_iper", "codigo_riesgo", "TEXT") # Codigo ISP (A1, P1...)
+    check_and_add_column(c, "matriz_iper", "factor_gema", "TEXT") # G, E, M, A
+    check_and_add_column(c, "matriz_iper", "jerarquia_control", "TEXT") # Eliminacion, EPP...
     check_and_add_column(c, "matriz_iper", "n_hombres", "INTEGER")
     check_and_add_column(c, "matriz_iper", "n_mujeres", "INTEGER")
     check_and_add_column(c, "matriz_iper", "n_disidencias", "INTEGER")
@@ -222,6 +250,7 @@ def init_db():
             c.execute("INSERT INTO matriz_iper (proceso, tipo_proceso, puesto_trabajo, tarea, es_rutinaria, peligro_factor, riesgo_asociado, tipo_riesgo, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, genero_obs, familia_riesgo, lugar_especifico, n_hombres, n_mujeres, n_disidencias) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  ("Cosecha", "Operativo", "Operador", "Tala", "SI", "Pendiente", "Volcamiento", "Seguridad", 2, 4, 8, "IMPORTANTE", "Cabina ROPS", "Sin Obs", "Seguridad", "Bosque", 5, 0, 0))
     conn.commit(); conn.close()
+    st.session_state['db_setup_complete'] = True
 
 def registrar_auditoria(usuario, accion, detalle):
     try: conn = get_conn(); conn.execute("INSERT INTO auditoria (fecha, usuario, accion, detalle) VALUES (?,?,?,?)", (datetime.now(), usuario, accion, detalle)); conn.commit(); conn.close()
@@ -609,33 +638,38 @@ elif menu == "🛡️ Matriz IPER (ISP)":
     conn = get_conn()
     
     with tab_ver:
-        # CONSULTA ACTUALIZADA PARA NUEVOS CAMPOS V171
+        # CONSULTA ACTUALIZADA PARA NUEVOS CAMPOS V172
         query = """SELECT id, proceso as 'PROCESO', puesto_trabajo as 'PUESTO', tarea as 'TAREA', 
-                   familia_riesgo as 'FAMILIA', lugar_especifico as 'LUGAR',
+                   familia_riesgo as 'FAMILIA', codigo_riesgo as 'CODIGO ISP', factor_gema as 'GEMA',
+                   lugar_especifico as 'LUGAR',
                    n_hombres as 'HOMBRES', n_mujeres as 'MUJERES', n_disidencias as 'DISIDENCIAS',
-                   peligro_factor as 'PELIGRO (GEMA)', riesgo_asociado as 'RIESGO', 
+                   peligro_factor as 'PELIGRO', riesgo_asociado as 'RIESGO', 
                    probabilidad as 'P', consecuencia as 'C', vep as 'VEP', nivel_riesgo as 'NIVEL', medida_control as 'MEDIDAS DE CONTROL' FROM matriz_iper"""
         df_matriz = pd.read_sql(query, conn)
+        
+        # EDITOR AVANZADO V172
         edited_df = st.data_editor(df_matriz, use_container_width=True, 
             column_config={
                 "P": st.column_config.NumberColumn("P", min_value=1, max_value=4), 
                 "C": st.column_config.NumberColumn("C", min_value=1, max_value=4), 
                 "VEP": st.column_config.NumberColumn("VEP", disabled=True), 
                 "NIVEL": st.column_config.TextColumn("NIVEL", disabled=True),
-                "FAMILIA": st.column_config.SelectboxColumn("FAMILIA", options=["Seguridad", "Higiene", "Psicosocial", "TMERT"])
+                "FAMILIA": st.column_config.SelectboxColumn("FAMILIA", options=list(ISP_RISK_CODES.keys())),
+                "GEMA": st.column_config.SelectboxColumn("GEMA", options=["Gente", "Equipos", "Materiales", "Ambiente"])
             }, hide_index=True, key="matriz_ed")
             
         if st.button("💾 Guardar y Recalcular"):
             c = conn.cursor()
             for i, r in edited_df.iterrows():
-                # Logica VEP (Solo Seguridad) o Mantener
                 np = int(r['P']); nc = int(r['C']); nvep = np*nc; nniv = calcular_nivel_riesgo(nvep)
                 c.execute("""UPDATE matriz_iper SET 
                              probabilidad=?, consecuencia=?, vep=?, nivel_riesgo=?, medida_control=?, 
-                             familia_riesgo=?, lugar_especifico=?, n_hombres=?, n_mujeres=?, n_disidencias=?
+                             familia_riesgo=?, codigo_riesgo=?, factor_gema=?, lugar_especifico=?, 
+                             n_hombres=?, n_mujeres=?, n_disidencias=?
                              WHERE id=?""", 
                              (np, nc, nvep, nniv, r['MEDIDAS DE CONTROL'], 
-                              r['FAMILIA'], r['LUGAR'], r['HOMBRES'], r['MUJERES'], r['DISIDENCIAS'], r['id']))
+                              r['FAMILIA'], r['CODIGO ISP'], r['GEMA'], r['LUGAR'], 
+                              r['HOMBRES'], r['MUJERES'], r['DISIDENCIAS'], r['id']))
             conn.commit(); st.success("Actualizado"); st.rerun()
             
         b = io.BytesIO(); 
@@ -643,7 +677,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
         st.download_button("📥 Excel Matriz", b.getvalue(), "MIPER_V3.xlsx")
 
     with tab_carga:
-        plantilla = {'Proceso':['Cosecha'], 'Puesto':['Operador'], 'Lugar':['Bosque'], 'Familia':['Seguridad'], 'Peligro':['Pendiente'], 'Riesgo':['Volcamiento'], 'Probabilidad':[2], 'Consecuencia':[4], 'Medida':['ROPS'], 'Hombres':[5], 'Mujeres':[0]}
+        plantilla = {'Proceso':['Cosecha'], 'Puesto':['Operador'], 'Lugar':['Bosque'], 'Familia':['Seguridad'], 'Codigo':['A1'], 'GEMA':['Ambiente'], 'Peligro':['Pendiente'], 'Riesgo':['Volcamiento'], 'Probabilidad':[2], 'Consecuencia':[4], 'Medida':['ROPS'], 'Hombres':[5], 'Mujeres':[0]}
         b2 = io.BytesIO(); 
         with pd.ExcelWriter(b2, engine='openpyxl') as w: pd.DataFrame(plantilla).to_excel(w, index=False)
         st.download_button("📥 Plantilla Carga V3", b2.getvalue(), "plantilla_iper_v3.xlsx")
@@ -655,45 +689,58 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                     c = conn.cursor()
                     for i, r in df.iterrows():
                         p = int(r.get('Probabilidad',1)); co = int(r.get('Consecuencia',1)); v = p*co; n = calcular_nivel_riesgo(v)
-                        c.execute("INSERT INTO matriz_iper (proceso, puesto_trabajo, lugar_especifico, familia_riesgo, peligro_factor, riesgo_asociado, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, n_hombres, n_mujeres, n_disidencias) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", 
-                                 (r.get('Proceso',''), r.get('Puesto',''), r.get('Lugar',''), r.get('Familia','Seguridad'), r.get('Peligro',''), r.get('Riesgo',''), p, co, v, n, r.get('Medida',''), r.get('Hombres',0), r.get('Mujeres',0), r.get('Disidencias',0)))
+                        c.execute("INSERT INTO matriz_iper (proceso, puesto_trabajo, lugar_especifico, familia_riesgo, codigo_riesgo, factor_gema, peligro_factor, riesgo_asociado, probabilidad, consecuencia, vep, nivel_riesgo, medida_control, n_hombres, n_mujeres, n_disidencias) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", 
+                                 (r.get('Proceso',''), r.get('Puesto',''), r.get('Lugar',''), r.get('Familia','Seguridad'), r.get('Codigo',''), r.get('GEMA','Gente'), r.get('Peligro',''), r.get('Riesgo',''), p, co, v, n, r.get('Medida',''), r.get('Hombres',0), r.get('Mujeres',0), r.get('Disidencias',0)))
                     conn.commit(); st.success("Cargado")
             except: st.error("Error en archivo")
 
     with tab_crear:
-        st.subheader("Ingreso de Riesgo (Norma ISP 2024)")
-        with st.form("risk_v3"):
+        st.subheader("Ingreso de Riesgo (Norma ISP 2024 - V172)")
+        
+        with st.expander("1. Definición del Puesto y Género", expanded=True):
             c1, c2, c3 = st.columns(3)
-            pro = c1.text_input("Proceso")
-            pue = c2.text_input("Puesto de Trabajo")
-            lug = c3.text_input("Lugar Específico")
+            pro = c1.text_input("Proceso (Ej: Cosecha)")
+            pue = c2.text_input("Puesto de Trabajo (Ej: Operador)")
+            lug = c3.text_input("Lugar Específico (Ej: Galpón 1)")
             
-            c4, c5 = st.columns(2)
-            fam = c4.selectbox("Familia de Riesgo", ["Seguridad", "Higiene", "Psicosocial", "TMERT", "Desastres"])
-            pel = c5.text_input("Peligro / Factor (GEMA)")
-            rie = st.text_input("Riesgo Asociado")
-            
-            st.markdown("##### Desglose de Personal Expuesto (Género)")
             d1, d2, d3 = st.columns(3)
-            nh = d1.number_input("N° Hombres", min_value=0)
-            nm = d2.number_input("N° Mujeres", min_value=0)
-            nd = d3.number_input("N° Disidencias", min_value=0)
+            nh = d1.number_input("N° Hombres Expuestos", min_value=0)
+            nm = d2.number_input("N° Mujeres Expuestas", min_value=0)
+            nd = d3.number_input("N° Disidencias Expuestas", min_value=0)
             
-            st.markdown("##### Evaluación (Seguridad)")
+        with st.expander("2. Identificación del Peligro (GEMA + ISP)", expanded=True):
+            c4, c5 = st.columns(2)
+            fam = c4.selectbox("Familia de Riesgo", list(ISP_RISK_CODES.keys()))
+            # Codigo ISP dinamico
+            cod_riesgo = c5.selectbox("Riesgo Específico (Código ISP)", ISP_RISK_CODES[fam])
+            
+            c6, c7 = st.columns(2)
+            gema = c6.selectbox("Factor GEMA (Origen)", ["Gente", "Equipos", "Materiales", "Ambiente"])
+            pel = c7.text_input("Peligro / Factor Específico (Detalle)")
+            rie = st.text_input("Riesgo Asociado (Consecuencia)")
+            
+        with st.expander("3. Evaluación y Control", expanded=True):
             e1, e2 = st.columns(2)
-            pr = e1.selectbox("Probabilidad", [1,2,4])
-            co = e2.selectbox("Consecuencia", [1,2,4])
+            pr = e1.selectbox("Probabilidad (1, 2, 4)", [1,2,4])
+            co = e2.selectbox("Consecuencia (1, 2, 4)", [1,2,4])
             
-            med = st.text_area("Medida de Control (Con enfoque de género si aplica)")
+            st.info(f"Nivel de Riesgo Calculado (VEP): {pr*co} - {calcular_nivel_riesgo(pr*co)}")
             
-            if st.form_submit_button("Guardar Riesgo"):
-                v = pr*co; ni = calcular_nivel_riesgo(v)
-                conn.execute("""INSERT INTO matriz_iper 
-                    (proceso, puesto_trabajo, lugar_especifico, familia_riesgo, peligro_factor, riesgo_asociado, 
-                    probabilidad, consecuencia, vep, nivel_riesgo, medida_control, n_hombres, n_mujeres, n_disidencias) 
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", 
-                    (pro, pue, lug, fam, pel, rie, pr, co, v, ni, med, nh, nm, nd))
-                conn.commit(); st.success("Riesgo Guardado bajo norma ISP V3"); st.rerun()
+            jc = st.selectbox("Jerarquía de Control", ["Eliminación", "Sustitución", "Ingeniería", "Administrativo", "EPP"])
+            med = st.text_area("Medida de Control Específica")
+            
+        if st.button("Guardar Riesgo ISP V3", type="primary"):
+            v = pr*co; ni = calcular_nivel_riesgo(v)
+            # Extraer solo el codigo del string "Nombre (Cod)"
+            cod_clean = cod_riesgo.split("(")[-1].replace(")", "")
+            
+            conn.execute("""INSERT INTO matriz_iper 
+                (proceso, puesto_trabajo, lugar_especifico, familia_riesgo, codigo_riesgo, factor_gema, peligro_factor, riesgo_asociado, 
+                probabilidad, consecuencia, vep, nivel_riesgo, medida_control, jerarquia_control, n_hombres, n_mujeres, n_disidencias) 
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", 
+                (pro, pue, lug, fam, cod_clean, gema, pel, rie, pr, co, v, ni, med, jc, nh, nm, nd))
+            conn.commit(); st.success("Riesgo Guardado Correctamente"); st.rerun()
+            
     conn.close()
 
 # --- 4. GESTION PERSONAS ---
