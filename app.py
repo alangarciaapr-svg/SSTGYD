@@ -44,7 +44,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v187_final_blindado.db' # Versión 187: Blindaje Total de Tipos
+DB_NAME = 'sgsst_v189_no_contacts.db' # Versión 189: Sin Contactos Emergencia
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -217,7 +217,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     
-    # --- MATRIZ IPER V186 ---
+    # --- MATRIZ IPER V189 ---
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         proceso TEXT, 
@@ -269,8 +269,6 @@ def init_db():
     for col in ["lugar_especifico", "familia_riesgo", "codigo_riesgo", "factor_gema", "jerarquia_control", "requisito_legal", "nivel_riesgo_residual"]:
         check_and_add_column(c, "matriz_iper", col, "TEXT")
 
-    check_and_add_column(c, "personal", "contacto_emergencia", "TEXT")
-    check_and_add_column(c, "personal", "fono_emergencia", "TEXT")
     check_and_add_column(c, "personal", "obs_medica", "TEXT")
     check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE")
     check_and_add_column(c, "inventario_epp", "precio", "INTEGER")
@@ -683,7 +681,7 @@ elif menu == "⚖️ Gestión DS67":
 
     conn.close()
 
-# --- 3. MATRIZ IPER (V185 - DYNAMIC ROLES & SMART MATRIX) ---
+# --- 3. MATRIZ IPER (V186 - DYNAMIC ROLES & SMART MATRIX) ---
 elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Riesgos (ISP 2024 + DS44)</div>", unsafe_allow_html=True)
     tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Matriz & Dashboard", "📂 Carga Masiva Inteligente", "➕ Crear Riesgo (Maestro)"])
@@ -925,21 +923,26 @@ elif menu == "👥 Gestión Personas":
             c = conn.cursor()
             for i, r in edited.iterrows():
                 
-                # HELPER PARA EVITAR NULOS (FIX V186 ROBUST)
+                # --- HELPER V186 PARA EVITAR ERRORES DE TIPO ---
                 def clean_str(val):
                     if val is None: return None
                     s = str(val).strip()
                     if s == "" or s.lower() in ["nan", "nat", "none"]: return None
                     return s
                 
-                fec = r['fecha_contrato']; f_ex = r['vigencia_examen_medico']
-                if pd.isna(fec) or str(fec)=='NaT': fec = date.today()
-                if pd.isna(f_ex) or str(f_ex)=='NaT': f_ex = None
+                fec = r['fecha_contrato']
+                if pd.isna(fec) or str(fec) == 'NaT': fec = date.today().strftime("%Y-%m-%d")
+                else: fec = fec.strftime("%Y-%m-%d") if isinstance(fec, (datetime, date)) else str(fec).split('T')[0]
+
+                f_ex = r['vigencia_examen_medico']
+                if pd.isna(f_ex) or str(f_ex) == 'NaT': f_ex = None
+                else: f_ex = f_ex.strftime("%Y-%m-%d") if isinstance(f_ex, (datetime, date)) else str(f_ex).split('T')[0]
                 
-                # --- FIX LINEA 947: clean_str aplicado a TODO incluyendo el WHERE ---
+                # Definir RUT Clave (Si no se editó rut_old es igual a rut)
                 rut_key = clean_str(r.get('rut_old')) if pd.notnull(r.get('rut_old')) else clean_str(r.get('rut'))
                 
-                if r['rut'] != r.get('rut_old', r['rut']):
+                # Si el RUT cambió, actualizar referencias
+                if clean_str(r['rut']) != rut_key:
                      c.execute("UPDATE personal SET rut=?, nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=?, contacto_emergencia=?, fono_emergencia=? WHERE rut=?", 
                               (clean_str(r['rut']), clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['email']), clean_str(r['estado']), fec, f_ex, clean_str(r['contacto_emergencia']), clean_str(r['fono_emergencia']), rut_key))
                      c.execute("UPDATE asistencia_capacitacion SET trabajador_rut=? WHERE trabajador_rut=?", (clean_str(r['rut']), rut_key))
@@ -948,7 +951,7 @@ elif menu == "👥 Gestión Personas":
                 else:
                     c.execute("UPDATE personal SET nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=?, contacto_emergencia=?, fono_emergencia=? WHERE rut=?", 
                               (clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['email']), clean_str(r['estado']), fec, f_ex, clean_str(r['contacto_emergencia']), clean_str(r['fono_emergencia']), rut_key))
-            conn.commit(); st.success("Guardado"); time.sleep(1); st.rerun()
+            conn.commit(); st.success("Guardado Exitosamente"); time.sleep(1); st.rerun()
 
     with tab_carga:
         template_data = {
@@ -1123,7 +1126,7 @@ elif menu == "⚖️ Gestor Documental":
                     
                     if st.form_submit_button("Registrar Entrega RIOHS"):
                         if sig_worker.image_data is not None and sig_diffuser.image_data is not None and nom_dif:
-                            img_w = process_signature_bg(sig_worker.image_data); b_w = io.BytesIO(); img_w.save(b_w, format='PNG'); str_w = base64.b64encode(b_w.getvalue()).decode()
+                            img_w = process_signature_bg(sig_worker.image_data); b_w = io.BytesIO(); img_w.save(b_w, format='PNG'); str_w = base64.b64encode(b.getvalue()).decode()
                             img_d = process_signature_bg(sig_diffuser.image_data); b_d = io.BytesIO(); img_d.save(b_d, format='PNG'); str_d = base64.b64encode(b_d.getvalue()).decode()
                             
                             tipo_db = "Digital" if "Digital" in tipo_ent else "Físico"
