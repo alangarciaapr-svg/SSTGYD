@@ -10,6 +10,7 @@ import base64
 import ast
 import socket
 from PIL import Image as PILImage
+from PIL import ImageDraw, ImageFont # Agregado para firma digital texto
 import matplotlib
 import matplotlib.pyplot as plt
 import plotly.express as px
@@ -44,7 +45,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v193_signature_fix.db' # Versión 193: Arreglo de Firmas RIOHS
+DB_NAME = 'sgsst_v194_final_solution.db' # Versión 194: Firma Híbrida y Menús
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -129,6 +130,16 @@ def process_signature_bg(img_data):
     img.putdata(new_data)
     return img
 
+# --- NUEVA FUNCIÓN: GENERAR FIRMA TEXTO ---
+def create_text_signature_img(text_sig):
+    width, height = 400, 100
+    image = PILImage.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(image)
+    # Dibujar texto centrado (simulado)
+    draw.text((20, 40), f"Firmado digitalmente por:", fill="black")
+    draw.text((20, 60), text_sig, fill="black")
+    return image
+
 # --- MODO KIOSCO ---
 query_params = st.query_params
 if "mobile_sign" in query_params and query_params["mobile_sign"] == "true":
@@ -179,7 +190,6 @@ st.markdown(f"""
         box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         background-color: #ffffff;
         margin-bottom: 10px;
-        min-height: 150px; /* Asegurar visibilidad */
     }}
     </style>
 """, unsafe_allow_html=True)
@@ -218,7 +228,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     
-    # --- MATRIZ IPER V193 ---
+    # --- MATRIZ IPER V194 ---
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         proceso TEXT, 
@@ -270,7 +280,7 @@ def init_db():
     for col in ["lugar_especifico", "familia_riesgo", "codigo_riesgo", "factor_gema", "jerarquia_control", "requisito_legal", "nivel_riesgo_residual"]:
         check_and_add_column(c, "matriz_iper", col, "TEXT")
 
-    # --- AUTO-REPARACIÓN DE COLUMNAS DE EMERGENCIA (V193) ---
+    # --- AUTO-REPARACIÓN DE COLUMNAS (V194) ---
     check_and_add_column(c, "personal", "contacto_emergencia", "TEXT")
     check_and_add_column(c, "personal", "fono_emergencia", "TEXT")
     check_and_add_column(c, "personal", "obs_medica", "TEXT")
@@ -686,7 +696,7 @@ elif menu == "⚖️ Gestión DS67":
 
     conn.close()
 
-# --- 3. MATRIZ IPER (V193 - MAESTRA) ---
+# --- 3. MATRIZ IPER (V194 - MAESTRA RESTAURADA) ---
 elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Riesgos (ISP 2024 + DS44)</div>", unsafe_allow_html=True)
     tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Matriz & Dashboard", "📂 Carga Masiva Inteligente", "➕ Crear Riesgo (Maestro)"])
@@ -780,7 +790,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
     with tab_carga:
         st.subheader("Carga Masiva Inteligente (Smart Upload)")
         
-        # 1. Descarga Template ACTUALIZADO V193
+        # 1. Descarga Template ACTUALIZADO V194
         plantilla = {
             'Proceso':['Cosecha'], 'Puesto':['Operador'], 'Lugar':['Bosque'], 'Familia':['Seguridad'], 'GEMA':['Ambiente'],
             'Peligro':['Pendiente'], 'Riesgo':['Volcamiento'], 
@@ -791,7 +801,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
         }
         b2 = io.BytesIO(); 
         with pd.ExcelWriter(b2, engine='openpyxl') as w: pd.DataFrame(plantilla).to_excel(w, index=False)
-        st.download_button("1️⃣ Descargar Plantilla Maestra V193", b2.getvalue(), "plantilla_iper_master.xlsx")
+        st.download_button("1️⃣ Descargar Plantilla Maestra V194", b2.getvalue(), "plantilla_iper_master.xlsx")
         
         # 2. Carga y Validación
         up = st.file_uploader("2️⃣ Subir Excel", type=['xlsx'])
@@ -803,7 +813,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                 if 'P_Inicial' in df_up.columns and 'C_Inicial' in df_up.columns:
                     df_up['Estado'] = df_up.apply(lambda x: "⚠️ Error P/C" if x['P_Inicial'] not in [1,2,4] or x['C_Inicial'] not in [1,2,4] else "✅ OK", axis=1)
                 else:
-                    st.error("El archivo no tiene las columnas P_Inicial o C_Inicial. Descargue la plantilla V193.")
+                    st.error("El archivo no tiene las columnas P_Inicial o C_Inicial. Descargue la plantilla V194.")
                     st.stop()
                 
                 edited_up = st.data_editor(df_up, num_rows="dynamic", key="editor_up")
@@ -845,7 +855,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
             c1, c2, c3 = st.columns(3)
             pro = c1.text_input("Proceso (Ej: Cosecha)")
             
-            # --- VINCULO DINAMICO DE PUESTOS (V193) ---
+            # --- VINCULO DINAMICO DE PUESTOS (V194) ---
             roles_db = pd.read_sql("SELECT DISTINCT cargo FROM personal", conn)['cargo'].dropna().tolist()
             all_roles = sorted(list(set(LISTA_CARGOS + roles_db)))
             pue = c2.selectbox("Puesto de Trabajo", all_roles)
@@ -904,7 +914,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
             
     conn.close()
 
-# --- 4. GESTION PERSONAS ---
+# --- 4. GESTION PERSONAS (V194 - RESTAURADO & BLINDADO) ---
 elif menu == "👥 Gestión Personas":
     st.markdown("<div class='main-header'>Gestión de Capital Humano</div>", unsafe_allow_html=True)
     conn = get_conn()
@@ -918,7 +928,7 @@ elif menu == "👥 Gestión Personas":
     tab_list, tab_carga, tab_new, tab_dig, tab_del = st.tabs(["📋 Nómina", "📂 Carga Masiva", "➕ Nuevo", "🗂️ Carpeta", "❌ Eliminar"])
     
     with tab_list:
-        # --- CONSULTA V193: CON CONTACTOS ---
+        # --- CONSULTA V194: CON CONTACTOS ---
         df_p = pd.read_sql("SELECT rut, rut as rut_old, nombre, cargo, centro_costo, email, fecha_contrato, vigencia_examen_medico, contacto_emergencia, fono_emergencia, estado FROM personal", conn)
         df_p['fecha_contrato'] = pd.to_datetime(df_p['fecha_contrato'], errors='coerce')
         df_p['vigencia_examen_medico'] = pd.to_datetime(df_p['vigencia_examen_medico'], errors='coerce')
@@ -938,7 +948,7 @@ elif menu == "👥 Gestión Personas":
             c = conn.cursor()
             for i, r in edited.iterrows():
                 
-                # HELPER BLINDADO V193
+                # HELPER PARA EVITAR NULOS (FIX V194)
                 def clean_str(val):
                     if val is None: return None
                     s = str(val).strip()
@@ -953,9 +963,10 @@ elif menu == "👥 Gestión Personas":
                 if pd.isna(f_ex) or str(f_ex) == 'NaT': f_ex = None
                 else: f_ex = f_ex.strftime("%Y-%m-%d") if isinstance(f_ex, (datetime, date)) else str(f_ex).split('T')[0]
                 
+                # Definir RUT Clave
                 rut_key = clean_str(r.get('rut_old')) if pd.notnull(r.get('rut_old')) else clean_str(r.get('rut'))
                 
-                # --- UPDATE V193: CON CONTACTOS Y LIMPIEZA ---
+                # --- UPDATE V194: CON CONTACTOS ---
                 if clean_str(r['rut']) != rut_key:
                      c.execute("UPDATE personal SET rut=?, nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=?, contacto_emergencia=?, fono_emergencia=? WHERE rut=?", 
                               (clean_str(r['rut']), clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['email']), clean_str(r['estado']), fec, f_ex, clean_str(r['contacto_emergencia']), clean_str(r['fono_emergencia']), rut_key))
@@ -968,6 +979,7 @@ elif menu == "👥 Gestión Personas":
             conn.commit(); st.success("Guardado Exitosamente"); time.sleep(1); st.rerun()
 
     with tab_carga:
+        # --- TEMPLATE V194: CON CONTACTOS ---
         template_data = {
             'RUT': ['11.222.333-4'], 'NOMBRE': ['Juan Pérez'], 'CARGO': ['OPERADOR'], 
             'CENTRO_COSTO': ['FAENA'], 'EMAIL': ['juan@empresa.com'], 
@@ -996,6 +1008,7 @@ elif menu == "👥 Gestión Personas":
                         except: f_ex = None
                         if pd.isna(f_ex): f_ex = None
 
+                        # --- INSERT V194: CON CONTACTOS ---
                         if len(rut) > 3:
                             c.execute("""INSERT OR REPLACE INTO personal 
                                 (rut, nombre, cargo, centro_costo, email, fecha_contrato, estado, vigencia_examen_medico, contacto_emergencia, fono_emergencia) 
@@ -1009,6 +1022,7 @@ elif menu == "👥 Gestión Personas":
             c1, c2 = st.columns(2); r = c1.text_input("RUT"); n = c2.text_input("Nombre"); ca = c1.selectbox("Cargo", LISTA_CARGOS); em = c2.text_input("Email"); 
             c3, c4 = st.columns(2); f_ex = c3.date_input("Vencimiento Examen (Opcional)", value=None); c_emer = c4.text_input("Contacto Emergencia")
             f_emer = c3.text_input("Teléfono Emergencia"); obs = c4.text_input("Alergias/Obs Médica")
+            # --- FORMULARIO V194: CON CONTACTOS ---
             if st.form_submit_button("Registrar"):
                 try: conn.execute("INSERT INTO personal (rut, nombre, cargo, email, fecha_contrato, estado, vigencia_examen_medico, contacto_emergencia, fono_emergencia, obs_medica) VALUES (?,?,?,?,?,?,?,?,?,?)", (r, n, ca, em, date.today(), 'ACTIVO', f_ex, c_emer, f_emer, obs)); conn.commit(); st.success("Creado")
                 except: st.error("Error (RUT duplicado?)")
@@ -1019,7 +1033,7 @@ elif menu == "👥 Gestión Personas":
             sel_worker = st.selectbox("Seleccionar Trabajador:", df_all['rut'] + " - " + df_all['nombre'])
             rut_sel = sel_worker.split(" - ")[0]
             
-            # --- SELECT V193: CON CONTACTOS ---
+            # --- SELECT V194: CON CONTACTOS ---
             datos_p = pd.read_sql("SELECT contacto_emergencia, fono_emergencia, obs_medica, vigencia_examen_medico FROM personal WHERE rut=?", conn, params=(rut_sel,)).iloc[0]
             st.info(f"🚑 Emergencia: {datos_p['contacto_emergencia']} - {datos_p['fono_emergencia']} | ⚕️ Obs: {datos_p['obs_medica']}")
             
@@ -1077,7 +1091,7 @@ elif menu == "👥 Gestión Personas":
                 st.rerun()
     conn.close()
 
-# --- 5. GESTOR DOCUMENTAL (V193 - CANVAS FIX) ---
+# --- 5. GESTOR DOCUMENTAL (V194 - FIRMA HÍBRIDA) ---
 elif menu == "⚖️ Gestor Documental":
     st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
@@ -1110,14 +1124,12 @@ elif menu == "⚖️ Gestor Documental":
             tab_ind, tab_mass = st.tabs(["Entrega Individual", "📢 Campaña Masiva"])
             
             with tab_ind:
-                # --- FIX V193: FIRMAS FUERA DE ST.FORM ---
                 sel_r = st.selectbox("Trabajador RIOHS:", df_p['rut'] + " | " + df_p['nombre'])
                 rut_w = sel_r.split(" | ")[0]
                 nom_w = sel_r.split(" | ")[1]
                 worker_data = df_p[df_p['rut'] == rut_w].iloc[0]
                 email_w = worker_data['email'] if worker_data['email'] else "Sin Email"
                 
-                # --- CONTROLES SIN FORMULARIO ---
                 c1, c2 = st.columns(2)
                 with c1:
                     tipo_ent = st.radio("Formato de Entrega:", ["Físico (Papel)", "Digital (Email)"], index=0)
@@ -1128,20 +1140,47 @@ elif menu == "⚖️ Gestor Documental":
                 
                 st.divider()
                 
-                # --- CANVAS DIRECTO PARA INTERACTIVIDAD REAL ---
-                c3, c4 = st.columns(2)
-                with c3:
-                    st.write("Firma Trabajador:")
-                    # Key nueva para forzar refresco
-                    sig_worker = st_canvas(stroke_width=2, stroke_color="black", background_color="#eeeeee", height=150, width=400, key="sig_w_riohs_v193", drawing_mode="freedraw")
-                with c4:
-                    st.write("Firma Difusor:")
-                    sig_diffuser = st_canvas(stroke_width=2, stroke_color="black", background_color="#eeeeee", height=150, width=400, key="sig_d_riohs_v193", drawing_mode="freedraw")
+                # --- SISTEMA DE FIRMA HIBRIDA V194 ---
+                tab_sign_draw, tab_sign_text = st.tabs(["✍️ Dibujar en Pantalla", "⌨️ Firma Digital (Teclado)"])
                 
+                firma_mode = "draw"
+                img_w_final = None
+                img_d_final = None
+
+                with tab_sign_draw:
+                    c3, c4 = st.columns(2)
+                    with c3:
+                        st.write("Firma Trabajador:")
+                        sig_worker = st_canvas(stroke_width=2, stroke_color="black", background_color="#eeeeee", height=150, width=400, key=f"sig_w_{rut_w}", drawing_mode="freedraw")
+                    with c4:
+                        st.write("Firma Difusor:")
+                        sig_diffuser = st_canvas(stroke_width=2, stroke_color="black", background_color="#eeeeee", height=150, width=400, key=f"sig_d_{rut_w}", drawing_mode="freedraw")
+                
+                with tab_sign_text:
+                    st.info("ℹ️ Si no puede dibujar, escriba su nombre como validación de firma.")
+                    txt_w = st.text_input("Escriba Nombre Trabajador para Firmar:", value=nom_w)
+                    txt_d = st.text_input("Escriba Nombre Difusor para Firmar:", value=nom_dif)
+                    if txt_w and txt_d:
+                        firma_mode = "text"
+
                 if st.button("Registrar Entrega RIOHS", type="primary"):
-                    if sig_worker.image_data is not None and sig_diffuser.image_data is not None and nom_dif:
-                        img_w = process_signature_bg(sig_worker.image_data); b_w = io.BytesIO(); img_w.save(b_w, format='PNG'); str_w = base64.b64encode(b_w.getvalue()).decode()
-                        img_d = process_signature_bg(sig_diffuser.image_data); b_d = io.BytesIO(); img_d.save(b_d, format='PNG'); str_d = base64.b64encode(b_d.getvalue()).decode()
+                    valid = False
+                    
+                    # LOGICA HIBRIDA
+                    if sig_worker.image_data is not None and sig_diffuser.image_data is not None:
+                         # Prioridad al dibujo si existe
+                         img_w_final = process_signature_bg(sig_worker.image_data)
+                         img_d_final = process_signature_bg(sig_diffuser.image_data)
+                         valid = True
+                    elif txt_w and txt_d:
+                         # Fallback a texto
+                         img_w_final = create_text_signature_img(txt_w)
+                         img_d_final = create_text_signature_img(txt_d)
+                         valid = True
+                    
+                    if valid and nom_dif:
+                        b_w = io.BytesIO(); img_w_final.save(b_w, format='PNG'); str_w = base64.b64encode(b_w.getvalue()).decode()
+                        b_d = io.BytesIO(); img_d_final.save(b_d, format='PNG'); str_d = base64.b64encode(b_d.getvalue()).decode()
                         
                         tipo_db = "Digital" if "Digital" in tipo_ent else "Físico"
                         
@@ -1167,13 +1206,13 @@ elif menu == "⚖️ Gestor Documental":
                         st.download_button("📥 Descargar Acta", pdf_bytes, f"RIOHS_{rut_w}.pdf", "application/pdf")
                         st.success("Entrega registrada.")
                     else:
-                        st.warning("⚠️ Faltan firmas.")
+                        st.warning("⚠️ Faltan firmas (Dibuje o use la pestaña de Texto) o el nombre del difusor.")
 
             with tab_mass:
                 st.info("📢 Campaña Masiva de RIOHS Digital")
                 difusor_mass = st.text_input("Nombre del Difusor (Campaña Masiva):")
                 st.write("Firma del Difusor:")
-                sig_mass = st_canvas(stroke_width=2, stroke_color="black", background_color="#eeeeee", height=150, width=400, key="sig_mass_v168")
+                sig_mass = st_canvas(stroke_width=2, stroke_color="black", background_color="#eeeeee", height=150, width=400, key="sig_mass_v194")
                 
                 if st.button("🚀 INICIAR CAMPAÑA", type="primary"):
                     if difusor_mass and sig_mass.image_data is not None:
