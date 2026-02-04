@@ -15,7 +15,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.graph_objects as go
-import numpy as np # Necesario para validar canvas
+import numpy as np
 from reportlab.lib import colors
 from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import letter
@@ -46,7 +46,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v196_clean_sig.db' # Versión 196: Firma Gráfica Única
+DB_NAME = 'sgsst_v197_full_restore.db' # Versión 197: Textos PDF Restaurados y Sincronización
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -118,16 +118,12 @@ def enviar_correo_riohs(destinatario, nombre_trabajador, pdf_bytes, nombre_archi
     except Exception as e:
         return False, str(e)
 
-# --- FUNCIÓN PROCESAMIENTO FIRMA (ROBUSTA) ---
+# --- FUNCIÓN PROCESAMIENTO FIRMA ---
 def process_signature_bg(img_data):
     try:
         if img_data is None: return create_text_signature_img("Firma No Detectada")
-        
-        # Verificar si hay trazos (si la matriz no está vacía)
         if isinstance(img_data, np.ndarray):
-            if np.all(img_data == 0): # Array vacio o transparente
-                 return create_text_signature_img("Firma Vacía")
-                 
+            if np.all(img_data == 0): return create_text_signature_img("Firma Vacía")
         img = PILImage.fromarray(img_data.astype('uint8'), 'RGBA')
         data = img.getdata()
         new_data = []
@@ -141,7 +137,6 @@ def process_signature_bg(img_data):
     except Exception:
         return create_text_signature_img("Error de Firma")
 
-# --- NUEVA FUNCIÓN: GENERAR FIRMA TEXTO ---
 def create_text_signature_img(text_sig):
     width, height = 400, 100
     image = PILImage.new("RGB", (width, height), "white")
@@ -155,7 +150,6 @@ query_params = st.query_params
 if "mobile_sign" in query_params and query_params["mobile_sign"] == "true":
     cap_id_mobile = query_params.get("cap_id", None)
     st.markdown(f"<h2 style='text-align: center; color: {COLOR_PRIMARY}'>✍️ Firma de Asistencia</h2>", unsafe_allow_html=True)
-    
     if cap_id_mobile:
         conn = sqlite3.connect(DB_NAME)
         try:
@@ -166,7 +160,6 @@ if "mobile_sign" in query_params and query_params["mobile_sign"] == "true":
                     rut_input = st.text_input("Ingresa tu RUT (con guión)", placeholder="12345678-9")
                     st.write("Firma aquí:")
                     canvas_mobile = st_canvas(stroke_width=2, stroke_color="black", background_color="#eee", height=200, width=300, key="mobile_c")
-                    
                     if st.form_submit_button("ENVIAR FIRMA"):
                         if rut_input and canvas_mobile.image_data is not None:
                             check = pd.read_sql("SELECT id FROM asistencia_capacitacion WHERE capacitacion_id=? AND trabajador_rut=?", conn, params=(cap_id_mobile, rut_input))
@@ -229,7 +222,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     
-    # --- MATRIZ IPER V196 ---
+    # --- MATRIZ IPER ---
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         proceso TEXT, 
@@ -281,12 +274,10 @@ def init_db():
     for col in ["lugar_especifico", "familia_riesgo", "codigo_riesgo", "factor_gema", "jerarquia_control", "requisito_legal", "nivel_riesgo_residual"]:
         check_and_add_column(c, "matriz_iper", col, "TEXT")
 
-    # --- AUTO-REPARACIÓN DE COLUMNAS ---
     check_and_add_column(c, "personal", "contacto_emergencia", "TEXT")
     check_and_add_column(c, "personal", "fono_emergencia", "TEXT")
     check_and_add_column(c, "personal", "obs_medica", "TEXT")
     check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE")
-    
     check_and_add_column(c, "inventario_epp", "precio", "INTEGER")
     check_and_add_column(c, "registro_riohs", "nombre_difusor", "TEXT")
     check_and_add_column(c, "registro_riohs", "firma_difusor_b64", "TEXT")
@@ -426,7 +417,8 @@ class DocumentosLegalesPDF:
 
     def generar_epp(self, data):
         self._header()
-        texto_legal = """De conformidad a lo dispuesto en la <b>Ley 16.744 (Art. 68, inciso 3°)</b> sobre Accidentes del Trabajo y Enfermedades Profesionales..."""
+        # --- FIX V197: TEXTO EPP RESTAURADO ---
+        texto_legal = """De conformidad a lo dispuesto en la <b>Ley 16.744 (Art. 68, inciso 3°)</b> sobre Accidentes del Trabajo y Enfermedades Profesionales, en el Decreto Supremo N° 594 que aprueba el Reglamento sobre Condiciones Sanitarias y Ambientales Básicas en los Lugares de Trabajo, y demás normativa vigente, declaro haber recibido de mi empleador, <b>MADERAS G&D</b>, los Elementos de Protección Personal (EPP) que se detallan a continuación, libres de costo para mí y adecuados para el desempeño de mis funciones."""
         self.elements.append(Paragraph(texto_legal, ParagraphStyle('Legal', fontSize=11, leading=14, alignment=TA_JUSTIFY)))
         self.elements.append(Spacer(1, 20))
         d_info = [[f"NOMBRE: {data['nombre']}", f"RUT: {data['rut']}"], [f"CARGO: {data['cargo']}", f"FECHA: {data['fecha']}"]]
@@ -441,34 +433,29 @@ class DocumentosLegalesPDF:
         t_prod = Table(t_data, colWidths=[60, 400, 80])
         t_prod.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('BACKGROUND', (0,0), (-1,0), HexColor(COLOR_PRIMARY)), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
         self.elements.append(t_prod); self.elements.append(Spacer(1, 20))
-        texto_comp = """El trabajador se compromete a mantener los Elementos de Protección Personal en buen estado..."""
+        # --- FIX V197: TEXTO COMPROMISO EPP RESTAURADO ---
+        texto_comp = """El trabajador se compromete a mantener los Elementos de Protección Personal en buen estado de conservación e higiene, a utilizarlos de manera permanente durante el desarrollo de sus labores y a solicitar su reposición cuando estos presenten deterioro que impida su función protectora."""
         self.elements.append(Paragraph(texto_comp, ParagraphStyle('Comp', fontSize=11, alignment=TA_JUSTIFY)))
         self._signature_block(data['firma_b64']); self.doc.build(self.elements); self.buffer.seek(0); return self.buffer
 
     def generar_riohs(self, data):
         self._header()
-        
-        # --- FIX V195: CONTENIDO DEL PDF RESTAURADO ---
-        legal_1 = """Se deja expresa constancia, de acuerdo a lo establecido en el artículo 156 del Código del Trabajo, que he recibido gratuitamente una copia del Reglamento Interno de Orden, Higiene y Seguridad de MADERAS G&D."""
-        self.elements.append(Paragraph(legal_1, ParagraphStyle('L1', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
-        self.elements.append(Spacer(1, 10))
-        
-        legal_2 = """Declaro bajo mi firma haber recibido, leído y comprendido el presente Reglamento Interno, asumiendo la responsabilidad de dar cumplimiento a sus disposiciones."""
-        self.elements.append(Paragraph(legal_2, ParagraphStyle('L2', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
-        self.elements.append(Spacer(1, 10))
-        
-        legal_3 = """Este reglamento puede entregarse en formato electrónico conforme se expresa en ordinario N°1086 de la Dirección del Trabajo."""
-        self.elements.append(Paragraph(legal_3, ParagraphStyle('L3', fontSize=10, leading=12, alignment=TA_JUSTIFY)))
-        self.elements.append(Spacer(1, 15))
+        # --- FIX V197: TEXTO RIOHS RESTAURADO ---
+        legal_1 = """Se deja expresa constancia, de acuerdo a lo establecido en el artículo 156 del Código del Trabajo, que he recibido gratuitamente una copia del Reglamento Interno de Orden, Higiene y Seguridad de la empresa MADERAS G&D."""
+        self.elements.append(Paragraph(legal_1, ParagraphStyle('L1', fontSize=10, leading=12, alignment=TA_JUSTIFY))); self.elements.append(Spacer(1, 10))
+        legal_2 = """Declaro bajo mi firma haber recibido, leído y comprendido el presente Reglamento Interno, asumiendo la responsabilidad de dar estricto cumplimiento a sus disposiciones, así como a las normas de seguridad e higiene establecidas."""
+        self.elements.append(Paragraph(legal_2, ParagraphStyle('L2', fontSize=10, leading=12, alignment=TA_JUSTIFY))); self.elements.append(Spacer(1, 10))
+        legal_3 = """Este reglamento puede entregarse en formato electrónico conforme se expresa en el ordinario N°1086 de la Dirección del Trabajo, siempre que el trabajador cuente con los medios para acceder a él."""
+        self.elements.append(Paragraph(legal_3, ParagraphStyle('L3', fontSize=10, leading=12, alignment=TA_JUSTIFY))); self.elements.append(Spacer(1, 15))
         
         # Asegurar string en tipo de entrega
         tipo_str = str(data.get('tipo_entrega', 'Físico'))
         email_val = str(data.get('email', 'N/A'))
         
         if "Digital" in tipo_str:
-            texto_decision = f"<b>EL TRABAJADOR DECIDIO LA RECEPCION DEL REGLAMENTO INTERNO DE MANERA DIGITAL AL SIGUIENTE CORREO: {email_val}</b>"
+            texto_decision = f"<b>EL TRABAJADOR DECIDIO LA RECEPCION DEL RELGAMENTO INTERNO DE ORDEN HIGIENE Y SEGURIDAD DE MANERA DIGITAL AL SIGUIENTE CORREO: {email_val}</b>"
         else:
-            texto_decision = "<b>EL TRABAJADOR DECIDIO LA ENTREGA DEL REGLAMENTO INTERNO DE MANERA IMPRESA.</b>"
+            texto_decision = "<b>EL TRABAJADOR DECIDIO LA ENTREGA DEL REGLAMENTO INTERNO DE ORDEN HIGIENE Y SEGURIDAD DE MANERA IMPRESA.</b>"
             
         self.elements.append(Paragraph(texto_decision, ParagraphStyle('Decision', fontSize=10, leading=14, alignment=TA_CENTER, fontName='Helvetica-Bold')))
         self.elements.append(Spacer(1, 20))
@@ -714,7 +701,7 @@ elif menu == "⚖️ Gestión DS67":
 
     conn.close()
 
-# --- 3. MATRIZ IPER (V196 - MAESTRA) ---
+# --- 3. MATRIZ IPER (V197 - MAESTRA SYNC) ---
 elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Riesgos (ISP 2024 + DS44)</div>", unsafe_allow_html=True)
     tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Matriz & Dashboard", "📂 Carga Masiva Inteligente", "➕ Crear Riesgo (Maestro)"])
@@ -808,7 +795,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
     with tab_carga:
         st.subheader("Carga Masiva Inteligente (Smart Upload)")
         
-        # 1. Descarga Template ACTUALIZADO V196
+        # 1. Descarga Template ACTUALIZADO V197
         plantilla = {
             'Proceso':['Cosecha'], 'Puesto':['Operador'], 'Lugar':['Bosque'], 'Familia':['Seguridad'], 'GEMA':['Ambiente'],
             'Peligro':['Pendiente'], 'Riesgo':['Volcamiento'], 
@@ -819,7 +806,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
         }
         b2 = io.BytesIO(); 
         with pd.ExcelWriter(b2, engine='openpyxl') as w: pd.DataFrame(plantilla).to_excel(w, index=False)
-        st.download_button("1️⃣ Descargar Plantilla Maestra V196", b2.getvalue(), "plantilla_iper_master.xlsx")
+        st.download_button("1️⃣ Descargar Plantilla Maestra V197", b2.getvalue(), "plantilla_iper_master.xlsx")
         
         # 2. Carga y Validación
         up = st.file_uploader("2️⃣ Subir Excel", type=['xlsx'])
@@ -831,7 +818,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                 if 'P_Inicial' in df_up.columns and 'C_Inicial' in df_up.columns:
                     df_up['Estado'] = df_up.apply(lambda x: "⚠️ Error P/C" if x['P_Inicial'] not in [1,2,4] or x['C_Inicial'] not in [1,2,4] else "✅ OK", axis=1)
                 else:
-                    st.error("El archivo no tiene las columnas P_Inicial o C_Inicial. Descargue la plantilla V196.")
+                    st.error("El archivo no tiene las columnas P_Inicial o C_Inicial. Descargue la plantilla V197.")
                     st.stop()
                 
                 edited_up = st.data_editor(df_up, num_rows="dynamic", key="editor_up")
@@ -873,7 +860,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
             c1, c2, c3 = st.columns(3)
             pro = c1.text_input("Proceso (Ej: Cosecha)")
             
-            # --- VINCULO DINAMICO DE PUESTOS (V196) ---
+            # --- VINCULO DINAMICO DE PUESTOS (V197) ---
             roles_db = pd.read_sql("SELECT DISTINCT cargo FROM personal", conn)['cargo'].dropna().tolist()
             all_roles = sorted(list(set(LISTA_CARGOS + roles_db)))
             pue = c2.selectbox("Puesto de Trabajo", all_roles)
@@ -932,7 +919,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
             
     conn.close()
 
-# --- 4. GESTION PERSONAS (V196 - BLINDADO & RESTAURADO) ---
+# --- 4. GESTION PERSONAS (V197 - BLINDADO & RESTAURADO) ---
 elif menu == "👥 Gestión Personas":
     st.markdown("<div class='main-header'>Gestión de Capital Humano</div>", unsafe_allow_html=True)
     conn = get_conn()
@@ -946,7 +933,7 @@ elif menu == "👥 Gestión Personas":
     tab_list, tab_carga, tab_new, tab_dig, tab_del = st.tabs(["📋 Nómina", "📂 Carga Masiva", "➕ Nuevo", "🗂️ Carpeta", "❌ Eliminar"])
     
     with tab_list:
-        # --- CONSULTA V196: CON CONTACTOS ---
+        # --- CONSULTA V197: CON CONTACTOS ---
         df_p = pd.read_sql("SELECT rut, rut as rut_old, nombre, cargo, centro_costo, email, fecha_contrato, vigencia_examen_medico, contacto_emergencia, fono_emergencia, estado FROM personal", conn)
         df_p['fecha_contrato'] = pd.to_datetime(df_p['fecha_contrato'], errors='coerce')
         df_p['vigencia_examen_medico'] = pd.to_datetime(df_p['vigencia_examen_medico'], errors='coerce')
@@ -966,7 +953,7 @@ elif menu == "👥 Gestión Personas":
             c = conn.cursor()
             for i, r in edited.iterrows():
                 
-                # HELPER BLINDADO V196
+                # HELPER BLINDADO V197
                 def clean_str(val):
                     if val is None: return None
                     s = str(val).strip()
@@ -984,7 +971,7 @@ elif menu == "👥 Gestión Personas":
                 # Definir RUT Clave
                 rut_key = clean_str(r.get('rut_old')) if pd.notnull(r.get('rut_old')) else clean_str(r.get('rut'))
                 
-                # --- UPDATE V196: CON CONTACTOS Y LIMPIEZA ---
+                # --- UPDATE V197: CON CONTACTOS Y LIMPIEZA ---
                 if clean_str(r['rut']) != rut_key:
                      c.execute("UPDATE personal SET rut=?, nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=?, contacto_emergencia=?, fono_emergencia=? WHERE rut=?", 
                               (clean_str(r['rut']), clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['email']), clean_str(r['estado']), fec, f_ex, clean_str(r['contacto_emergencia']), clean_str(r['fono_emergencia']), rut_key))
@@ -997,7 +984,7 @@ elif menu == "👥 Gestión Personas":
             conn.commit(); st.success("Guardado Exitosamente"); time.sleep(1); st.rerun()
 
     with tab_carga:
-        # --- TEMPLATE V196: CON CONTACTOS ---
+        # --- TEMPLATE V197: CON CONTACTOS ---
         template_data = {
             'RUT': ['11.222.333-4'], 'NOMBRE': ['Juan Pérez'], 'CARGO': ['OPERADOR'], 
             'CENTRO_COSTO': ['FAENA'], 'EMAIL': ['juan@empresa.com'], 
@@ -1026,7 +1013,7 @@ elif menu == "👥 Gestión Personas":
                         except: f_ex = None
                         if pd.isna(f_ex): f_ex = None
 
-                        # --- INSERT V196: CON CONTACTOS ---
+                        # --- INSERT V197: CON CONTACTOS ---
                         if len(rut) > 3:
                             c.execute("""INSERT OR REPLACE INTO personal 
                                 (rut, nombre, cargo, centro_costo, email, fecha_contrato, estado, vigencia_examen_medico, contacto_emergencia, fono_emergencia) 
@@ -1040,7 +1027,7 @@ elif menu == "👥 Gestión Personas":
             c1, c2 = st.columns(2); r = c1.text_input("RUT"); n = c2.text_input("Nombre"); ca = c1.selectbox("Cargo", LISTA_CARGOS); em = c2.text_input("Email"); 
             c3, c4 = st.columns(2); f_ex = c3.date_input("Vencimiento Examen (Opcional)", value=None); c_emer = c4.text_input("Contacto Emergencia")
             f_emer = c3.text_input("Teléfono Emergencia"); obs = c4.text_input("Alergias/Obs Médica")
-            # --- FORMULARIO V196: CON CONTACTOS ---
+            # --- FORMULARIO V197: CON CONTACTOS ---
             if st.form_submit_button("Registrar"):
                 try: conn.execute("INSERT INTO personal (rut, nombre, cargo, email, fecha_contrato, estado, vigencia_examen_medico, contacto_emergencia, fono_emergencia, obs_medica) VALUES (?,?,?,?,?,?,?,?,?,?)", (r, n, ca, em, date.today(), 'ACTIVO', f_ex, c_emer, f_emer, obs)); conn.commit(); st.success("Creado")
                 except: st.error("Error (RUT duplicado?)")
@@ -1051,7 +1038,7 @@ elif menu == "👥 Gestión Personas":
             sel_worker = st.selectbox("Seleccionar Trabajador:", df_all['rut'] + " - " + df_all['nombre'])
             rut_sel = sel_worker.split(" - ")[0]
             
-            # --- SELECT V196: CON CONTACTOS ---
+            # --- SELECT V197: CON CONTACTOS ---
             datos_p = pd.read_sql("SELECT contacto_emergencia, fono_emergencia, obs_medica, vigencia_examen_medico FROM personal WHERE rut=?", conn, params=(rut_sel,)).iloc[0]
             st.info(f"🚑 Emergencia: {datos_p['contacto_emergencia']} - {datos_p['fono_emergencia']} | ⚕️ Obs: {datos_p['obs_medica']}")
             
@@ -1109,7 +1096,7 @@ elif menu == "👥 Gestión Personas":
                 st.rerun()
     conn.close()
 
-# --- 5. GESTOR DOCUMENTAL (V196 - FIRMA ÚNICA) ---
+# --- 5. GESTOR DOCUMENTAL (V197 - FIRMA HÍBRIDA & CONTENIDO RESTAURADO) ---
 elif menu == "⚖️ Gestor Documental":
     st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
@@ -1142,6 +1129,7 @@ elif menu == "⚖️ Gestor Documental":
             tab_ind, tab_mass = st.tabs(["Entrega Individual", "📢 Campaña Masiva"])
             
             with tab_ind:
+                # --- FIX V197: FIRMAS FUERA DE ST.FORM ---
                 sel_r = st.selectbox("Trabajador RIOHS:", df_p['rut'] + " | " + df_p['nombre'])
                 rut_w = sel_r.split(" | ")[0]
                 nom_w = sel_r.split(" | ")[1]
@@ -1158,7 +1146,7 @@ elif menu == "⚖️ Gestor Documental":
                 
                 st.divider()
                 
-                # --- CANVAS DIRECTO (V196) ---
+                # --- CANVAS DIRECTO (V197) ---
                 c3, c4 = st.columns(2)
                 with c3:
                     st.write("Firma Trabajador:")
@@ -1211,7 +1199,7 @@ elif menu == "⚖️ Gestor Documental":
                 st.info("📢 Campaña Masiva de RIOHS Digital")
                 difusor_mass = st.text_input("Nombre del Difusor (Campaña Masiva):")
                 st.write("Firma del Difusor:")
-                sig_mass = st_canvas(stroke_width=2, stroke_color="black", background_color="#eeeeee", height=150, width=400, key="sig_mass_v196")
+                sig_mass = st_canvas(stroke_width=2, stroke_color="black", background_color="#eeeeee", height=150, width=400, key="sig_mass_v197")
                 
                 if st.button("🚀 INICIAR CAMPAÑA", type="primary"):
                     if difusor_mass and sig_mass.image_data is not None:
