@@ -44,7 +44,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v186_final_stable.db' # Version 186 con corrección de guardado
+DB_NAME = 'sgsst_v187_final_blindado.db' # Versión 187: Blindaje Total de Tipos
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -683,7 +683,7 @@ elif menu == "⚖️ Gestión DS67":
 
     conn.close()
 
-# --- 3. MATRIZ IPER (V185 - MAESTRA) ---
+# --- 3. MATRIZ IPER (V185 - DYNAMIC ROLES & SMART MATRIX) ---
 elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Riesgos (ISP 2024 + DS44)</div>", unsafe_allow_html=True)
     tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Matriz & Dashboard", "📂 Carga Masiva Inteligente", "➕ Crear Riesgo (Maestro)"])
@@ -768,7 +768,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
     with tab_carga:
         st.subheader("Carga Masiva Inteligente (Smart Upload)")
         
-        # 1. Descarga Template
+        # 1. Descarga Template ACTUALIZADO V179
         plantilla = {
             'Proceso':['Cosecha'], 'Puesto':['Operador'], 'Lugar':['Bosque'], 'Familia':['Seguridad'], 'GEMA':['Ambiente'],
             'Peligro':['Pendiente'], 'Riesgo':['Volcamiento'], 
@@ -925,7 +925,7 @@ elif menu == "👥 Gestión Personas":
             c = conn.cursor()
             for i, r in edited.iterrows():
                 
-                # HELPER PARA EVITAR NULOS (FIX V185 ROBUST)
+                # HELPER PARA EVITAR NULOS (FIX V186 ROBUST)
                 def clean_str(val):
                     if val is None: return None
                     s = str(val).strip()
@@ -936,7 +936,7 @@ elif menu == "👥 Gestión Personas":
                 if pd.isna(fec) or str(fec)=='NaT': fec = date.today()
                 if pd.isna(f_ex) or str(f_ex)=='NaT': f_ex = None
                 
-                # --- FIX LINEA 947: clean_str en WHERE RUT ---
+                # --- FIX LINEA 947: clean_str aplicado a TODO incluyendo el WHERE ---
                 rut_key = clean_str(r.get('rut_old')) if pd.notnull(r.get('rut_old')) else clean_str(r.get('rut'))
                 
                 if r['rut'] != r.get('rut_old', r['rut']):
