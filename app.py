@@ -44,7 +44,7 @@ matplotlib.use('Agg')
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️")
 
-DB_NAME = 'sgsst_v190_final_clean.db' # Versión 190: Limpieza total de columnas erróneas
+DB_NAME = 'sgsst_v192_ui_fix.db' # Versión 192: Restauración de Interfaz
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 
@@ -217,7 +217,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, fecha_contrato DATE, estado TEXT, vigencia_examen_medico DATE, email TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
     
-    # --- MATRIZ IPER V190 ---
+    # --- MATRIZ IPER V192 ---
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         proceso TEXT, 
@@ -269,8 +269,12 @@ def init_db():
     for col in ["lugar_especifico", "familia_riesgo", "codigo_riesgo", "factor_gema", "jerarquia_control", "requisito_legal", "nivel_riesgo_residual"]:
         check_and_add_column(c, "matriz_iper", col, "TEXT")
 
+    # --- AUTO-REPARACIÓN DE COLUMNAS DE EMERGENCIA (V192) ---
+    check_and_add_column(c, "personal", "contacto_emergencia", "TEXT")
+    check_and_add_column(c, "personal", "fono_emergencia", "TEXT")
     check_and_add_column(c, "personal", "obs_medica", "TEXT")
     check_and_add_column(c, "personal", "vigencia_examen_medico", "DATE")
+    
     check_and_add_column(c, "inventario_epp", "precio", "INTEGER")
     check_and_add_column(c, "registro_riohs", "nombre_difusor", "TEXT")
     check_and_add_column(c, "registro_riohs", "firma_difusor_b64", "TEXT")
@@ -681,7 +685,7 @@ elif menu == "⚖️ Gestión DS67":
 
     conn.close()
 
-# --- 3. MATRIZ IPER (V190 - FINAL CLEAN & STABLE) ---
+# --- 3. MATRIZ IPER (V192 - MAESTRA RESTAURADA) ---
 elif menu == "🛡️ Matriz IPER (ISP)":
     st.markdown("<div class='main-header'>Matriz de Riesgos (ISP 2024 + DS44)</div>", unsafe_allow_html=True)
     tab_ver, tab_carga, tab_crear = st.tabs(["👁️ Matriz & Dashboard", "📂 Carga Masiva Inteligente", "➕ Crear Riesgo (Maestro)"])
@@ -775,7 +779,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
     with tab_carga:
         st.subheader("Carga Masiva Inteligente (Smart Upload)")
         
-        # 1. Descarga Template ACTUALIZADO V190
+        # 1. Descarga Template
         plantilla = {
             'Proceso':['Cosecha'], 'Puesto':['Operador'], 'Lugar':['Bosque'], 'Familia':['Seguridad'], 'GEMA':['Ambiente'],
             'Peligro':['Pendiente'], 'Riesgo':['Volcamiento'], 
@@ -786,7 +790,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
         }
         b2 = io.BytesIO(); 
         with pd.ExcelWriter(b2, engine='openpyxl') as w: pd.DataFrame(plantilla).to_excel(w, index=False)
-        st.download_button("1️⃣ Descargar Plantilla Maestra V190", b2.getvalue(), "plantilla_iper_master.xlsx")
+        st.download_button("1️⃣ Descargar Plantilla Maestra V192", b2.getvalue(), "plantilla_iper_master.xlsx")
         
         # 2. Carga y Validación
         up = st.file_uploader("2️⃣ Subir Excel", type=['xlsx'])
@@ -798,7 +802,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
                 if 'P_Inicial' in df_up.columns and 'C_Inicial' in df_up.columns:
                     df_up['Estado'] = df_up.apply(lambda x: "⚠️ Error P/C" if x['P_Inicial'] not in [1,2,4] or x['C_Inicial'] not in [1,2,4] else "✅ OK", axis=1)
                 else:
-                    st.error("El archivo no tiene las columnas P_Inicial o C_Inicial. Descargue la plantilla V190.")
+                    st.error("El archivo no tiene las columnas P_Inicial o C_Inicial. Descargue la plantilla V192.")
                     st.stop()
                 
                 edited_up = st.data_editor(df_up, num_rows="dynamic", key="editor_up")
@@ -840,7 +844,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
             c1, c2, c3 = st.columns(3)
             pro = c1.text_input("Proceso (Ej: Cosecha)")
             
-            # --- VINCULO DINAMICO DE PUESTOS (V179) ---
+            # --- VINCULO DINAMICO DE PUESTOS ---
             roles_db = pd.read_sql("SELECT DISTINCT cargo FROM personal", conn)['cargo'].dropna().tolist()
             all_roles = sorted(list(set(LISTA_CARGOS + roles_db)))
             pue = c2.selectbox("Puesto de Trabajo", all_roles)
@@ -899,7 +903,7 @@ elif menu == "🛡️ Matriz IPER (ISP)":
             
     conn.close()
 
-# --- 4. GESTION PERSONAS ---
+# --- 4. GESTION PERSONAS (V192 - BLINDADO & RESTAURADO) ---
 elif menu == "👥 Gestión Personas":
     st.markdown("<div class='main-header'>Gestión de Capital Humano</div>", unsafe_allow_html=True)
     conn = get_conn()
@@ -913,8 +917,8 @@ elif menu == "👥 Gestión Personas":
     tab_list, tab_carga, tab_new, tab_dig, tab_del = st.tabs(["📋 Nómina", "📂 Carga Masiva", "➕ Nuevo", "🗂️ Carpeta", "❌ Eliminar"])
     
     with tab_list:
-        # --- FIX V190: QUERY LIMPIO SIN CONTACTOS ---
-        df_p = pd.read_sql("SELECT rut, rut as rut_old, nombre, cargo, centro_costo, email, fecha_contrato, vigencia_examen_medico, estado FROM personal", conn)
+        # --- CONSULTA V192: CON CONTACTOS ---
+        df_p = pd.read_sql("SELECT rut, rut as rut_old, nombre, cargo, centro_costo, email, fecha_contrato, vigencia_examen_medico, contacto_emergencia, fono_emergencia, estado FROM personal", conn)
         df_p['fecha_contrato'] = pd.to_datetime(df_p['fecha_contrato'], errors='coerce')
         df_p['vigencia_examen_medico'] = pd.to_datetime(df_p['vigencia_examen_medico'], errors='coerce')
         
@@ -925,12 +929,15 @@ elif menu == "👥 Gestión Personas":
                 "fecha_contrato": st.column_config.DateColumn("Contrato", format="DD/MM/YYYY"),
                 "vigencia_examen_medico": st.column_config.DateColumn("Venc. Examen", format="DD/MM/YYYY"),
                 "cargo": st.column_config.SelectboxColumn("Cargo", options=LISTA_CARGOS),
-                "estado": st.column_config.SelectboxColumn("Estado", options=["ACTIVO", "INACTIVO"])
+                "estado": st.column_config.SelectboxColumn("Estado", options=["ACTIVO", "INACTIVO"]),
+                "contacto_emergencia": st.column_config.TextColumn("Contacto Emergencia"),
+                "fono_emergencia": st.column_config.TextColumn("Fono Emergencia")
             })
         if st.button("💾 Guardar Cambios"):
             c = conn.cursor()
             for i, r in edited.iterrows():
                 
+                # HELPER BLINDADO
                 def clean_str(val):
                     if val is None: return None
                     s = str(val).strip()
@@ -945,26 +952,28 @@ elif menu == "👥 Gestión Personas":
                 if pd.isna(f_ex) or str(f_ex) == 'NaT': f_ex = None
                 else: f_ex = f_ex.strftime("%Y-%m-%d") if isinstance(f_ex, (datetime, date)) else str(f_ex).split('T')[0]
                 
+                # Definir RUT Clave
                 rut_key = clean_str(r.get('rut_old')) if pd.notnull(r.get('rut_old')) else clean_str(r.get('rut'))
                 
-                # --- FIX V190: UPDATE SIN CONTACTOS ---
-                if r['rut'] != r.get('rut_old', r['rut']):
-                     c.execute("UPDATE personal SET rut=?, nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=? WHERE rut=?", 
-                              (clean_str(r['rut']), clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['email']), clean_str(r['estado']), fec, f_ex, rut_key))
+                # --- UPDATE V192: CON CONTACTOS Y LIMPIEZA ---
+                if clean_str(r['rut']) != rut_key:
+                     c.execute("UPDATE personal SET rut=?, nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=?, contacto_emergencia=?, fono_emergencia=? WHERE rut=?", 
+                              (clean_str(r['rut']), clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['email']), clean_str(r['estado']), fec, f_ex, clean_str(r['contacto_emergencia']), clean_str(r['fono_emergencia']), rut_key))
                      c.execute("UPDATE asistencia_capacitacion SET trabajador_rut=? WHERE trabajador_rut=?", (clean_str(r['rut']), rut_key))
                      c.execute("UPDATE registro_epp SET rut_trabajador=? WHERE rut_trabajador=?", (clean_str(r['rut']), rut_key))
                      c.execute("UPDATE registro_riohs SET rut_trabajador=? WHERE rut_trabajador=?", (clean_str(r['rut']), rut_key))
                 else:
-                    c.execute("UPDATE personal SET nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=? WHERE rut=?", 
-                              (clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['email']), clean_str(r['estado']), fec, f_ex, rut_key))
+                    c.execute("UPDATE personal SET nombre=?, cargo=?, centro_costo=?, email=?, estado=?, fecha_contrato=?, vigencia_examen_medico=?, contacto_emergencia=?, fono_emergencia=? WHERE rut=?", 
+                              (clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['email']), clean_str(r['estado']), fec, f_ex, clean_str(r['contacto_emergencia']), clean_str(r['fono_emergencia']), rut_key))
             conn.commit(); st.success("Guardado Exitosamente"); time.sleep(1); st.rerun()
 
     with tab_carga:
-        # --- FIX V190: TEMPLATE SIN CONTACTOS ---
+        # --- TEMPLATE V192: CON CONTACTOS ---
         template_data = {
             'RUT': ['11.222.333-4'], 'NOMBRE': ['Juan Pérez'], 'CARGO': ['OPERADOR'], 
             'CENTRO_COSTO': ['FAENA'], 'EMAIL': ['juan@empresa.com'], 
-            'FECHA DE CONTRATO': ['2024-01-01'], 'VIGENCIA_EXAMEN': ['2025-01-01']
+            'FECHA DE CONTRATO': ['2024-01-01'], 'VIGENCIA_EXAMEN': ['2025-01-01'],
+            'CONTACTO_EMERGENCIA': ['Maria Perez'], 'TELEFONO_EMERGENCIA': ['+56912345678']
         }
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer: pd.DataFrame(template_data).to_excel(writer, index=False)
@@ -988,22 +997,23 @@ elif menu == "👥 Gestión Personas":
                         except: f_ex = None
                         if pd.isna(f_ex): f_ex = None
 
-                        # --- FIX V190: INSERT SIN CONTACTOS ---
+                        # --- INSERT V192: CON CONTACTOS ---
                         if len(rut) > 3:
                             c.execute("""INSERT OR REPLACE INTO personal 
-                                (rut, nombre, cargo, centro_costo, email, fecha_contrato, estado, vigencia_examen_medico) 
-                                VALUES (?,?,?,?,?,?,?,?)""", 
-                                (rut, r.get('NOMBRE'), r.get('CARGO'), r.get('CENTRO_COSTO'), r.get('EMAIL'), f, 'ACTIVO', f_ex))
+                                (rut, nombre, cargo, centro_costo, email, fecha_contrato, estado, vigencia_examen_medico, contacto_emergencia, fono_emergencia) 
+                                VALUES (?,?,?,?,?,?,?,?,?,?)""", 
+                                (rut, r.get('NOMBRE'), r.get('CARGO'), r.get('CENTRO_COSTO'), r.get('EMAIL'), f, 'ACTIVO', f_ex, r.get('CONTACTO_EMERGENCIA'), r.get('TELEFONO_EMERGENCIA')))
                     conn.commit(); st.success("Cargado"); time.sleep(1.5); st.rerun()
                 except Exception as e: st.error(f"Error: {e}")
 
     with tab_new:
         with st.form("new_p"):
             c1, c2 = st.columns(2); r = c1.text_input("RUT"); n = c2.text_input("Nombre"); ca = c1.selectbox("Cargo", LISTA_CARGOS); em = c2.text_input("Email"); 
-            c3, c4 = st.columns(2); f_ex = c3.date_input("Vencimiento Examen (Opcional)", value=None); obs = c4.text_input("Alergias/Obs Médica")
-            # --- FIX V190: FORMULARIO SIN CONTACTOS ---
+            c3, c4 = st.columns(2); f_ex = c3.date_input("Vencimiento Examen (Opcional)", value=None); c_emer = c4.text_input("Contacto Emergencia")
+            f_emer = c3.text_input("Teléfono Emergencia"); obs = c4.text_input("Alergias/Obs Médica")
+            # --- FORMULARIO V192: CON CONTACTOS ---
             if st.form_submit_button("Registrar"):
-                try: conn.execute("INSERT INTO personal (rut, nombre, cargo, email, fecha_contrato, estado, vigencia_examen_medico, obs_medica) VALUES (?,?,?,?,?,?,?,?)", (r, n, ca, em, date.today(), 'ACTIVO', f_ex, obs)); conn.commit(); st.success("Creado")
+                try: conn.execute("INSERT INTO personal (rut, nombre, cargo, email, fecha_contrato, estado, vigencia_examen_medico, contacto_emergencia, fono_emergencia, obs_medica) VALUES (?,?,?,?,?,?,?,?,?,?)", (r, n, ca, em, date.today(), 'ACTIVO', f_ex, c_emer, f_emer, obs)); conn.commit(); st.success("Creado")
                 except: st.error("Error (RUT duplicado?)")
 
     with tab_dig:
@@ -1012,9 +1022,9 @@ elif menu == "👥 Gestión Personas":
             sel_worker = st.selectbox("Seleccionar Trabajador:", df_all['rut'] + " - " + df_all['nombre'])
             rut_sel = sel_worker.split(" - ")[0]
             
-            # --- FIX V190: SELECT SIN CONTACTOS ---
-            datos_p = pd.read_sql("SELECT obs_medica, vigencia_examen_medico FROM personal WHERE rut=?", conn, params=(rut_sel,)).iloc[0]
-            st.info(f"⚕️ Obs Médica: {datos_p['obs_medica']}")
+            # --- SELECT V192: CON CONTACTOS ---
+            datos_p = pd.read_sql("SELECT contacto_emergencia, fono_emergencia, obs_medica, vigencia_examen_medico FROM personal WHERE rut=?", conn, params=(rut_sel,)).iloc[0]
+            st.info(f"🚑 Emergencia: {datos_p['contacto_emergencia']} - {datos_p['fono_emergencia']} | ⚕️ Obs: {datos_p['obs_medica']}")
             
             st.subheader("🚦 Estado de Habilitación")
             odi = pd.read_sql("SELECT count(*) FROM asistencia_capacitacion WHERE trabajador_rut=?", conn, params=(rut_sel,)).iloc[0,0] > 0
@@ -1068,4 +1078,407 @@ elif menu == "👥 Gestión Personas":
                 st.success("Trabajador eliminado correctamente.")
                 time.sleep(1)
                 st.rerun()
+    conn.close()
+
+# --- 5. GESTOR DOCUMENTAL (V185 - IRL DINAMICO) ---
+elif menu == "⚖️ Gestor Documental":
+    st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
+    t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
+    conn = get_conn(); df_p = pd.read_sql("SELECT rut, nombre, cargo, email FROM personal", conn)
+    
+    if df_p.empty:
+        st.warning("⚠️ No hay trabajadores registrados. Vaya a 'Gestión Personas' para agregar.")
+    else:
+        with t1:
+            # --- VINCULACION AUTOMATICA IRL-MATRIZ (V185) ---
+            sel = st.selectbox("Trabajador:", df_p['rut'] + " - " + df_p['nombre'] + " (" + df_p['cargo'] + ")")
+            
+            if st.button("Generar IRL"):
+                rut_sel = sel.split(" - ")[0]
+                
+                # Obtener Cargo Real
+                w_data = pd.read_sql("SELECT nombre, cargo FROM personal WHERE rut=?", conn, params=(rut_sel,)).iloc[0]
+                cargo_real = w_data['cargo']
+                
+                # Buscar Riesgos del Cargo en Matriz
+                riesgos_df = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper WHERE puesto_trabajo=?", conn, params=(cargo_real,))
+                
+                if riesgos_df.empty:
+                    st.warning(f"⚠️ No se encontraron riesgos específicos para el cargo: {cargo_real} en la Matriz IPER. Se usarán genéricos.")
+                    riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper LIMIT 3", conn)
+                else:
+                    riesgos = riesgos_df
+                    st.success(f"✅ Se encontraron {len(riesgos)} riesgos asociados al cargo {cargo_real}.")
+                
+                pdf = DocumentosLegalesPDF("IRL", "RG-GD-04").generar_irl({'nombre': w_data['nombre']}, riesgos.values.tolist())
+                st.download_button("Descargar IRL", pdf.getvalue(), "IRL.pdf")
+        
+        with t2:
+            st.subheader("Entrega de Reglamento Interno (RIOHS)")
+            tab_ind, tab_mass = st.tabs(["Entrega Individual", "📢 Campaña Masiva"])
+            
+            with tab_ind:
+                sel_r = st.selectbox("Trabajador RIOHS:", df_p['rut'] + " | " + df_p['nombre'])
+                rut_w = sel_r.split(" | ")[0]
+                nom_w = sel_r.split(" | ")[1]
+                worker_data = df_p[df_p['rut'] == rut_w].iloc[0]
+                email_w = worker_data['email'] if worker_data['email'] else "Sin Email"
+                
+                with st.form("riohs_form"):
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        tipo_ent = st.radio("Formato de Entrega:", ["Físico (Papel)", "Digital (Email)"], index=0)
+                        if tipo_ent == "Digital (Email)":
+                            st.info(f"📧 Se enviará al correo: {email_w}")
+                    with c2:
+                        nom_dif = st.text_input("Nombre del Difusor (Quien entrega):")
+                    
+                    st.divider()
+                    c3, c4 = st.columns(2)
+                    with c3:
+                        st.write("Firma Trabajador:")
+                        sig_worker = st_canvas(stroke_width=2, stroke_color="black", background_color="#eeeeee", height=150, width=400, key="sig_w_riohs_v168")
+                    with c4:
+                        st.write("Firma Difusor:")
+                        sig_diffuser = st_canvas(stroke_width=2, stroke_color="black", background_color="#eeeeee", height=150, width=400, key="sig_d_riohs_v168")
+                    
+                    if st.form_submit_button("Registrar Entrega RIOHS"):
+                        if sig_worker.image_data is not None and sig_diffuser.image_data is not None and nom_dif:
+                            img_w = process_signature_bg(sig_worker.image_data); b_w = io.BytesIO(); img_w.save(b_w, format='PNG'); str_w = base64.b64encode(b_w.getvalue()).decode()
+                            img_d = process_signature_bg(sig_diffuser.image_data); b_d = io.BytesIO(); img_d.save(b_d, format='PNG'); str_d = base64.b64encode(b_d.getvalue()).decode()
+                            
+                            tipo_db = "Digital" if "Digital" in tipo_ent else "Físico"
+                            
+                            pdf = DocumentosLegalesPDF("REGISTRO DE ENTREGA DE REGLAMENTO INTERNO DE ORDEN, HIGIENE Y SEGURIDAD", "RG-SSTGD-03").generar_riohs({
+                                'nombre': nom_w, 'rut': rut_w, 'cargo': worker_data['cargo'], 
+                                'fecha': date.today().strftime("%d-%m-%Y"), 
+                                'firma_b64': str_w, 'tipo_entrega': tipo_db, 'email': email_w,
+                                'nombre_difusor': nom_dif, 'firma_difusor': str_d
+                            })
+                            pdf_bytes = pdf.getvalue()
+                            
+                            estado_envio = "N/A"
+                            if tipo_db == "Digital":
+                                exito, msg = enviar_correo_riohs(email_w, nom_w, pdf_bytes, f"RIOHS_{rut_w}.pdf")
+                                estado_envio = "ENVIADO" if exito else "ERROR"
+                                if exito: st.success(f"📧 {msg}")
+                                else: st.error(f"❌ Error envío: {msg}")
+                            
+                            conn.execute("""INSERT INTO registro_riohs (fecha_entrega, rut_trabajador, nombre_trabajador, tipo_entrega, firma_b64, nombre_difusor, firma_difusor_b64, email_copia, estado_envio) VALUES (?,?,?,?,?,?,?,?,?)""", 
+                                (date.today(), rut_w, nom_w, tipo_db, str_w, nom_dif, str_d, email_w, estado_envio))
+                            conn.commit()
+                            
+                            st.download_button("📥 Descargar Acta", pdf_bytes, f"RIOHS_{rut_w}.pdf", "application/pdf")
+                            st.success("Entrega registrada.")
+                        else:
+                            st.warning("⚠️ Faltan firmas.")
+
+            with tab_mass:
+                st.info("📢 Campaña Masiva de RIOHS Digital")
+                difusor_mass = st.text_input("Nombre del Difusor (Campaña Masiva):")
+                st.write("Firma del Difusor:")
+                sig_mass = st_canvas(stroke_width=2, stroke_color="black", background_color="#eeeeee", height=150, width=400, key="sig_mass_v168")
+                
+                if st.button("🚀 INICIAR CAMPAÑA", type="primary"):
+                    if difusor_mass and sig_mass.image_data is not None:
+                        img_d = process_signature_bg(sig_mass.image_data); b_d = io.BytesIO(); img_d.save(b_d, format='PNG'); str_d = base64.b64encode(b_d.getvalue()).decode()
+                        targets = pd.read_sql("SELECT rut, nombre, cargo, email FROM personal WHERE estado='ACTIVO' AND email IS NOT NULL AND email != ''", conn)
+                        
+                        prog_bar = st.progress(0); status_txt = st.empty()
+                        count = 0
+                        
+                        for i, t in targets.iterrows():
+                            pdf = DocumentosLegalesPDF("REGISTRO DE ENTREGA DE REGLAMENTO INTERNO DE ORDEN, HIGIENE Y SEGURIDAD", "RG-SSTGD-03").generar_riohs({
+                                'nombre': t['nombre'], 'rut': t['rut'], 'cargo': t['cargo'], 
+                                'fecha': date.today().strftime("%d-%m-%Y"), 
+                                'firma_b64': "PENDIENTE_DIGITAL", 
+                                'tipo_entrega': "Digital", 'email': t['email'],
+                                'nombre_difusor': difusor_mass, 'firma_difusor': str_d
+                            })
+                            exito, msg = enviar_correo_riohs(t['email'], t['nombre'], pdf.getvalue(), f"RIOHS_{t['rut']}.pdf")
+                            st_env = "ENVIADO" if exito else "ERROR"
+                            conn.execute("""INSERT INTO registro_riohs (fecha_entrega, rut_trabajador, nombre_trabajador, tipo_entrega, firma_b64, nombre_difusor, firma_difusor_b64, email_copia, estado_envio) VALUES (?,?,?,?,?,?,?,?,?)""", 
+                                (date.today(), t['rut'], t['nombre'], "Digital", "PENDIENTE_DIGITAL", difusor_mass, str_d, t['email'], st_env))
+                            count += 1
+                            prog_bar.progress((i + 1) / len(targets))
+                            status_txt.text(f"Procesando: {t['nombre']} - {st_env}")
+                            
+                        conn.commit()
+                        st.success(f"✅ Campaña finalizada. {count} correos procesados.")
+                    else:
+                        st.warning("Falta nombre o firma del difusor.")
+
+        with t3:
+            st.dataframe(pd.read_sql("SELECT id, fecha_entrega, nombre_trabajador, tipo_entrega, email_copia, estado_envio FROM registro_riohs ORDER BY id DESC", conn))
+    conn.close()
+
+# --- 6. LOGISTICA EPP ---
+elif menu == "🦺 Logística EPP":
+    st.markdown("<div class='main-header'>Logística y Entrega EPP</div>", unsafe_allow_html=True)
+    conn = get_conn()
+    
+    t1, t2, t3 = st.tabs(["🛍️ Entrega (Carrito)", "📦 Inventario", "📜 Historial"])
+    
+    with t1:
+        st.subheader("Registro de Entrega")
+        df_workers = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
+        
+        if df_workers.empty:
+            st.warning("No hay personal registrado.")
+        else:
+            w_opts = df_workers['rut'] + " | " + df_workers['nombre']
+            sel_w = st.selectbox("Seleccionar Trabajador:", w_opts)
+            rut_w = sel_w.split(" | ")[0]
+            nom_w = sel_w.split(" | ")[1]
+            cargo_w = df_workers[df_workers['rut'] == rut_w]['cargo'].values[0]
+            
+            st.divider()
+            
+            if 'epp_cart' not in st.session_state: st.session_state.epp_cart = []
+            if 'epp_step' not in st.session_state: st.session_state.epp_step = 1
+            
+            if st.session_state.epp_step == 1:
+                if st.button("📦 Cargar Kit Básico (Nuevo Ingreso)"):
+                    kit = [{"prod": "CASCO DE SEGURIDAD", "cant": 1, "talla": "U", "precio": 12000}, {"prod": "LENTES DE SEGURIDAD", "cant": 1, "talla": "U", "precio": 3000}, {"prod": "GUANTE CABRITILLA", "cant": 1, "talla": "U", "precio": 4500}, {"prod": "CHALECO REFLECTANTE", "cant": 1, "talla": "L", "precio": 3500}]
+                    st.session_state.epp_cart = kit
+                    st.success("Kit cargado. Revise tallas.")
+
+                c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
+                inv_df = pd.read_sql("SELECT producto, stock_actual, precio FROM inventario_epp WHERE stock_actual > 0", conn)
+                
+                if inv_df.empty:
+                    st.error("No hay stock disponible en bodega.")
+                else:
+                    with c1: 
+                        prod_sel = st.selectbox("Elemento EPP", inv_df['producto'])
+                        last_del = pd.read_sql("SELECT fecha_entrega FROM registro_epp WHERE rut_trabajador=? AND lista_productos LIKE ? ORDER BY id DESC LIMIT 1", conn, params=(rut_w, f"%{prod_sel}%"))
+                        if not last_del.empty:
+                            f_last = datetime.strptime(last_del.iloc[0,0], '%Y-%m-%d').date()
+                            dias = (date.today() - f_last).days
+                            if dias < 30: st.warning(f"⚠️ {prod_sel} entregado hace solo {dias} días ({f_last})")
+                            else: st.caption(f"✅ Última entrega: {f_last} (Hace {dias} días)")
+                    
+                    with c2: cant_sel = st.number_input("Cant", min_value=1, value=1)
+                    with c3: talla_sel = st.selectbox("Talla", ["U", "S", "M", "L", "XL", "XXL", "38", "39", "40", "41", "42", "43", "44", "45"], index=0)
+                    with c4:
+                        st.write("")
+                        if st.button("➕ Agregar"):
+                            row = inv_df[inv_df['producto'] == prod_sel].iloc[0]
+                            if row['stock_actual'] >= cant_sel:
+                                st.session_state.epp_cart.append({"prod": prod_sel, "cant": cant_sel, "talla": talla_sel, "precio": int(row['precio'])})
+                            else: st.error("Stock insuficiente.")
+
+                if st.session_state.epp_cart:
+                    st.write("---"); st.markdown("##### Resumen de Entrega y Costos")
+                    cart_df = pd.DataFrame(st.session_state.epp_cart)
+                    cart_df['Subtotal'] = cart_df['cant'] * cart_df['precio']
+                    total_cost = cart_df['Subtotal'].sum()
+                    st.table(cart_df); st.metric("Costo Total Estimado", f"${total_cost:,.0f}")
+                    
+                    if st.button("🗑️ Vaciar Carrito"): st.session_state.epp_cart = []; st.rerun()
+                    
+                    st.write("---"); st.write("Firma de Recepción (Trabajador):")
+                    firm_canvas = st_canvas(stroke_width=2, height=350, width=700, key="epp_sig_big", background_color="#eeeeee")
+                    
+                    if st.button("✅ CONFIRMAR ENTREGA"):
+                        if firm_canvas.image_data is not None:
+                            img = process_signature_bg(firm_canvas.image_data)
+                            b = io.BytesIO(); img.save(b, format='PNG'); img_str = base64.b64encode(b.getvalue()).decode()
+                            conn.execute("INSERT INTO registro_epp (fecha_entrega, rut_trabajador, nombre_trabajador, cargo, lista_productos, firma_b64) VALUES (?,?,?,?,?,?)", (date.today(), rut_w, nom_w, cargo_w, str(st.session_state.epp_cart), img_str))
+                            for item in st.session_state.epp_cart:
+                                conn.execute("UPDATE inventario_epp SET stock_actual = stock_actual - ? WHERE producto=?", (item['cant'], item['prod']))
+                            conn.commit()
+                            pdf = DocumentosLegalesPDF("REGISTRO ENTREGA ELEMENTOS DE PROTECCION PERSONAL", "RG-SSTGD-01").generar_epp({
+                                'nombre': nom_w, 'rut': rut_w, 'cargo': cargo_w, 'fecha': date.today().strftime("%d-%m-%Y"), 'lista': str(st.session_state.epp_cart), 'firma_b64': img_str
+                            })
+                            st.session_state.pdf_buffer = pdf.getvalue(); st.session_state.epp_step = 2; st.rerun()
+                        else: st.warning("Debe firmar para confirmar.")
+
+            elif st.session_state.epp_step == 2:
+                st.success("✅ Entrega registrada exitosamente.")
+                st.download_button(label="📥 DESCARGAR ACTA RG-SSTGD-01", data=st.session_state.pdf_buffer, file_name=f"EPP_{rut_w}.pdf", mime="application/pdf")
+                st.write("")
+                if st.button("🔄 Finalizar y Limpiar"):
+                    st.session_state.epp_cart = []; st.session_state.epp_step = 1; del st.session_state.pdf_buffer; st.rerun()
+
+    with t2:
+        st.subheader("Gestión de Inventario (Precios y Stock)")
+        current_inv = pd.read_sql("SELECT * FROM inventario_epp", conn)
+        edited_inv = st.data_editor(current_inv, num_rows="dynamic", use_container_width=True, key="inv_editor", column_config={"precio": st.column_config.NumberColumn("Precio Unitario ($)", format="$%d")})
+        if st.button("💾 Guardar Cambios Inventario"):
+            conn.execute("DELETE FROM inventario_epp")
+            for i, r in edited_inv.iterrows():
+                p = r.get('precio', 0); 
+                if pd.isna(p): p = 0
+                conn.execute("INSERT INTO inventario_epp (producto, stock_actual, stock_minimo, ubicacion, precio) VALUES (?,?,?,?,?)", (r['producto'], r['stock_actual'], r['stock_minimo'], r['ubicacion'], int(p)))
+            conn.commit(); st.success("Inventario actualizado."); time.sleep(1); st.rerun()
+            
+    with t3:
+        st.subheader("📜 Historial Detallado")
+        hist_df = pd.read_sql("SELECT fecha_entrega, nombre_trabajador, cargo, lista_productos FROM registro_epp ORDER BY id DESC", conn)
+        st.dataframe(hist_df, use_container_width=True)
+            
+    conn.close()
+
+# --- 7. CAPACITACIONES (CON QR FIXED) ---
+elif menu == "🎓 Capacitaciones":
+    st.markdown("<div class='main-header'>Capacitaciones</div>", unsafe_allow_html=True)
+    t1, t2, t3 = st.tabs(["Nueva", "QR Firma", "Historial"])
+    conn = get_conn()
+    with t1:
+        with st.form("cap"):
+            t = st.text_input("Tema"); tp = st.selectbox("Tipo", ["Inducción", "Charla"]); lug = st.text_input("Lugar"); dur = st.number_input("Horas", 1); rel = st.text_input("Relator")
+            df_p = pd.read_sql("SELECT rut, nombre FROM personal", conn)
+            asis = st.multiselect("Asistentes", df_p['rut'] + " | " + df_p['nombre'])
+            if st.form_submit_button("Guardar"):
+                c = conn.cursor(); c.execute("INSERT INTO capacitaciones (fecha, tema, tipo_actividad, responsable_rut, lugar, duracion) VALUES (?,?,?,?,?,?)", (date.today(), t, tp, rel, lug, dur)); cid = c.lastrowid
+                for a in asis: c.execute("INSERT INTO asistencia_capacitacion (capacitacion_id, trabajador_rut, nombre_trabajador, estado) VALUES (?,?,?,?)", (cid, a.split(" | ")[0], a.split(" | ")[1], "PENDIENTE"))
+                conn.commit(); st.success("OK")
+    with t2:
+        caps = pd.read_sql("SELECT id, tema FROM capacitaciones ORDER BY id DESC", conn)
+        if not caps.empty:
+            sel_qr = st.selectbox("Seleccionar:", caps['id'].astype(str) + " - " + caps['tema'])
+            cap_id = sel_qr.split(" - ")[0]
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect(("8.8.8.8", 80)); ip_local = s.getsockname()[0]; s.close(); default_url = f"http://{ip_local}:8501"
+            except: default_url = "https://tu-app.streamlit.app"
+            st.warning("⚠️ Si estás en Streamlit Cloud, pega la URL de tu navegador abajo:")
+            url_base = st.text_input("URL Base", value=default_url)
+            link = f"{url_base}/?mobile_sign=true&cap_id={cap_id}"
+            if QR_AVAILABLE:
+                qr = qrcode.make(link); b = io.BytesIO(); qr.save(b, format='PNG')
+                st.image(b.getvalue(), width=250)
+            st.write(f"Link: {link}")
+    with t3:
+        caps = pd.read_sql("SELECT * FROM capacitaciones", conn); st.dataframe(caps)
+        sel_pdf = st.selectbox("PDF:", caps['id'].astype(str) + " - " + caps['tema'])
+        if st.button("Generar Lista"):
+            cid = int(sel_pdf.split(" - ")[0])
+            c_data = pd.read_sql("SELECT * FROM capacitaciones WHERE id=?", conn, params=(cid,)).iloc[0]
+            a_data = pd.read_sql("SELECT * FROM asistencia_capacitacion WHERE capacitacion_id=?", conn, params=(cid,)).to_dict('records')
+            pdf = DocumentosLegalesPDF("CAPACITACION", "RG-GD-02").generar_asistencia_capacitacion({'tema':c_data['tema'], 'tipo':c_data['tipo_actividad'], 'resp':c_data['responsable_rut'], 'fecha':c_data['fecha'], 'lugar':c_data['lugar'], 'duracion':c_data['duracion']}, a_data)
+            st.download_button("PDF", pdf.getvalue(), "Lista.pdf")
+    conn.close()
+
+# --- 8. OTROS ---
+elif menu == "🚨 Incidentes & DIAT":
+    st.title("Incidentes"); conn = get_conn()
+    with st.form("inc"):
+        f = st.date_input("Fecha"); d = st.text_area("Descripción"); a = st.text_input("Afectado")
+        if st.form_submit_button("Guardar"): conn.execute("INSERT INTO incidentes (fecha, descripcion, nombre_afectado) VALUES (?,?,?)", (f, d, a)); conn.commit(); st.success("OK")
+    if st.button("Generar DIAT"):
+        pdf = DocumentosLegalesPDF("DIAT", "LEGAL").generar_diat({'nombre': 'Ejemplo', 'rut': '1-9', 'fecha': str(date.today()), 'tipo': 'Accidente', 'descripcion': 'Detalle...'})
+        st.download_button("DIAT", pdf.getvalue(), "DIAT.pdf")
+    conn.close()
+elif menu == "📅 Plan Anual":
+    st.title("Plan Anual"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM programa_anual", conn), key="plan", num_rows="dynamic"); conn.close()
+elif menu == "🧯 Extintores":
+    st.title("Extintores"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM extintores", conn), key="ext", num_rows="dynamic"); conn.close()
+elif menu == "🏗️ Contratistas":
+    st.title("Contratistas"); conn = get_conn(); st.data_editor(pd.read_sql("SELECT * FROM contratistas", conn), key="con", num_rows="dynamic"); conn.close()
+
+# --- 9. GESTIÓN USUARIOS ---
+elif menu == "🔐 Gestión Usuarios":
+    st.markdown("<div class='main-header'>Administración de Usuarios y Accesos</div>", unsafe_allow_html=True)
+    conn = get_conn()
+    try:
+        total_u = pd.read_sql("SELECT count(*) FROM usuarios", conn).iloc[0,0]
+        admins = pd.read_sql("SELECT count(*) FROM usuarios WHERE rol='ADMINISTRADOR'", conn).iloc[0,0]
+    except: total_u=0; admins=0
+    
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Usuarios Totales", total_u)
+    c2.metric("Administradores", admins)
+    c3.metric("Seguridad", "Activa", delta_color="normal")
+    st.divider()
+
+    tab_list, tab_edit, tab_create = st.tabs(["👥 Directorio", "🛠️ Editar / Eliminar", "➕ Nuevo Usuario"])
+    
+    with tab_list:
+        st.subheader("Directorio de Accesos")
+        users_df = pd.read_sql("SELECT username as 'Usuario', rol as 'Rol Asignado' FROM usuarios", conn)
+        st.dataframe(users_df, use_container_width=True, hide_index=True)
+        
+    with tab_edit:
+        st.subheader("Gestión de Cuentas Existentes")
+        all_users = pd.read_sql("SELECT username FROM usuarios", conn)['username'].tolist()
+        user_to_edit = st.selectbox("Seleccione Usuario a gestionar:", all_users)
+        
+        if user_to_edit:
+            st.info(f"Editando a: **{user_to_edit}**")
+            col_a, col_b = st.columns(2)
+            with col_a:
+                with st.form("edit_role"):
+                    st.markdown("##### Cambiar Rol")
+                    new_role = st.selectbox("Nuevo Rol", ["ADMINISTRADOR", "VISOR", "PREVENCIONISTA", "GERENCIA"])
+                    if st.form_submit_button("Actualizar Rol"):
+                        if user_to_edit == "admin" and new_role != "ADMINISTRADOR":
+                            st.error("🚫 No puedes quitarle el rol de admin al superusuario principal.")
+                        else:
+                            conn.execute("UPDATE usuarios SET rol=? WHERE username=?", (new_role, user_to_edit))
+                            conn.commit()
+                            registrar_auditoria(st.session_state['user'], "UPDATE_USER", f"Cambio rol de {user_to_edit} a {new_role}")
+                            st.success("Rol actualizado.")
+                            time.sleep(1)
+                            st.rerun()
+            with col_b:
+                with st.form("reset_pass"):
+                    st.markdown("##### Resetear Contraseña")
+                    new_p1 = st.text_input("Nueva Contraseña", type="password")
+                    new_p2 = st.text_input("Confirmar Contraseña", type="password")
+                    if st.form_submit_button("Cambiar Clave"):
+                        if new_p1 and new_p1 == new_p2:
+                            hashed = hashlib.sha256(new_p1.encode()).hexdigest()
+                            conn.execute("UPDATE usuarios SET password=? WHERE username=?", (hashed, user_to_edit))
+                            conn.commit()
+                            registrar_auditoria(st.session_state['user'], "RESET_PASS", f"Cambio clave de {user_to_edit}")
+                            st.success("Contraseña actualizada exitosamente.")
+                        else:
+                            st.error("Las contraseñas no coinciden o están vacías.")
+            st.divider()
+            with st.expander("🗑️ Zona de Peligro - Eliminar Usuario"):
+                st.warning(f"¿Estás seguro de eliminar a {user_to_edit}? Esta acción no se puede deshacer.")
+                if st.button("SÍ, ELIMINAR CUENTA DEFINITIVAMENTE", type="primary"):
+                    if user_to_edit == st.session_state['user']:
+                        st.error("🚫 No puedes eliminar tu propia cuenta mientras estás logueado.")
+                    elif user_to_edit == "admin":
+                        st.error("🚫 El usuario 'admin' base no puede ser eliminado.")
+                    else:
+                        conn.execute("DELETE FROM usuarios WHERE username=?", (user_to_edit,))
+                        conn.commit()
+                        registrar_auditoria(st.session_state['user'], "DELETE_USER", f"Eliminó al usuario {user_to_edit}")
+                        st.success(f"Usuario {user_to_edit} eliminado.")
+                        time.sleep(1)
+                        st.rerun()
+
+    with tab_create:
+        st.subheader("Registrar Nuevo Acceso")
+        with st.form("create_user_pro"):
+            c1, c2 = st.columns(2)
+            new_u = c1.text_input("Nombre de Usuario (Único)")
+            new_r = c2.selectbox("Rol de Acceso", ["ADMINISTRADOR", "PREVENCIONISTA", "VISOR", "GERENCIA"])
+            c3, c4 = st.columns(2)
+            pass1 = c3.text_input("Contraseña", type="password")
+            pass2 = c4.text_input("Repetir Contraseña", type="password")
+            if st.form_submit_button("Crear Usuario"):
+                if new_u and pass1 and pass2:
+                    if pass1 != pass2:
+                        st.error("❌ Las contraseñas no coinciden.")
+                    else:
+                        try:
+                            exists = pd.read_sql("SELECT username FROM usuarios WHERE username=?", conn, params=(new_u,))
+                            if not exists.empty:
+                                st.error("❌ El usuario ya existe.")
+                            else:
+                                h_pw = hashlib.sha256(pass1.encode()).hexdigest()
+                                conn.execute("INSERT INTO usuarios (username, password, rol) VALUES (?,?,?)", (new_u, h_pw, new_r))
+                                conn.commit()
+                                registrar_auditoria(st.session_state['user'], "CREATE_USER", f"Creó usuario {new_u}")
+                                st.success(f"✅ Usuario {new_u} creado correctamente.")
+                                time.sleep(1)
+                                st.rerun()
+                        except Exception as e:
+                            st.error(f"Error técnico: {e}")
+                else:
+                    st.warning("⚠️ Complete todos los campos obligatorios.")
     conn.close()
