@@ -41,57 +41,17 @@ except ImportError:
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CONFIGURACIÓN GLOBAL Y ESTÉTICA (FULL VISUAL)
+# 1. CONFIGURACIÓN GLOBAL
 # ==============================================================================
-st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️", initial_sidebar_state="expanded")
+st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️", initial_sidebar_state="collapsed")
 
-DB_NAME = 'sgsst_v208_complete.db' 
+DB_NAME = 'sgsst_v209_fixed.db' 
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 BG_IMAGE = "https://i.imgur.com/aHPH6U6.jpeg"
 LOGO_URL = "https://www.maderasgyd.cl/wp-content/uploads/2024/02/logo-maderas-gd-1.png"
 
-# CSS COMPLETO
-st.markdown(f"""
-    <style>
-        #MainMenu {{visibility: hidden;}}
-        header {{visibility: hidden;}}
-        footer {{visibility: hidden;}}
-        .block-container {{padding-top: 1rem !important; padding-bottom: 5rem !important;}}
-        
-        /* FONDO */
-        .stApp {{
-            background-image: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.7)), url("{BG_IMAGE}");
-            background-size: cover;
-            background-position: center;
-            background-attachment: fixed;
-        }}
-        
-        /* CONTENEDOR PRINCIPAL */
-        div[data-testid="column"]:nth-of-type(2) {{
-            background-color: rgba(255, 255, 255, 0.95);
-            border-radius: 15px;
-            padding: 25px !important;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            border-top: 5px solid {COLOR_PRIMARY};
-        }}
-        
-        .logo-box {{display: flex; justify-content: center; margin-bottom: 20px; background: white; padding: 10px; border-radius: 10px;}}
-        
-        /* KPI */
-        .card-kpi {{background-color: #f8f9fa; border-radius: 10px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; border-left: 5px solid {COLOR_PRIMARY}; margin-bottom: 10px;}}
-        .card-kpi h3 {{margin: 0; color: #666; font-size: 1rem;}}
-        .card-kpi h1 {{margin: 0; color: {COLOR_SECONDARY}; font-size: 2rem; font-weight: bold;}}
-        
-        /* CANVAS */
-        div[data-testid="stCanvas"] {{border: 2px solid #a0a0a0 !important; border-radius: 5px; background-color: #ffffff; width: 100% !important; min-height: 150px;}}
-        
-        /* BOTONES */
-        button {{min-height: 45px !important; font-weight: bold !important;}}
-    </style>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-""", unsafe_allow_html=True)
-
+# DICCIONARIO RIESGOS
 ISP_RISK_CODES = {
     "Seguridad": ["Caídas al mismo nivel (A1)", "Caídas de altura (A3)", "Atrapamiento (B1)", "Golpeado por (B2)", "Cortes (B3)", "Atropellos (I1)"],
     "Higiene": ["Ruido (P1)", "Sílice (O1)", "Radiación UV (P5)", "Vibraciones (P2)"],
@@ -103,7 +63,7 @@ ISP_RISK_CODES = {
 LISTA_CARGOS = ["GERENTE GENERAL", "PREVENCIONISTA DE RIESGOS", "JEFE DE PATIO", "OPERADOR DE ASERRADERO", "AYUDANTE", "OPERADOR MAQUINARIA", "MOTOSIERRISTA", "ESTROBERO", "MECANICO", "ADMINISTRATIVO"]
 
 # ==============================================================================
-# 2. CAPA DE DATOS
+# 2. CAPA DE DATOS (SQLITE)
 # ==============================================================================
 def get_conn(): return sqlite3.connect(DB_NAME, check_same_thread=False)
 
@@ -133,6 +93,7 @@ def check_and_add_column(cursor, table_name, column_name, column_type):
 
 def init_db():
     conn = get_conn(); c = conn.cursor()
+    # TABLAS PRINCIPALES
     c.execute('''CREATE TABLE IF NOT EXISTS personal (rut TEXT PRIMARY KEY, nombre TEXT, cargo TEXT, centro_costo TEXT, email TEXT, estado TEXT, fecha_contrato DATE, vigencia_examen_medico DATE, contacto_emergencia TEXT, fono_emergencia TEXT, obs_medica TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iper (id INTEGER PRIMARY KEY AUTOINCREMENT, proceso TEXT, puesto_trabajo TEXT, peligro_factor TEXT, riesgo_asociado TEXT, probabilidad INTEGER, consecuencia INTEGER, vep INTEGER, nivel_riesgo TEXT, medida_control TEXT, familia_riesgo TEXT, codigo_riesgo TEXT, jerarquia_control TEXT, requisito_legal TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS registro_epp (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_entrega DATE, rut_trabajador TEXT, nombre_trabajador TEXT, cargo TEXT, lista_productos TEXT, firma_b64 TEXT)''')
@@ -146,13 +107,15 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS programa_anual (id INTEGER PRIMARY KEY AUTOINCREMENT, actividad TEXT, responsable TEXT, fecha DATE, estado TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS contratistas (id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, rut_empresa TEXT, contacto TEXT, estado_doc TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, usuario TEXT, accion TEXT, detalle TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS periodos_ds67 (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre_periodo TEXT, fecha_inicio DATE, fecha_fin DATE)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS periodos_ds67 (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre_periodo TEXT, masa_promedio INTEGER, dias_perdidos INTEGER)''')
     c.execute('''CREATE TABLE IF NOT EXISTS detalle_mensual_ds67 (id INTEGER PRIMARY KEY AUTOINCREMENT, periodo_id INTEGER, mes INTEGER, anio INTEGER, masa_imponible INTEGER, dias_perdidos INTEGER, invalideces_muertes INTEGER)''')
     c.execute('''CREATE TABLE IF NOT EXISTS conducta_personal (id INTEGER PRIMARY KEY AUTOINCREMENT, rut_trabajador TEXT, fecha DATE, tipo TEXT, descripcion TEXT, gravedad TEXT)''')
 
-    # AUTO REPARACION
+    # AUTO REPARACION DE COLUMNAS
     check_and_add_column(c, "personal", "contacto_emergencia", "TEXT")
+    check_and_add_column(c, "personal", "fono_emergencia", "TEXT")
     check_and_add_column(c, "registro_riohs", "nombre_difusor", "TEXT")
+    check_and_add_column(c, "registro_riohs", "firma_difusor_b64", "TEXT")
     
     if c.execute("SELECT count(*) FROM usuarios").fetchone()[0] == 0:
         c.execute("INSERT INTO usuarios VALUES (?,?,?)", ("admin", hashlib.sha256("1234".encode()).hexdigest(), "ADMINISTRADOR"))
@@ -160,27 +123,8 @@ def init_db():
     conn.commit(); conn.close()
     st.session_state['db_setup_complete'] = True
 
-def registrar_auditoria(usuario, accion, detalle):
-    try:
-        conn = get_conn(); conn.execute("INSERT INTO auditoria (fecha, usuario, accion, detalle) VALUES (?,?,?,?)", (datetime.now(), usuario, accion, detalle)); conn.commit(); conn.close()
-    except: pass
-
-def calcular_nivel_riesgo(vep):
-    if vep <= 2: return "TOLERABLE"
-    elif vep == 4: return "MODERADO"
-    elif vep == 8: return "IMPORTANTE"
-    elif vep >= 16: return "INTOLERABLE"
-    return "NO CLASIFICADO"
-
-def determinar_tramo_cotizacion(tasa):
-    if tasa < 33: return 0.0
-    elif tasa < 66: return 0.34
-    elif tasa < 99: return 0.68
-    elif tasa < 132: return 1.02
-    else: return 3.40
-
 # ==============================================================================
-# 3. MOTOR DOCUMENTAL
+# 3. MOTOR DOCUMENTAL (TEXTOS LEGALES BLINDADOS)
 # ==============================================================================
 class DocumentosLegalesPDF:
     def __init__(self, titulo_doc, codigo_doc):
@@ -222,17 +166,30 @@ class DocumentosLegalesPDF:
 
     def generar_riohs_legal(self, data):
         self._header()
-        txt = f"""Se deja expresa constancia, de acuerdo a lo establecido en el artículo 156 del Código del Trabajo y DS 44 de la Ley 16.744 que, he recibido en forma gratuita un ejemplar del Reglamento Interno de Orden, Higiene y Seguridad de SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA.<br/><br/>
-        Declaro bajo mi firma haber recibido, leído y comprendido el presente Reglamento Interno de Orden, Higiene y Seguridad... mi decisión es la entrega {data['tipo']} al correo {str(data['email']).upper()}"""
-        self.elements.append(Paragraph(txt, self.styles['Justify']))
+        txt_legal_1 = """Se deja expresa constancia, de acuerdo a lo establecido en el artículo 156 del Código del Trabajo y DS 44 de la Ley 16.744 que, he recibido en forma gratuita un ejemplar del Reglamento Interno de Orden, Higiene y Seguridad de SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA."""
+        self.elements.append(Paragraph(txt_legal_1, self.styles['Justify'])); self.elements.append(Spacer(1, 10))
         
-        # FIRMAS
+        txt_legal_2 = """Declaro bajo mi firma haber recibido, leído y comprendido el presente Reglamento Interno de Orden, Higiene y Seguridad, del cual doy fe de conocer el contenido de éste y me hago responsable de su estricto cumplimiento en cada uno de sus artículos, no pudiendo alegar desconocimiento de su texto a contar de esta fecha."""
+        self.elements.append(Paragraph(txt_legal_2, self.styles['Justify'])); self.elements.append(Spacer(1, 10))
+        
+        txt_legal_3 = """Este reglamento puede entregarse en electronico conforme se expresa en ordinario N°1086, del 06/03/15, departamento juridico, de la direccion del trabajo, siendo mi decision que la entrega de este documento se haga de acuerdo a lo siguiente:"""
+        self.elements.append(Paragraph(txt_legal_3, self.styles['Justify'])); self.elements.append(Spacer(1, 5))
+        
+        if "Digital" in data['tipo']:
+            dec = f"<b>EL TRABAJADOR DECIDIO LA RECEPCION DEL RELGAMENTO INTERNO DE ORDEN HIGIENE Y SEGURIDAD DE MANERA DIGITAL AL SIGUIENTE CORREO: {str(data['email']).upper()}</b>"
+        else:
+            dec = "<b>EL TRABAJADOR DECIDIO LA ENTREGA DEL REGLAMENTO INTERNO DE ORDEN HIGIENE Y SEGURIDAD DE MANERA IMPRESA.</b>"
+        self.elements.append(Paragraph(dec, ParagraphStyle('D', alignment=TA_CENTER, fontSize=10))); self.elements.append(Spacer(1, 10))
+        
+        txt_legal_4 = """Asumo mi responsabilidad de dar lectura a su contenido y cumplir con las obligaciones, prohibiciones, normas de orden, higiene y seguridad que en el estan escritas, como asi tambien las dispocisiones y procedimientos que en forma posterior se emitan y/o modifiquen y que formen parte de este reglamento o que expresamente lo indique."""
+        self.elements.append(Paragraph(txt_legal_4, self.styles['Justify'])); self.elements.append(Spacer(1, 20))
+        
         sig_w = RLImage(io.BytesIO(base64.b64decode(data['firma'])), width=180, height=80) if data.get('firma') else Spacer(1,1)
         sig_d = RLImage(io.BytesIO(base64.b64decode(data['firma_dif'])), width=180, height=80) if data.get('firma_dif') else Spacer(1,1)
         
         t = Table([["NOMBRE:", data['nombre']], ["RUT:", data['rut']], ["FECHA:", data['fecha']], ["FIRMA TRABAJADOR:", sig_w], ["DIFUSOR:", data['difusor']], ["FIRMA DIFUSOR:", sig_d]], colWidths=[120, 380], rowHeights=[25,25,25,85,25,85])
         t.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
-        self.elements.append(Spacer(1, 20)); self.elements.append(t); self.doc.build(self.elements); return self.buffer
+        self.elements.append(t); self.doc.build(self.elements); return self.buffer
 
     def generar_epp_legal(self, data):
         self._header()
@@ -245,13 +202,33 @@ class DocumentosLegalesPDF:
             self.elements.append(Paragraph("__________________________<br/>FIRMA TRABAJADOR", ParagraphStyle('C', alignment=TA_CENTER)))
         self.doc.build(self.elements); return self.buffer
 
+    def generar_asistencia_capacitacion(self, data, asis):
+        self._header(); self.elements.append(Paragraph("REGISTRO DE ASISTENCIA A CAPACITACIÓN", self.styles['HeadingBox']))
+        tc = Table([[f"TEMA: {data['tema']}", f"TIPO: {data['tipo']}"], [f"RELATOR: {data['resp']}", f"FECHA: {data['fecha']}"]], colWidths=[260, 260]); tc.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black)]))
+        self.elements.append(tc); self.elements.append(Spacer(1, 15))
+        a_data = [["NOMBRE", "RUT", "FIRMA"]]; row_h = [20]
+        for a in asis: 
+            f_img = ""
+            if a.get('firma_b64'):
+                try: f_img = RLImage(io.BytesIO(base64.b64decode(a['firma_b64'])), width=100, height=30)
+                except: pass
+            a_data.append([a['nombre'], a['rut'], f_img]); row_h.append(40)
+        t = Table(a_data, colWidths=[200, 100, 150], rowHeights=row_h, repeatRows=1); t.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black)]))
+        self.elements.append(t); self.doc.build(self.elements); return self.buffer
+
+    def generar_diat(self, data):
+        self._header(); self.elements.append(Paragraph("DECLARACIÓN INDIVIDUAL DE ACCIDENTE DEL TRABAJO (DIAT)", self.styles['HeadingBox']))
+        self.elements.append(Paragraph(f"AFECTADO: {data['nombre']}", self.styles['Normal']))
+        self.elements.append(Paragraph(f"DESCRIPCIÓN: {data['descripcion']}", self.styles['Normal']))
+        self.doc.build(self.elements); return self.buffer
+
     def generar_reporte_ds67(self, data_ds67):
         self._header(); self.elements.append(Paragraph(f"INFORME DS67 - {data_ds67['periodo']}", self.styles['HeadingBox']))
         self.elements.append(Table([["TASA SINIESTRALIDAD", f"{data_ds67['tasa']:.2f}"], ["COTIZACIÓN ADICIONAL", f"{data_ds67['cot']:.2f}%"]], colWidths=[250, 250], style=TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black)])))
         self.doc.build(self.elements); return self.buffer
 
 # ==============================================================================
-# 4. INTERFAZ (LOGIN RESTAURADO)
+# 4. INTERFAZ (LOGIN CON ESTÉTICA RESTAURADA)
 # ==============================================================================
 init_db()
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
@@ -277,6 +254,10 @@ with st.sidebar:
     with open(DB_NAME, "rb") as fp: st.download_button("💾 Respaldar Base de Datos", fp, f"backup_{date.today()}.db", mime="application/x-sqlite3")
     menu = st.radio("NAVEGACIÓN", ["📊 Dashboard", "👥 Gestión Personas", "⚖️ Gestión DS67", "🛡️ Matriz Riesgos", "⚖️ Gestor Documental", "🦺 Logística EPP", "🎓 Capacitaciones", "🚨 Incidentes", "📅 Plan Anual", "🧯 Extintores", "🏗️ Contratistas", "🔐 Gestión Usuarios"])
     if st.button("Salir"): st.session_state['logged_in'] = False; st.rerun()
+
+# --- ESTILOS CSS MAIN APP (FONDO LIMPIO) ---
+# Se inyecta CSS limpio para el resto de la app para que no herede el fondo del login
+st.markdown("""<style>.stApp {background-image: none; background-color: #ffffff;}</style>""", unsafe_allow_html=True)
 
 # ==============================================================================
 # 5. MÓDULOS (TODOS RESTAURADOS)
@@ -364,17 +345,24 @@ elif menu == "⚖️ Gestor Documental":
                 pdf = DocumentosLegalesPDF("IRL DS 44", "RG-IRL-02").generar_irl_master({'nombre':w_data['nombre'], 'rut':rut, 'cargo':w_data['cargo'], 'fecha':str(date.today()), 'mutual':'ACHS', 'entorno':ent, 'centro_urgencia':'Clínica', 'centro_direccion':'Centro', 'p1':p1, 'p2':p2}, riesgos)
                 st.download_button("Descargar PDF", pdf.getvalue(), "IRL.pdf")
     with t2:
-        sel_r = st.selectbox("Personal:", df_p['rut'] + " | " + df_p['nombre'], key="rs")
-        rut_r = sel_r.split(" | ")[0]; wr = df_p[df_p['rut']==rut_r].iloc[0]
-        tipo = st.radio("Tipo:", ["Físico", "Digital"]); dif = st.text_input("Difusor")
-        c1, c2 = st.columns(2)
-        with c1: st.write("Trabajador"); sw = st_canvas(height=150, width=400, key="sw")
-        with c2: st.write("Difusor"); sd = st_canvas(height=150, width=400, key="sd")
-        if st.button("Generar Acta RIOHS"):
-            imw = process_signature_bg(sw.image_data); bw = io.BytesIO(); imw.save(bw, format='PNG'); sigw = base64.b64encode(bw.getvalue()).decode()
-            imd = process_signature_bg(sd.image_data); bd = io.BytesIO(); imd.save(bd, format='PNG'); sigd = base64.b64encode(bd.getvalue()).decode()
-            pdf = DocumentosLegalesPDF("ACTA RIOHS", "RG-RI-03").generar_riohs_legal({'nombre':wr['nombre'], 'rut':rut_r, 'fecha':str(date.today()), 'cargo':wr['cargo'], 'tipo':tipo, 'email':wr['email'], 'difusor':dif, 'firma':sigw, 'firma_dif':sigd})
-            st.download_button("Descargar Acta", pdf.getvalue(), "RIOHS.pdf")
+        if not df_p.empty:
+            sel_r = st.selectbox("Personal:", df_p['rut'] + " | " + df_p['nombre'], key="rs")
+            rut_r = sel_r.split(" | ")[0]
+            if not df_p[df_p['rut']==rut_r].empty:
+                wr = df_p[df_p['rut']==rut_r].iloc[0]
+                tipo = st.radio("Tipo:", ["Físico", "Digital"]); dif = st.text_input("Difusor")
+                c1, c2 = st.columns(2)
+                with c1: st.write("Trabajador"); sw = st_canvas(height=150, width=400, key="sw")
+                with c2: st.write("Difusor"); sd = st_canvas(height=150, width=400, key="sd")
+                if st.button("Generar Acta RIOHS"):
+                    imw = process_signature_bg(sw.image_data); bw = io.BytesIO(); imw.save(bw, format='PNG'); sigw = base64.b64encode(bw.getvalue()).decode()
+                    imd = process_signature_bg(sd.image_data); bd = io.BytesIO(); imd.save(bd, format='PNG'); sigd = base64.b64encode(bd.getvalue()).decode()
+                    pdf = DocumentosLegalesPDF("ACTA RIOHS", "RG-RI-03").generar_riohs_legal({'nombre':wr['nombre'], 'rut':rut_r, 'fecha':str(date.today()), 'cargo':wr['cargo'], 'tipo':tipo, 'email':wr['email'], 'difusor':dif, 'firma':sigw, 'firma_dif':sigd})
+                    st.download_button("Descargar Acta", pdf.getvalue(), "Acta_RIOHS.pdf")
+            else:
+                st.warning("Seleccione un trabajador válido")
+        else:
+            st.warning("No hay personal para generar RIOHS")
     conn.close()
 
 elif menu == "🦺 Logística EPP":
@@ -382,14 +370,16 @@ elif menu == "🦺 Logística EPP":
     conn = get_conn(); t1, t2 = st.tabs(["Entrega", "Inventario"])
     with t1:
         df_p = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
-        sel = st.selectbox("Personal:", df_p['rut'] + " | " + df_p['nombre'])
-        rut = sel.split(" | ")[0]; cargo = df_p[df_p['rut']==rut]['cargo'].values[0]
-        lista = st.text_area("Lista EPP", "Zapatos de Seguridad, Casco, Lentes")
-        st.write("Firma:"); canvas = st_canvas(height=150, width=400, key="epp")
-        if st.button("Generar Acta EPP"):
-            img = process_signature_bg(canvas.image_data); b = io.BytesIO(); img.save(b, format='PNG'); sig = base64.b64encode(b.getvalue()).decode()
-            pdf = DocumentosLegalesPDF("ENTREGA EPP", "RG-EPP-01").generar_epp_legal({'nombre':sel.split("|")[1], 'rut':rut, 'cargo':cargo, 'fecha':str(date.today()), 'lista':lista, 'firma':sig})
-            st.download_button("Descargar PDF", pdf.getvalue(), "EPP.pdf")
+        if not df_p.empty:
+            sel = st.selectbox("Personal:", df_p['rut'] + " | " + df_p['nombre'])
+            rut = sel.split(" | ")[0]; cargo = df_p[df_p['rut']==rut]['cargo'].values[0]
+            lista = st.text_area("Lista EPP", "Zapatos de Seguridad, Casco, Lentes")
+            st.write("Firma:"); canvas = st_canvas(height=150, width=400, key="epp")
+            if st.button("Generar Acta EPP"):
+                img = process_signature_bg(canvas.image_data); b = io.BytesIO(); img.save(b, format='PNG'); sig = base64.b64encode(b.getvalue()).decode()
+                pdf = DocumentosLegalesPDF("ENTREGA EPP", "RG-EPP-01").generar_epp_legal({'nombre':sel.split("|")[1], 'rut':rut, 'cargo':cargo, 'fecha':str(date.today()), 'lista':lista, 'firma':sig})
+                st.download_button("Descargar PDF", pdf.getvalue(), "EPP.pdf")
+        else: st.warning("No hay personal")
     with t2:
         dfi = pd.read_sql("SELECT * FROM inventario_epp", conn)
         ed = st.data_editor(dfi, num_rows="dynamic")
@@ -408,9 +398,10 @@ elif menu == "🎓 Capacitaciones":
             if st.form_submit_button("Crear"): conn.execute("INSERT INTO capacitaciones (fecha, tema, relator) VALUES (?,?,?)", (date.today(), t, r)); conn.commit(); st.success("OK")
     with t2:
         caps = pd.read_sql("SELECT * FROM capacitaciones", conn)
-        sel = st.selectbox("Curso:", caps['id'].astype(str) + " - " + caps['tema'])
-        pdf = DocumentosLegalesPDF("LISTA", "RG-CAP").generar_asistencia_capacitacion({'tema':sel, 'tipo':'Charla', 'resp':'Prevencion', 'fecha':str(date.today())}, [])
-        st.download_button("Descargar Lista Vacía", pdf.getvalue(), "Lista.pdf")
+        if not caps.empty:
+            sel = st.selectbox("Curso:", caps['id'].astype(str) + " - " + caps['tema'])
+            pdf = DocumentosLegalesPDF("LISTA", "RG-CAP").generar_asistencia_capacitacion({'tema':sel, 'tipo':'Charla', 'resp':'Prevencion', 'fecha':str(date.today())}, [])
+            st.download_button("Descargar Lista Vacía", pdf.getvalue(), "Lista.pdf")
     conn.close()
 
 elif menu == "🚨 Incidentes":
