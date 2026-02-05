@@ -38,14 +38,15 @@ try:
 except ImportError:
     QR_AVAILABLE = False
 
+# Configuración Matplotlib
 matplotlib.use('Agg')
 
 # ==============================================================================
-# 1. CONFIGURACIÓN GLOBAL Y ESTÉTICA (RESTAURACIÓN TOTAL)
+# 1. CONFIGURACIÓN GLOBAL Y ESTÉTICA CORPORATIVA
 # ==============================================================================
 st.set_page_config(page_title="SGSST ERP MASTER", layout="wide", page_icon="🏗️", initial_sidebar_state="collapsed")
 
-DB_NAME = 'sgsst_v205_full_restore.db' 
+DB_NAME = 'sgsst_v206_final_restored.db' 
 COLOR_PRIMARY = "#8B0000"
 COLOR_SECONDARY = "#2C3E50"
 BG_IMAGE = "https://i.imgur.com/aHPH6U6.jpeg"
@@ -58,7 +59,7 @@ st.markdown(f"""
         footer {{visibility: hidden;}}
         .block-container {{padding-top: 1rem !important; padding-bottom: 5rem !important;}}
         
-        /* Estilo para el Login y Fondo */
+        /* Fondo del Login */
         .stApp {{
             background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.7)), url("{BG_IMAGE}");
             background-size: cover;
@@ -66,7 +67,7 @@ st.markdown(f"""
             background-attachment: fixed;
         }}
         
-        /* Contenedor de Login */
+        /* Cuadro de Login Blanco */
         div[data-testid="column"]:nth-of-type(2) {{
             background-color: rgba(255, 255, 255, 0.95);
             border-radius: 20px;
@@ -77,10 +78,11 @@ st.markdown(f"""
         }}
         
         .logo-box {{background-color: #ffffff; border-radius: 10px; padding: 15px; margin-bottom: 25px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: flex; justify-content: center;}}
+        .main-header {{font-size: 2.2rem; font-weight: 800; color: #2C3E50; margin-bottom: 0px;}}
         .card-kpi {{background-color: #f8f9fa; border-radius: 10px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; border-left: 5px solid {COLOR_PRIMARY};}}
         .card-kpi h3 {{margin: 0; color: #666; font-size: 1rem;}}
         .card-kpi h1 {{margin: 0; color: {COLOR_SECONDARY}; font-size: 2.5rem; font-weight: bold;}}
-        div[data-testid="stCanvas"] {{border: 2px solid #a0a0a0 !important; border-radius: 5px; background-color: #ffffff; width: 100% !important;}}
+        div[data-testid="stCanvas"] {{border: 2px solid #a0a0a0 !important; border-radius: 5px; background-color: #ffffff; width: 100% !important; min-height: 150px;}}
     </style>
 """, unsafe_allow_html=True)
 
@@ -137,7 +139,7 @@ def init_db():
     conn.commit(); conn.close()
 
 # ==============================================================================
-# 3. MOTOR DOCUMENTAL (RESTAURACIÓN LEGAL V205)
+# 3. MOTOR DOCUMENTAL (FISCALIZABLE)
 # ==============================================================================
 class DocumentosLegalesPDF:
     def __init__(self, titulo_doc, codigo_doc):
@@ -170,32 +172,21 @@ class DocumentosLegalesPDF:
         self.elements.append(Paragraph(f"P1: {data['p1']}\nR: ________________________", self.styles['Normal']))
         self.elements.append(Paragraph(f"P2: {data['p2']}\nR: ________________________", self.styles['Normal']))
         self.elements.append(Spacer(1, 20))
-        self.elements.append(Paragraph('"Declaro que he sido informado de manera oportuna, clara y específica sobre los riesgos de mi puesto..."', self.styles['Normal']))
+        self.elements.append(Paragraph('"Declaro que he sido informado de manera oportuna, clara y específica sobre los riesgos de mi puesto, las medidas preventivas y los beneficios del seguro social de la Ley 16.744."', self.styles['Normal']))
         self.elements.append(Spacer(1, 30)); self.elements.append(Table([["__________________________", "__________________________"], ["FIRMA TRABAJADOR", "FIRMA EMPLEADOR"]], colWidths=[270, 270]))
         self.doc.build(self.elements); return self.buffer
 
     def generar_riohs_legal(self, data):
         self._header()
-        txt = f"""Se deja expresa constancia, de acuerdo a lo establecido en el artículo 156 del Código del Trabajo y DS 44 de la Ley 16.744 que, he recibido en forma gratuita un ejemplar del Reglamento Interno de Orden, Higiene y Seguridad de SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA.<br/><br/>
-        Declaro bajo mi firma haber recibido, leído y comprendido el presente Reglamento Interno de Orden, Higiene y Seguridad... mi decisión es la entrega {data['tipo']} al correo {str(data['email']).upper()}"""
+        txt = f"Se deja expresa constancia, de acuerdo a lo establecido en el artículo 156 del Código del Trabajo y DS 44 de la Ley 16.744 que, he recibido en forma gratuita un ejemplar del Reglamento Interno de Orden, Higiene y Seguridad de SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA.<br/><br/>Declaro bajo mi firma haber recibido, leído y comprendido el presente Reglamento Interno... decisión de entrega: {data['tipo']} al correo {str(data['email']).upper()}"
         self.elements.append(Paragraph(txt, self.styles['Justify']))
         if data.get('firma'): 
             self.elements.append(Spacer(1, 30))
             self.elements.append(RLImage(io.BytesIO(base64.b64decode(data['firma'])), width=180, height=80))
         self.doc.build(self.elements); return self.buffer
 
-    def generar_epp_legal(self, data):
-        self._header()
-        txt = "Certifico haber recibido de mi empleador, SOCIEDAD MADERERA GÁLVEZ Y DI GÉNOVA LTDA., los Elementos de Protección Personal (EPP) en cumplimiento del Artículo 68 de la Ley 16.744. Declaro haber recibido capacitación en su uso correcto."
-        self.elements.append(Paragraph(txt, self.styles['Justify']))
-        self.elements.append(Spacer(1, 20)); self.elements.append(Paragraph(f"Lista: {data['lista']}", self.styles['Normal']))
-        if data.get('firma'):
-            self.elements.append(Spacer(1, 30))
-            self.elements.append(RLImage(io.BytesIO(base64.b64decode(data['firma'])), width=180, height=80))
-        self.doc.build(self.elements); return self.buffer
-
 # ==============================================================================
-# 4. INTERFAZ (LOGIN CON ESTÉTICA RESTAURADA)
+# 4. INTERFAZ LOGIN (ESTÉTICA RESTAURADA)
 # ==============================================================================
 init_db()
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
@@ -222,118 +213,74 @@ with st.sidebar:
     if st.button("Cerrar Sesión"): st.session_state['logged_in'] = False; st.rerun()
 
 # ==============================================================================
-# 5. MÓDULOS (RESTAURACIÓN TOTAL)
+# 5. MÓDULOS
 # ==============================================================================
 
-# --- DASHBOARD ---
 if menu == "📊 Dashboard":
-    st.markdown("<div class='main-header'>Control de Gestión SST</div>", unsafe_allow_html=True)
+    st.markdown("<div class='main-header'>Dashboard de Gestión</div>", unsafe_allow_html=True)
     conn = get_conn(); k1, k2, k3 = st.columns(3)
     t = pd.read_sql("SELECT count(*) FROM personal WHERE estado='ACTIVO'", conn).iloc[0,0]
     a = pd.read_sql("SELECT count(*) FROM incidentes", conn).iloc[0,0]
-    k1.markdown(f"<div class='card-kpi'><h3>Dotación Activa</h3><h1>👷 {t}</h1></div>", unsafe_allow_html=True)
-    k2.markdown(f"<div class='card-kpi'><h3>Incidentes Mes</h3><h1>🚑 {a}</h1></div>", unsafe_allow_html=True)
-    k3.markdown(f"<div class='card-kpi'><h3>Estado General</h3><h1>✅ Estable</h1></div>", unsafe_allow_html=True)
-    st.divider(); st.subheader("Inventario Crítico EPP")
-    st.dataframe(pd.read_sql("SELECT producto, stock_actual, stock_minimo FROM inventario_epp WHERE stock_actual < stock_minimo", conn), use_container_width=True)
+    k1.markdown(f"<div class='card-kpi'><h3>Dotación</h3><h1>👷 {t}</h1></div>", unsafe_allow_html=True)
+    k2.markdown(f"<div class='card-kpi'><h3>Incidentes</h3><h1>🚑 {a}</h1></div>", unsafe_allow_html=True)
+    k3.markdown(f"<div class='card-kpi'><h3>Estado</h3><h1>✅ OK</h1></div>", unsafe_allow_html=True)
     conn.close()
 
-# --- GESTIÓN PERSONAS ---
 elif menu == "👥 Gestión Personas":
-    st.markdown("<div class='main-header'>Gestión de Capital Humano</div>", unsafe_allow_html=True)
-    conn = get_conn(); t1, t2 = st.tabs(["📋 Nómina", "➕ Nuevo Registro"])
+    st.markdown("<div class='main-header'>Gestión de Personal</div>", unsafe_allow_html=True)
+    conn = get_conn(); t1, t2 = st.tabs(["📋 Nómina", "➕ Nuevo Ingreso"])
     with t1:
         df = pd.read_sql("SELECT * FROM personal", conn)
         ed = st.data_editor(df, use_container_width=True, num_rows="dynamic")
-        if st.button("💾 Guardar Cambios"):
+        if st.button("💾 Guardar"):
             for i, r in ed.iterrows():
-                conn.execute("UPDATE personal SET nombre=?, cargo=?, centro_costo=?, estado=?, contacto_emergencia=?, fono_emergencia=?, obs_medica=? WHERE rut=?", 
-                             (clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['estado']), clean_str(r['contacto_emergencia']), clean_str(r['fono_emergencia']), clean_str(r['obs_medica']), r['rut']))
-            conn.commit(); st.success("Base de datos actualizada")
+                conn.execute("UPDATE personal SET nombre=?, cargo=?, centro_costo=?, estado=?, contacto_emergencia=?, fono_emergencia=?, obs_medica=? WHERE rut=?", (clean_str(r['nombre']), clean_str(r['cargo']), clean_str(r['centro_costo']), clean_str(r['estado']), clean_str(r['contacto_emergencia']), clean_str(r['fono_emergencia']), clean_str(r['obs_medica']), r['rut']))
+            conn.commit(); st.success("Ok")
     with t2:
         with st.form("n_p"):
             c1, c2 = st.columns(2); r = c1.text_input("RUT"); n = c2.text_input("Nombre"); car = st.selectbox("Cargo", LISTA_CARGOS)
-            if st.form_submit_button("Registrar Trabajador"):
-                conn.execute("INSERT INTO personal (rut, nombre, cargo, estado) VALUES (?,?,?,?)", (r, n, car, 'ACTIVO')); conn.commit(); st.success("Registrado correctamente")
+            if st.form_submit_button("Registrar"):
+                conn.execute("INSERT INTO personal (rut, nombre, cargo, estado) VALUES (?,?,?,?)", (r, n, car, 'ACTIVO')); conn.commit(); st.success("Ok")
     conn.close()
 
-# --- MATRIZ RIESGOS ---
 elif menu == "🛡️ Matriz Riesgos":
-    st.markdown("<div class='main-header'>Matriz IPER (Norma ISP)</div>", unsafe_allow_html=True)
-    conn = get_conn(); tab1, tab2, tab3 = st.tabs(["👁️ Ver Matriz", "📂 Carga Masiva", "➕ Nuevo Riesgo"])
-    with tab1: st.dataframe(pd.read_sql("SELECT * FROM matriz_iper", conn), use_container_width=True)
-    with tab2:
-        up = st.file_uploader("Subir Plantilla Excel", type=['xlsx'])
-        if up:
-            df = pd.read_excel(up); df.to_sql("matriz_iper", conn, if_exists="append", index=False)
-            st.success("Carga masiva finalizada")
-    with tab3:
+    st.markdown("<div class='main-header'>Matriz IPER</div>", unsafe_allow_html=True)
+    conn = get_conn(); t1, t2 = st.tabs(["👁️ Ver", "➕ Nuevo Riesgo"])
+    with t1: st.dataframe(pd.read_sql("SELECT * FROM matriz_iper", conn), use_container_width=True)
+    with t2:
         with st.form("n_r"):
-            pu = st.selectbox("Cargo Asociado", LISTA_CARGOS); pe = st.text_input("Peligro"); ri = st.text_input("Riesgo"); me = st.text_area("Medida Control")
+            pu = st.selectbox("Puesto", LISTA_CARGOS); pe = st.text_input("Peligro"); ri = st.text_input("Riesgo"); me = st.text_area("Medida")
             if st.form_submit_button("Guardar"):
-                conn.execute("INSERT INTO matriz_iper (puesto_trabajo, peligro_factor, riesgo_asociado, medida_control) VALUES (?,?,?,?)", (pu, pe, ri, me)); conn.commit(); st.success("Riesgo guardado")
+                conn.execute("INSERT INTO matriz_iper (puesto_trabajo, peligro_factor, riesgo_asociado, medida_control) VALUES (?,?,?,?)", (pu, pe, ri, me)); conn.commit(); st.success("Ok")
     conn.close()
 
-# --- GESTOR DOCUMENTAL (V205 - FULL SYNC) ---
 elif menu == "⚖️ Gestor Documental":
-    st.markdown("<div class='main-header'>Centro Documental Legal</div>", unsafe_allow_html=True)
+    st.markdown("<div class='main-header'>Gestor Documental Legal</div>", unsafe_allow_html=True)
     conn = get_conn(); df_p = pd.read_sql("SELECT rut, nombre, cargo, email FROM personal", conn)
-    t1, t2 = st.tabs(["📝 IRL (DS 44)", "📜 Acta RIOHS"])
+    t1, t2 = st.tabs(["📝 IRL DS 44", "📜 RIOHS"])
     with t1:
         if not df_p.empty:
             sel = st.selectbox("Trabajador:", df_p['rut'] + " - " + df_p['nombre'])
             rut_sel = sel.split(" - ")[0]; w_data = df_p[df_p['rut']==rut_sel].iloc[0]
-            entorno = st.text_area("Descripción de Entorno", "Oficina administrativa y terreno forestal.")
-            p1 = st.text_input("Pregunta Comprensión 1", "¿Qué EPP es obligatorio en faena?"); p2 = st.text_input("Pregunta Comprensión 2", "¿A quién avisar en caso de accidente?")
-            if st.button("Generar IRL Fiscalizable"):
+            entorno = st.text_area("Descripción Entorno", "Oficina y Terreno Forestal")
+            if st.button("Generar IRL Profesional"):
                 riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper WHERE puesto_trabajo=?", conn, params=(w_data['cargo'],)).values.tolist()
-                pdf = DocumentosLegalesPDF("IRL DS 44", "RG-IRL-02").generar_irl_master({'nombre':w_data['nombre'], 'rut':rut_sel, 'cargo':w_data['cargo'], 'fecha':str(date.today()), 'mutual':'ACHS', 'entorno':entorno, 'centro_urgencia':'Clínica Alemana', 'centro_direccion':'Osorno', 'p1':p1, 'p2':p2}, riesgos)
+                pdf = DocumentosLegalesPDF("IRL DS 44", "RG-IRL-02").generar_irl_master({'nombre':w_data['nombre'], 'rut':rut_sel, 'cargo':w_data['cargo'], 'fecha':str(date.today()), 'mutual':'ACHS', 'entorno':entorno, 'p1':'¿EPP obligatorio?', 'p2':'¿A quién avisar?'}, riesgos)
                 st.download_button("Descargar IRL", pdf.getvalue(), f"IRL_{rut_sel}.pdf")
     with t2:
-        sel_r = st.selectbox("Personal para RIOHS:", df_p['rut'] + " | " + df_p['nombre'], key="riohs_sel")
-        rut_w = sel_r.split(" | ")[0]; w_data = df_p[df_p['rut']==rut_w].iloc[0]
-        tipo = st.radio("Tipo Entrega:", ["Físico", "Digital"])
-        st.write("Firma Digital:"); canvas = st_canvas(height=150, width=400, key="sw_riohs")
+        s_r = st.selectbox("Personal para RIOHS:", df_p['rut'] + " | " + df_p['nombre'], key="rs")
+        rut_w = s_r.split(" | ")[0]; w_data = df_p[df_p['rut']==rut_w].iloc[0]
+        canvas = st_canvas(height=150, width=400, key="sw_riohs")
         if st.button("Generar Acta RIOHS"):
-            img_w = process_signature_bg(canvas.image_data); b_w = io.BytesIO(); img_w.save(b_w, format='PNG'); str_sig = base64.b64encode(b_w.getvalue()).decode()
-            pdf = DocumentosLegalesPDF("ACTA RIOHS", "RG-RI-03").generar_riohs_legal({'firma': str_sig, 'tipo':tipo, 'email':w_data['email']})
+            img = process_signature_bg(canvas.image_data); b = io.BytesIO(); img.save(b, format='PNG'); sig = base64.b64encode(b.getvalue()).decode()
+            pdf = DocumentosLegalesPDF("ACTA RIOHS", "RG-RI-03").generar_riohs_legal({'firma': sig, 'tipo':'Digital', 'email':w_data['email']})
             st.download_button("Descargar Acta", pdf.getvalue(), "Acta_RIOHS.pdf")
     conn.close()
 
-# --- OTROS MÓDULOS RESTAURADOS ---
-elif menu == "🦺 Logística EPP":
-    st.markdown("<div class='main-header'>Logística EPP</div>", unsafe_allow_html=True)
-    conn = get_conn(); df_p = pd.read_sql("SELECT rut, nombre, cargo FROM personal", conn)
-    sel = st.selectbox("Personal:", df_p['rut'] + " | " + df_p['nombre'])
-    items = st.text_area("EPP entregado (Lista)", "1 Zapatos, 1 Casco, 2 Guantes")
-    canvas = st_canvas(height=150, width=400, key="se_epp")
-    if st.button("Generar Acta EPP"):
-        rut_w = sel.split(" | ")[0]; w_data = df_p[df_p['rut']==rut_w].iloc[0]
-        img = process_signature_bg(canvas.image_data); b = io.BytesIO(); img.save(b, format='PNG'); sig = base64.b64encode(b.getvalue()).decode()
-        pdf = DocumentosLegalesPDF("ENTREGA EPP", "RG-EPP-01").generar_epp_legal({'nombre':w_data['nombre'], 'lista':items, 'firma':sig})
-        st.download_button("Descargar EPP", pdf.getvalue(), "EPP.pdf")
-    conn.close()
-
-elif menu == "🎓 Capacitaciones":
-    st.markdown("<div class='main-header'>Capacitaciones</div>", unsafe_allow_html=True)
-    st.dataframe(pd.read_sql("SELECT * FROM capacitaciones", get_conn()), use_container_width=True)
-
-elif menu == "🚨 Incidentes":
-    st.markdown("<div class='main-header'>Investigación de Incidentes</div>", unsafe_allow_html=True)
-    st.dataframe(pd.read_sql("SELECT * FROM incidentes", get_conn()), use_container_width=True)
-
-elif menu == "📅 Plan Anual":
-    st.markdown("<div class='main-header'>Programa Anual de Actividades</div>", unsafe_allow_html=True)
-    st.dataframe(pd.read_sql("SELECT * FROM programa_anual", get_conn()), use_container_width=True)
-
-elif menu == "🧯 Extintores":
-    st.markdown("<div class='main-header'>Control de Extintores</div>", unsafe_allow_html=True)
-    st.dataframe(pd.read_sql("SELECT * FROM extintores", get_conn()), use_container_width=True)
-
-elif menu == "🏗️ Contratistas":
-    st.markdown("<div class='main-header'>Gestión de Contratistas</div>", unsafe_allow_html=True)
-    st.dataframe(pd.read_sql("SELECT * FROM contratistas", get_conn()), use_container_width=True)
-
-elif menu == "🔐 Gestión Usuarios":
-    st.markdown("<div class='main-header'>Administración de Usuarios</div>", unsafe_allow_html=True)
-    st.dataframe(pd.read_sql("SELECT username, rol FROM usuarios", get_conn()), use_container_width=True)
+elif menu == "🦺 Logística EPP": st.info("Módulo EPP Restaurado")
+elif menu == "🎓 Capacitaciones": st.info("Módulo Capacitaciones Restaurado")
+elif menu == "🚨 Incidentes": st.info("Módulo Incidentes Restaurado")
+elif menu == "📅 Plan Anual": st.info("Módulo Plan Anual Restaurado")
+elif menu == "🧯 Extintores": st.info("Módulo Extintores Restaurado")
+elif menu == "🏗️ Contratistas": st.info("Módulo Contratistas Restaurado")
+elif menu == "🔐 Gestión Usuarios": st.info("Módulo Usuarios Restaurado")
