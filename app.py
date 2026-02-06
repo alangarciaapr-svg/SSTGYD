@@ -6,6 +6,8 @@ import io
 import hashlib
 import time
 import base64
+import zipfile
+import mimetypes
 import ast
 import socket
 from urllib.request import urlopen
@@ -256,6 +258,26 @@ def init_db():
         nombre_trabajador TEXT,
         tipo_entrega TEXT,
         firma_b64 TEXT
+    )''')
+
+    # --- REPOSITORIO DOCUMENTAL (V186+) ---
+    c.execute('''CREATE TABLE IF NOT EXISTS documentos_generales (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fecha_carga DATETIME,
+        nombre_doc TEXT,
+        categoria TEXT,
+        rut_trabajador TEXT,
+        nombre_trabajador TEXT,
+        cargo_trabajador TEXT,
+        fecha_documento DATE,
+        fecha_vencimiento DATE,
+        estado TEXT,
+        tags TEXT,
+        notas TEXT,
+        archivo_nombre TEXT,
+        archivo_mime TEXT,
+        archivo_blob BLOB,
+        usuario_carga TEXT
     )''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS incidentes (
@@ -1723,35 +1745,303 @@ elif menu == "👥 Gestión Personas":
 # ==============================================================================
 elif menu == "⚖️ Gestor Documental":
     st.markdown("<div class='main-header'>Centro Documental</div>", unsafe_allow_html=True)
-    t1, t2, t3 = st.tabs(["IRL", "RIOHS", "Historial"])
+
+    # Tabs: mantenemos lo existente y agregamos un repositorio documental + utilidades
+    t_repo, t_irl, t_riohs, t_hist = st.tabs(["📁 Repositorio", "IRL", "RIOHS", "📜 Historial RIOHS"])
+
     conn = get_conn()
-    df_p = pd.read_sql("SELECT rut, nombre, cargo, email FROM personal", conn)
+    df_p = pd.read_sql("SELECT rut, nombre, cargo, email, estado FROM personal", conn)
 
-    if df_p.empty:
-        st.warning("⚠️ No hay trabajadores registrados. Vaya a 'Gestión Personas' para agregar.")
-    else:
-        with t1:
-            sel = st.selectbox("Trabajador:", df_p['rut'] + " - " + df_p['nombre'] + " (" + df_p['cargo'] + ")")
+    # ----------------------------
+    # Helpers (solo UI / no rompe lógica existente)
+    # ----------------------------
+    def _safe_date(val):
+        """Devuelve date o None."""
+        try:
+            if val is None or str(val).strip() in ["", "None", "nan", "NaT"]:
+                return None
+            return pd.to_datetime(val, errors="coerce").date()
+        except Exception:
+            return None
 
-            if st.button("Generar IRL"):
-                rut_sel = sel.split(" - ")[0]
-                w_data = pd.read_sql("SELECT nombre, cargo FROM personal WHERE rut=?", conn, params=(rut_sel,)).iloc[0]
-                cargo_real = w_data['cargo']
+    def _estado_por_vencimiento(fv):
+        if not fv:
+            return "SIN VENCIMIENTO"
+        hoy = date.today()
+        if fv < hoy:
+            return "VENCIDO"
+        if fv <= hoy + timedelta(days=30):
+            return "POR VENCER (30D)"
+        return "VIGENTE"
 
-                riesgos_df = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper WHERE puesto_trabajo=?",
-                                         conn, params=(cargo_real,))
+    # ============================
+    # 0) REPOSITORIO DOCUMENTAL
+    # ============================
+    with t_repo:
+        st.subheader("📁 Repositorio Documental (Archivos + Vencimientos)")
 
-                if riesgos_df.empty:
-                    st.warning(f"⚠️ No se encontraron riesgos específicos para el cargo: {cargo_real}. Se usarán genéricos.")
-                    riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper LIMIT 3", conn)
+        # KPI barra superior
+        try:
+            docs_df = pd.read_sql("""SELECT id, fecha_carga, nombre_doc, categoria, rut_trabajador, nombre_trabajador,
+                                            cargo_trabajador, fecha_documento, fecha_vencimiento, estado, tags, notas,
+                                            archivo_nombre, archivo_mime, usuario_carga
+                                     FROM documentos_generales
+                                     ORDER BY id DESC""", conn)
+        except Exception:
+            docs_df = pd.DataFrame()
+
+        # Recalcular estados en pantalla (sin alterar DB automáticamente)
+        if not docs_df.empty:
+            docs_df["fecha_documento"] = pd.to_datetime(docs_df["fecha_documento"], errors="coerce")
+            docs_df["fecha_vencimiento"] = pd.to_datetime(docs_df["fecha_vencimiento"], errors="coerce")
+            docs_df["ESTADO_CALC"] = docs_df["fecha_vencimiento"].apply(lambda x: _estado_por_vencimiento(x.date()) if pd.notnull(x) else "SIN VENCIMIENTO")
+        else:
+            docs_df["ESTADO_CALC"] = []
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Documentos", int(len(docs_df)) if not docs_df.empty else 0)
+        if not docs_df.empty:
+            c2.metric("Vencidos", int((docs_df["ESTADO_CALC"] == "VENCIDO").sum()))
+            c3.metric("Por vencer (30D)", int((docs_df["ESTADO_CALC"] == "POR VENCER (30D)").sum()))
+            c4.metric("Vigentes", int((docs_df["ESTADO_CALC"] == "VIGENTE").sum()))
+        else:
+            c2.metric("Vencidos", 0); c3.metric("Por vencer (30D)", 0); c4.metric("Vigentes", 0)
+
+        st.divider()
+
+        # -------- Formulario carga --------
+        with st.expander("➕ Cargar nuevo documento", expanded=True):
+            col_a, col_b, col_c = st.columns([2, 1, 1])
+            with col_a:
+                nombre_doc = st.text_input("Nombre del documento", placeholder="Ej: Certificado Inducción / Procedimiento PT-GD-01")
+                categoria = st.selectbox("Categoría", ["Procedimiento", "Reglamento (RIOHS)", "Inducción / IRL", "EPP", "DIAT / Investigación", "Contrato / RRHH", "Otros"])
+            with col_b:
+                fecha_doc = st.date_input("Fecha documento", value=date.today())
+                fecha_venc = st.date_input("Fecha vencimiento (opcional)", value=None)
+            with col_c:
+                tags = st.text_input("Tags (coma)", placeholder="Ej: DS44, forestal, PT, mantenimiento")
+                notas = st.text_area("Notas (opcional)", height=74)
+
+            st.caption("Asociar a trabajador (opcional). Útil para certificados, exámenes, inducciones, etc.")
+            col_w1, col_w2 = st.columns([2, 1])
+            with col_w1:
+                if df_p.empty:
+                    sel_worker = None
+                    st.info("No hay trabajadores cargados todavía.")
                 else:
-                    riesgos = riesgos_df
-                    st.success(f"✅ Se encontraron {len(riesgos)} riesgos asociados al cargo {cargo_real}.")
+                    sel_worker = st.selectbox("Trabajador (opcional)", ["(Sin asignar)"] + (df_p["rut"] + " - " + df_p["nombre"] + " (" + df_p["cargo"] + ")").tolist())
+            with col_w2:
+                estado_doc = st.selectbox("Estado (manual)", ["AUTO", "VIGENTE", "VENCIDO", "POR VENCER (30D)", "SIN VENCIMIENTO"])
 
-                pdf = DocumentosLegalesPDF("IRL", "RG-GD-04").generar_irl({'nombre': w_data['nombre']}, riesgos.values.tolist())
-                st.download_button("Descargar IRL", pdf.getvalue(), "IRL.pdf", mime="application/pdf")
+            up_file = st.file_uploader("Archivo (PDF / imágenes / Office)", type=["pdf", "png", "jpg", "jpeg", "xlsx", "docx"], key="repo_uploader")
 
-        with t2:
+            if st.button("💾 Guardar documento en repositorio", type="primary", use_container_width=True):
+                if not nombre_doc:
+                    st.error("Debe ingresar el nombre del documento.")
+                elif up_file is None:
+                    st.error("Debe adjuntar un archivo.")
+                else:
+                    blob = up_file.getvalue()
+                    mime = up_file.type or (mimetypes.guess_type(up_file.name)[0] or "application/octet-stream")
+
+                    rut_trab = None; nom_trab = None; cargo_trab = None
+                    if sel_worker and sel_worker != "(Sin asignar)":
+                        rut_trab = sel_worker.split(" - ")[0]
+                        try:
+                            w = df_p[df_p["rut"] == rut_trab].iloc[0]
+                            nom_trab = w["nombre"]; cargo_trab = w["cargo"]
+                        except Exception:
+                            pass
+
+                    # estado: AUTO o manual
+                    fv = fecha_venc if isinstance(fecha_venc, date) else None
+                    est_calc = _estado_por_vencimiento(fv) if estado_doc == "AUTO" else estado_doc
+
+                    try:
+                        conn.execute(
+                            """INSERT INTO documentos_generales
+                               (fecha_carga, nombre_doc, categoria, rut_trabajador, nombre_trabajador, cargo_trabajador,
+                                fecha_documento, fecha_vencimiento, estado, tags, notas,
+                                archivo_nombre, archivo_mime, archivo_blob, usuario_carga)
+                               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            (
+                                datetime.now(),
+                                nombre_doc,
+                                categoria,
+                                rut_trab,
+                                nom_trab,
+                                cargo_trab,
+                                fecha_doc,
+                                fv,
+                                est_calc,
+                                tags,
+                                notas,
+                                up_file.name,
+                                mime,
+                                sqlite3.Binary(blob),
+                                st.session_state.get("user", "Invitado"),
+                            ),
+                        )
+                        conn.commit()
+                        registrar_auditoria(st.session_state.get("user", "Invitado"), "DOC_UPLOAD", f"{categoria} | {nombre_doc}")
+                        st.success("✅ Documento guardado en el repositorio.")
+                        time.sleep(0.6)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error guardando documento: {e}")
+
+        # -------- Listado + filtros --------
+        st.markdown("##### 🔎 Buscar / Filtrar")
+        f1, f2, f3, f4 = st.columns([2, 1, 1, 1])
+        with f1:
+            q = st.text_input("Búsqueda (nombre/tags/trabajador)", placeholder="Ej: DS44, PT-GD-01, Juan")
+        with f2:
+            cat_f = st.multiselect("Categoría", sorted(docs_df["categoria"].dropna().unique().tolist()) if not docs_df.empty else [])
+        with f3:
+            est_f = st.multiselect("Estado", ["VIGENTE", "VENCIDO", "POR VENCER (30D)", "SIN VENCIMIENTO"])
+        with f4:
+            solo_asignados = st.checkbox("Solo con trabajador", value=False)
+
+        view_df = docs_df.copy()
+        if not view_df.empty:
+            # Búsqueda
+            if q:
+                ql = q.lower().strip()
+                view_df = view_df[
+                    view_df["nombre_doc"].fillna("").str.lower().str.contains(ql)
+                    | view_df["tags"].fillna("").str.lower().str.contains(ql)
+                    | view_df["nombre_trabajador"].fillna("").str.lower().str.contains(ql)
+                    | view_df["rut_trabajador"].fillna("").str.lower().str.contains(ql)
+                ]
+            # Categoría
+            if cat_f:
+                view_df = view_df[view_df["categoria"].isin(cat_f)]
+            # Estado
+            if est_f:
+                view_df = view_df[view_df["ESTADO_CALC"].isin(est_f)]
+            # Asignados
+            if solo_asignados:
+                view_df = view_df[view_df["rut_trabajador"].notna() & (view_df["rut_trabajador"].astype(str).str.len() > 0)]
+
+            show_cols = [
+                "id", "fecha_carga", "nombre_doc", "categoria",
+                "rut_trabajador", "nombre_trabajador", "cargo_trabajador",
+                "fecha_documento", "fecha_vencimiento", "ESTADO_CALC",
+                "archivo_nombre", "usuario_carga"
+            ]
+            view_show = view_df[show_cols].copy()
+            view_show["fecha_carga"] = pd.to_datetime(view_show["fecha_carga"], errors="coerce")
+            view_show["fecha_documento"] = pd.to_datetime(view_show["fecha_documento"], errors="coerce")
+            view_show["fecha_vencimiento"] = pd.to_datetime(view_show["fecha_vencimiento"], errors="coerce")
+
+            st.dataframe(view_show, use_container_width=True, hide_index=True)
+
+            # Descarga Excel del listado filtrado
+            out = io.BytesIO()
+            with pd.ExcelWriter(out, engine="openpyxl") as w:
+                view_show.to_excel(w, index=False, sheet_name="Repositorio")
+            st.download_button("📥 Descargar listado filtrado (Excel)", out.getvalue(), "repositorio_documental.xlsx", use_container_width=True)
+
+            st.divider()
+            st.markdown("##### ⬇️ Descargar / 🗑️ Eliminar")
+            col_d1, col_d2 = st.columns([2, 1])
+            with col_d1:
+                sel_doc = st.selectbox("Seleccione documento", view_df["id"].astype(str) + " - " + view_df["nombre_doc"].fillna("SIN NOMBRE"))
+            with col_d2:
+                accion = st.radio("Acción", ["Descargar", "Eliminar"], horizontal=True)
+
+            if sel_doc:
+                doc_id = int(sel_doc.split(" - ")[0])
+                if accion == "Descargar":
+                    try:
+                        row = pd.read_sql("SELECT archivo_nombre, archivo_mime, archivo_blob FROM documentos_generales WHERE id=?", conn, params=(doc_id,))
+                        if not row.empty:
+                            fn = row.iloc[0]["archivo_nombre"] or f"documento_{doc_id}"
+                            mime = row.iloc[0]["archivo_mime"] or "application/octet-stream"
+                            blob = row.iloc[0]["archivo_blob"]
+                            st.download_button("⬇️ Descargar archivo", data=blob, file_name=fn, mime=mime, use_container_width=True)
+                    except Exception as e:
+                        st.error(f"Error al descargar: {e}")
+                else:
+                    st.warning("⚠️ Eliminar borrará el archivo y sus metadatos. Acción irreversible.")
+                    if st.button("🗑️ Confirmar eliminación", type="primary", use_container_width=True):
+                        try:
+                            conn.execute("DELETE FROM documentos_generales WHERE id=?", (doc_id,))
+                            conn.commit()
+                            registrar_auditoria(st.session_state.get("user", "Invitado"), "DOC_DELETE", f"id={doc_id}")
+                            st.success("Eliminado.")
+                            time.sleep(0.6)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"No se pudo eliminar: {e}")
+        else:
+            st.info("Aún no hay documentos en el repositorio. Usa el formulario de arriba para cargar.")
+
+    # ============================
+    # 1) IRL (MANTENIDO + MEJORAS)
+    # ============================
+    with t_irl:
+        if df_p.empty:
+            st.warning("⚠️ No hay trabajadores registrados. Vaya a 'Gestión Personas' para agregar.")
+        else:
+            st.subheader("IRL (Inducción de Riesgos Laborales)")
+            cA, cB = st.columns([2, 1])
+            with cA:
+                sel = st.selectbox("Trabajador:", df_p['rut'] + " - " + df_p['nombre'] + " (" + df_p['cargo'] + ")")
+            with cB:
+                generar_zip = st.checkbox("Generar IRL para TODOS los trabajadores (ZIP)", value=False)
+
+            if not generar_zip:
+                if st.button("Generar IRL", type="primary"):
+                    rut_sel = sel.split(" - ")[0]
+                    w_data = pd.read_sql("SELECT nombre, cargo FROM personal WHERE rut=?", conn, params=(rut_sel,)).iloc[0]
+                    cargo_real = w_data['cargo']
+
+                    riesgos_df = pd.read_sql(
+                        "SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper WHERE puesto_trabajo=?",
+                        conn, params=(cargo_real,)
+                    )
+
+                    if riesgos_df.empty:
+                        st.warning(f"⚠️ No se encontraron riesgos específicos para el cargo: {cargo_real}. Se usarán genéricos.")
+                        riesgos = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper LIMIT 3", conn)
+                    else:
+                        riesgos = riesgos_df
+                        st.success(f"✅ Se encontraron {len(riesgos)} riesgos asociados al cargo {cargo_real}.")
+
+                    pdf = DocumentosLegalesPDF("IRL", "RG-GD-04").generar_irl({'nombre': w_data['nombre']}, riesgos.values.tolist())
+                    st.download_button("Descargar IRL", pdf.getvalue(), f"IRL_{rut_sel}.pdf", mime="application/pdf", use_container_width=True)
+            else:
+                st.info("Genera IRL individual por cada trabajador activo y los empaqueta en un ZIP.")
+                if st.button("📦 Generar ZIP IRL (Todos)", type="primary", use_container_width=True):
+                    try:
+                        activos = df_p[df_p["estado"].fillna("ACTIVO") == "ACTIVO"].copy()
+                        if activos.empty:
+                            activos = df_p.copy()
+                        zbuf = io.BytesIO()
+                        with zipfile.ZipFile(zbuf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                            for _, w in activos.iterrows():
+                                cargo_real = w["cargo"]
+                                riesgos_df = pd.read_sql(
+                                    "SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper WHERE puesto_trabajo=?",
+                                    conn, params=(cargo_real,)
+                                )
+                                if riesgos_df.empty:
+                                    riesgos_df = pd.read_sql("SELECT peligro_factor, riesgo_asociado, medida_control FROM matriz_iper LIMIT 3", conn)
+                                pdf = DocumentosLegalesPDF("IRL", "RG-GD-04").generar_irl({'nombre': w["nombre"]}, riesgos_df.values.tolist())
+                                zf.writestr(f"IRL_{w['rut']}.pdf", pdf.getvalue())
+                        zbuf.seek(0)
+                        st.download_button("⬇️ Descargar ZIP IRL", zbuf.getvalue(), f"IRL_TODOS_{date.today().isoformat()}.zip", mime="application/zip", use_container_width=True)
+                    except Exception as e:
+                        st.error(f"Error generando ZIP: {e}")
+
+    # ============================
+    # 2) RIOHS (MANTENIDO)
+    # ============================
+    with t_riohs:
+        if df_p.empty:
+            st.warning("⚠️ No hay trabajadores registrados. Vaya a 'Gestión Personas' para agregar.")
+        else:
             st.subheader("Entrega de Reglamento Interno (RIOHS)")
             tab_ind, tab_mass = st.tabs(["Entrega Individual", "📢 Campaña Masiva"])
 
@@ -1882,9 +2172,52 @@ elif menu == "⚖️ Gestor Documental":
                     else:
                         st.warning("Falta nombre o firma del difusor.")
 
-        with t3:
-            st.dataframe(pd.read_sql("""SELECT id, fecha_entrega, nombre_trabajador, tipo_entrega, email_copia, estado_envio
-                                        FROM registro_riohs ORDER BY id DESC""", conn))
+    # ============================
+    # 3) HISTORIAL RIOHS (MEJORADO)
+    # ============================
+    with t_hist:
+        st.subheader("📜 Historial de RIOHS")
+        try:
+            hist = pd.read_sql("""SELECT id, fecha_entrega, rut_trabajador, nombre_trabajador, tipo_entrega, email_copia, estado_envio
+                                  FROM registro_riohs ORDER BY id DESC""", conn)
+        except Exception:
+            hist = pd.DataFrame()
+
+        if hist.empty:
+            st.info("Sin registros aún.")
+        else:
+            f1, f2, f3 = st.columns([2, 1, 1])
+            with f1:
+                qh = st.text_input("Buscar (nombre/rut/email)", key="riohs_hist_q")
+            with f2:
+                tipo_f = st.multiselect("Tipo", sorted(hist["tipo_entrega"].dropna().unique().tolist()))
+            with f3:
+                env_f = st.multiselect("Estado envío", ["ENVIADO", "ERROR", "N/A"])
+
+            hv = hist.copy()
+            if qh:
+                ql = qh.lower().strip()
+                hv = hv[
+                    hv["nombre_trabajador"].fillna("").str.lower().str.contains(ql)
+                    | hv["rut_trabajador"].fillna("").str.lower().str.contains(ql)
+                    | hv["email_copia"].fillna("").str.lower().str.contains(ql)
+                ]
+            if tipo_f:
+                hv = hv[hv["tipo_entrega"].isin(tipo_f)]
+            if env_f:
+                hv = hv[hv["estado_envio"].isin(env_f)]
+
+            k1, k2, k3 = st.columns(3)
+            k1.metric("Registros", int(len(hv)))
+            k2.metric("Enviados", int((hv["estado_envio"] == "ENVIADO").sum()))
+            k3.metric("Errores", int((hv["estado_envio"] == "ERROR").sum()))
+
+            st.dataframe(hv, use_container_width=True, hide_index=True)
+
+            out_h = io.BytesIO()
+            with pd.ExcelWriter(out_h, engine="openpyxl") as w:
+                hv.to_excel(w, index=False, sheet_name="RIOHS_Historial")
+            st.download_button("📥 Descargar historial (Excel)", out_h.getvalue(), "historial_riohs.xlsx", use_container_width=True)
 
     conn.close()
 
